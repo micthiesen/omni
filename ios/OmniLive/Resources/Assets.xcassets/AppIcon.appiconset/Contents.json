@@ -1,7 +1,31 @@
 {
   "images": [
     {
-      "filename": "OmniLiveIcon.png",
+      "filename": "OmniIcon.png",
+      "idiom": "universal",
+      "platform": "ios",
+      "size": "1024x1024"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "OmniIconDark.png",
+      "idiom": "universal",
+      "platform": "ios",
+      "size": "1024x1024"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "tinted"
+        }
+      ],
+      "filename": "OmniIconTinted.png",
       "idiom": "universal",
       "platform": "ios",
       "size": "1024x1024"

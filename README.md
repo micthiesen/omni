@@ -1,3 +1,5 @@
+<p align="center"><img src="crates/omni-web/icons/icon-192.png" width="96" height="96" alt="Omni logo: a lime orbit ring brightening into a leading dot"></p>
+
 # Omni Notify
 
 Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs email pipelines, media and podcast recommendations, PressPods, and Arr download recovery, all exposed through a web UI and an authenticated MCP endpoint.

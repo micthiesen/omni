@@ -101,6 +101,17 @@ Records use Signal plus a `★` glyph, not a separate gold.
 to fill the 16 px platform glyph (`PlatformIcon`) or a 3×12 px tick. Never on text
 or surfaces.
 
+### 2.5.1 Logo and app icons
+
+The mark is an orbit: a Signal ring that brightens clockwise into a leading dot
+at the upper right, with a faint track closing the gap. `scripts/brand/icons.py`
+generates every variant (needs `rsvg-convert`): the rail's bare `mark.svg`, the
+16 px-legible `favicon.svg`, PNG, ICO and PWA icons in `crates/omni-web/icons/`
+(served from `/icons/` and the root, outside the immutable `/assets/` cache),
+and the iOS app icon with its dark and tinted appearances. Change the script and
+regenerate; never edit the outputs. Pages that cannot load `/icons/` (the
+Reminders code page) inline a flat two-color version.
+
 ### 2.6 Chart colors
 
 | Token | Value | Use |
@@ -990,8 +1001,8 @@ no raw colors outside tokens.
 - SVG `var(--…)` renames: `--bg-card` → `--surface`, `--text-muted` → `--text-3`,
   `--border` → `--line`, `--accent-soft` → `--signal-wash`, `--accent` →
   `--signal`, `--live` unchanged.
-- `index.html`: `theme-color` `#0a0b0d`; favicon becomes a Signal ring on
-  canvas (inline SVG data URI); font preloads.
+- `index.html`: `theme-color` `#0a0b0d`; favicon becomes the orbit mark on
+  canvas (`/icons/favicon.svg`, section 2.5.1); font preloads.
 
 ### 13.3 Must not change
 

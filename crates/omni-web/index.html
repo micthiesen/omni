@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0b0d" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0b0d'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='%23c6f36a' stroke-width='3.5'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23c6f36a'/%3E%3C/svg%3E"
-    />
+    <meta name="apple-mobile-web-app-title" content="Omni" />
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Omni Notify</title>
     <link rel="preload" href="/assets/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/assets/fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin />
@@ -18,6 +19,11 @@
     <link data-trunk rel="css" href="style/pages/ops.css" data-target-path="assets" />
     <link data-trunk rel="css" href="style/pages/domain.css" data-target-path="assets" />
     <link data-trunk rel="copy-dir" href="assets/fonts" data-target-path="assets/fonts" />
+    <!-- Icons keep stable names outside the immutable /assets/ cache. -->
+    <link data-trunk rel="copy-dir" href="icons" data-target-path="icons" />
+    <link data-trunk rel="copy-file" href="icons/favicon.ico" />
+    <link data-trunk rel="copy-file" href="icons/apple-touch-icon.png" />
+    <link data-trunk rel="copy-file" href="icons/manifest.webmanifest" />
     <link
       data-trunk
       rel="rust"

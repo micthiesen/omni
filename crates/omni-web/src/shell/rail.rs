@@ -178,7 +178,7 @@ pub fn Rail(
     view! {
         <nav class="rail" aria-label="Main">
             <div class="rail-brand">
-                <span class="brand-mark" aria-hidden="true"></span>
+                <img class="brand-mark" src="/icons/mark.svg" alt="" aria-hidden="true"/>
                 <span class="label">"Omni"</span>
                 <button
                     type="button"
