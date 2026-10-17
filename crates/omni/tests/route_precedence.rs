@@ -60,8 +60,8 @@ fn header_of(response: &axum::response::Response, name: header::HeaderName) -> O
 #[tokio::test]
 async fn concrete_routes_win_over_the_spa() {
     let (_app, ctx, dist) = app_with_presspods().await;
-    let mut wired = omni_notify::wiring::wire(&ctx, 0).await.unwrap();
-    let (router, _) = omni_notify::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
+    let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
 
     let spa = send(&router, get("/pods")).await;
     assert_eq!(spa.status(), StatusCode::OK);
@@ -106,8 +106,8 @@ async fn concrete_routes_win_over_the_spa() {
 #[tokio::test]
 async fn reminders_page_keeps_its_own_headers() {
     let (_app, ctx, dist) = app_with_presspods().await;
-    let mut wired = omni_notify::wiring::wire(&ctx, 0).await.unwrap();
-    let (router, _) = omni_notify::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
+    let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
     let through_app = send(&router, get("/reminders")).await;
     let direct = send(&omni_reminders::page::page_router(), get("/reminders")).await;
     assert_eq!(through_app.status(), direct.status());
@@ -129,8 +129,8 @@ async fn reminders_page_keeps_its_own_headers() {
 #[tokio::test]
 async fn api_mutations_require_the_same_origin() {
     let (_app, ctx, dist) = app_with_presspods().await;
-    let mut wired = omni_notify::wiring::wire(&ctx, 0).await.unwrap();
-    let (router, _) = omni_notify::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
+    let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
     let cross = Request::post("/api/tasks/X/run")
         .header(header::HOST, "omni.boris")
         .header(header::ORIGIN, "https://evil.example")

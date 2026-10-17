@@ -129,7 +129,7 @@ mod tests {
             "durationMs": null,
             "status": "running",
             "error": null,
-            "input": {"project": "omni-notify"},
+            "input": {"project": "omni"},
             "output": null
         });
         let parsed: McpCall = serde_json::from_value(call.clone()).unwrap();

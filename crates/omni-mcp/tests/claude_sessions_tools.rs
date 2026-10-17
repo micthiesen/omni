@@ -286,12 +286,12 @@ async fn forwards_the_send_key_and_notes_only_new_turns_for_events() {
 async fn reports_projects_with_the_link_status() {
     let harness = Harness::new(vec![(
         "projects",
-        json!({"projects": [{"name": "omni-notify", "path": "~/Code/omni", "exists": true}]}),
+        json!({"projects": [{"name": "omni", "path": "~/Code/omni", "exists": true}]}),
     )])
     .await;
     let output = harness.call("claude_link_status", json!({})).await;
     assert_eq!(output["online"], true);
-    assert_eq!(output["projects"][0]["name"], "omni-notify");
+    assert_eq!(output["projects"][0]["name"], "omni");
     assert_eq!(output["projects"][0]["exists"], true);
     assert_eq!(output["projectsError"], Value::Null);
     assert!(output.get("host").is_none());
@@ -304,8 +304,8 @@ fn maps_claude_for_dot_summaries_to_the_mcp_session_shape() {
         "session_id": "a1b2c3d4-0000-0000-0000-000000000000",
         "kind": "background",
         "title": "Fix reconnect",
-        "cwd": "/Users/michael/Code/omni-notify",
-        "project": "omni-notify",
+        "cwd": "/Users/michael/Code/omni",
+        "project": "omni",
         "status": "idle",
         "state": "done",
         "started_at": 1_790_000_000_000_i64,
@@ -320,8 +320,8 @@ fn maps_claude_for_dot_summaries_to_the_mcp_session_shape() {
             "sessionId": "a1b2c3d4-0000-0000-0000-000000000000",
             "kind": "background",
             "title": "Fix reconnect",
-            "cwd": "/Users/michael/Code/omni-notify",
-            "project": "omni-notify",
+            "cwd": "/Users/michael/Code/omni",
+            "project": "omni",
             "status": "idle",
             "state": "done",
             "startedAt": omni_core::js::to_iso_string(1_790_000_000_000),
@@ -367,14 +367,14 @@ fn removes_the_host_name_and_home_directory_from_results() {
     assert_eq!(
         scrub_host_details(
             &json!({
-                "cwd": "/Users/michael/Code/omni-notify",
+                "cwd": "/Users/michael/Code/omni",
                 "items": [{"text": "Ran on MaxBook in /Users/michael/.dotfiles"}],
                 "revision": 3,
             }),
             Some("MaxBook"),
         ),
         json!({
-            "cwd": "~/Code/omni-notify",
+            "cwd": "~/Code/omni",
             "items": [{"text": "Ran on the host in ~/.dotfiles"}],
             "revision": 3,
         })

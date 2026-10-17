@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
+use omni::stylist_cli;
 use omni_core::clock::{SharedClock, SystemClock};
-use omni_notify::stylist_cli;
 use omni_store::{Store, StoreOptions};
 use omni_stylist::Stylist;
 use serde_json::{Value, json};

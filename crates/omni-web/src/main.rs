@@ -1,4 +1,4 @@
-//! Omni Notify single-page app (Leptos CSR, built by trunk).
+//! Omni single-page app (Leptos CSR, built by trunk).
 //!
 //! The app only mounts on `wasm32`; native builds exist for unit tests, where
 //! the view code is unreachable.

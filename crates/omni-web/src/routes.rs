@@ -129,7 +129,7 @@ pub fn match_route(path: &str) -> Route {
     }
 }
 
-/// `"<Section> · Omni Notify"` for the static sections.
+/// `"<Section> · Omni"` for the static sections.
 pub fn page_title(path: &str) -> String {
     let section = match path {
         "/live" => Some("Live"),
@@ -151,8 +151,8 @@ pub fn page_title(path: &str) -> String {
         _ => None,
     };
     match section {
-        Some(section) => format!("{section} · Omni Notify"),
-        None => "Omni Notify".to_owned(),
+        Some(section) => format!("{section} · Omni"),
+        None => "Omni".to_owned(),
     }
 }
 
@@ -225,14 +225,14 @@ mod tests {
 
     #[test]
     fn titles_follow_sections() {
-        assert_eq!(page_title("/costs"), "Costs · Omni Notify");
-        assert_eq!(page_title("/live"), "Live · Omni Notify");
-        assert_eq!(page_title("/live/streamers"), "Streamers · Omni Notify");
-        assert_eq!(page_title("/deliveries"), "Deliveries · Omni Notify");
-        assert_eq!(page_title("/calendar"), "Calendar · Omni Notify");
-        assert_eq!(page_title("/stylist"), "Stylist · Omni Notify");
-        assert_eq!(page_title("/workspaces/w/s"), "Omni Notify");
-        assert_eq!(page_title("/streamers/x"), "Omni Notify");
-        assert_eq!(page_title("/"), "Omni Notify");
+        assert_eq!(page_title("/costs"), "Costs · Omni");
+        assert_eq!(page_title("/live"), "Live · Omni");
+        assert_eq!(page_title("/live/streamers"), "Streamers · Omni");
+        assert_eq!(page_title("/deliveries"), "Deliveries · Omni");
+        assert_eq!(page_title("/calendar"), "Calendar · Omni");
+        assert_eq!(page_title("/stylist"), "Stylist · Omni");
+        assert_eq!(page_title("/workspaces/w/s"), "Omni");
+        assert_eq!(page_title("/streamers/x"), "Omni");
+        assert_eq!(page_title("/"), "Omni");
     }
 }

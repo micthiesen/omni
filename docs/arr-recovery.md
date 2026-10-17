@@ -90,7 +90,7 @@ and add these **read-only** mounts to Omni:
 - /var/tmp/nzbget/inter:/tmp/inter:ro
 ```
 
-Apply Compose changes only to `sonarr`, `radarr`, and `omni-notify`.
+Apply Compose changes only to `sonarr`, `radarr`, and `omni`.
 
 After deployment, inspect the `ArrRecovery` task and allow the normal observation
 window. Verify imported episode-file links and paths, removed NZBGet history/data,

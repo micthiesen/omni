@@ -1,6 +1,6 @@
 # Protocol
 
-The wire contract between Slate and Omni Notify. Code: `firmware/protocol`
+The wire contract between Slate and Omni. Code: `firmware/protocol`
 (`slate-protocol`), which the server will depend on by path so both ends share the types.
 Keep this document and that crate in step.
 

@@ -155,8 +155,8 @@ jobs:
           # Same build args as publish, so its build is a cache hit.
           build-args: OMNI_REVISION=${{ github.sha }}
           # mode=max keeps every stage, including the cargo-chef dependency layers.
-          cache-from: type=gha,scope=omni-notify
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni-notify,mode=max,ignore-error=true' || '' }}
+          cache-from: type=gha,scope=omni
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni,mode=max,ignore-error=true' || '' }}
 
   publish:
     runs-on: ubuntu-latest
@@ -190,12 +190,12 @@ jobs:
           push: true
           build-args: OMNI_REVISION=${{ github.sha }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/omni-notify:latest
-            ghcr.io/${{ github.repository_owner }}/omni-notify:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/omni:latest
+            ghcr.io/${{ github.repository_owner }}/omni:${{ github.sha }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          cache-from: type=gha,scope=omni-notify
+          cache-from: type=gha,scope=omni
 
       - name: Logout from GitHub Container Registry
         if: always()
@@ -216,7 +216,7 @@ jobs:
           PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
         run: |
-          TITLE="omni-notify CI failed"
+          TITLE="omni CI failed"
           FAILED=""
           [ "${{ needs.lint.result }}" = "failure" ] && FAILED="lint"
           [ "${{ needs.test.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }test"

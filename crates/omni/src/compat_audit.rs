@@ -1,4 +1,4 @@
-//! `omni-notify compat-audit --db <copy>` (see docs/architecture.md, "Data
+//! `omni compat-audit --db <copy>` (see docs/architecture.md, "Data
 //! compatibility"): a read-only decode and health audit of a docstore copy.
 //!
 //! Per entity: rows, expired rows, NULL payloads, CBOR decode failures, typed

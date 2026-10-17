@@ -91,7 +91,7 @@ const SUBSYSTEM_ALLOWLIST: &[(&str, &str)] = &[
 
 /// Crates outside the backend layering (app binary, frontend, sidecar, tooling).
 const OUTSIDE: &[&str] = &[
-    "omni-notify",
+    "omni",
     "omni-web",
     "omni-web-kit",
     "omni-web-pages",
@@ -138,8 +138,8 @@ pub fn violations(packages: &Graph) -> Vec<String> {
                     found.push(format!("frontend {name} -> {dep} is not allowed"));
                 }
             } else if is_subsystem(name) {
-                if dep == "omni-notify" {
-                    found.push(format!("{name} -> omni-notify is not allowed"));
+                if dep == "omni" {
+                    found.push(format!("{name} -> omni is not allowed"));
                 } else if is_subsystem(dep)
                     && !SUBSYSTEM_ALLOWLIST.contains(&(name.as_str(), dep.as_str()))
                 {

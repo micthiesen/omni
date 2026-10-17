@@ -7,8 +7,8 @@ keep their current configuration.
 
 ## Deployment
 
-Boris's `omni-notify-deploy.timer` keeps the adapter current in the same pass
-that updates Omni. Every minute `bin/deploy_omni_notify.sh` pulls
+Boris's `omni-deploy.timer` keeps the adapter current in the same pass
+that updates Omni. Every minute `bin/deploy_omni.sh` pulls
 `executor-events-adapter:latest`; when the image or the project's Compose config
 hash changed, it recreates only the adapter, waits for its health check and sends
 the same Pushover success or failure notices as Omni. The `Executor Events

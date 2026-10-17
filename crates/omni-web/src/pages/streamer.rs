@@ -762,7 +762,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
     });
     Effect::new(move |_| {
         if let Some(s) = streamer.get() {
-            document().set_title(&format!("{} · Omni Notify", display_name(&s)));
+            document().set_title(&format!("{} · Omni", display_name(&s)));
         }
     });
     use_page_label(move || streamer.with(|s| s.as_ref().map(display_name)));

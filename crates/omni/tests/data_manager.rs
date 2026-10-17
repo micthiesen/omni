@@ -5,7 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
-use omni_notify::data_manager::{DataManager, DeleteResult};
+use omni::data_manager::{DataManager, DeleteResult};
 use omni_runtime::{AfterDelete, CanDelete, ManagedEntity};
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{Entity, EntityDescriptor, UpsertOpts};
@@ -212,8 +212,7 @@ async fn routes_answer_with_the_documented_bodies() {
     let app = omni_testkit::TestApp::new().await;
     upsert(&app.ctx.store, row("a", "1", "ready", 1.0)).await;
     let manager = DataManager::new(app.ctx.store.clone(), vec![managed(None, None)]);
-    let router =
-        omni_notify::ops::router(omni_notify::ops::OpsState::new(app.ctx.clone(), manager));
+    let router = omni::ops::router(omni::ops::OpsState::new(app.ctx.clone(), manager));
 
     let (status, body) = app.get_json(&router, "/api/data/entities/nope").await;
     assert_eq!(

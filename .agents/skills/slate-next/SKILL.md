@@ -6,7 +6,7 @@ description: >
   candidate next steps with a gating analysis (what each unblocks, size, risk), recommends one, and
   records the decision + runners-up in slate/docs/STATE.md. Use when unsure what to work on next, when
   the previous Next step completed, or from $slate-wrap when concluding a session. TRIGGER on "what's
-  next for Slate", "pick the next Slate step", "$slate-next"; not for Omni Notify server work.
+  next for Slate", "pick the next Slate step", "$slate-next"; not for Omni server work.
 ---
 
 # Next (Decide The Next Step)

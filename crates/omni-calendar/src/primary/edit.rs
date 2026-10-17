@@ -18,7 +18,7 @@ use super::rrule::{Freq, RRule, Until, WeekdayNum};
 use super::store::StepKind;
 use super::time::{self, EventTime, Zones, compatible, format_utc, is_nonexistent};
 
-const PRODID: &str = "-//omni-notify//primary//EN";
+const PRODID: &str = "-//omni//primary//EN";
 
 /// A zone for a timed value.
 #[derive(Clone, Debug, PartialEq, Eq)]

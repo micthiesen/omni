@@ -4,7 +4,7 @@ description: >
   Conclude an Omni Slate session so a fresh one can continue: sweep un-encoded learnings into
   the right slate/ docs, decide or confirm the next step (via $slate-next when open), rewrite
   slate/docs/STATE.md, commit, and push. Use when ending a Slate session or on "wrap up Slate",
-  "$slate-wrap"; not for Omni Notify server work.
+  "$slate-wrap"; not for Omni server work.
 ---
 
 # Slate Wrap (Conclude The Session)
@@ -49,4 +49,4 @@ No git, tool or machine snapshots.
 ## 4. Commit And Push
 
 Run `sh slate/scripts/check.sh` if code or PCB source changed, then commit and push to
-`main` per the root `AGENTS.md`. Slate-only pushes do not deploy Omni Notify.
+`main` per the root `AGENTS.md`. Slate-only pushes do not deploy Omni.

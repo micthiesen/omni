@@ -55,7 +55,7 @@ fewer; bodies, notes, error text and full URLs stay behind the polling tools.
 Subsystems cannot depend on `omni-mcp`, so they publish through the
 `EventPublisher` port in `crates/omni-runtime/src/ports.rs`, implemented by
 `crates/omni-mcp/src/events/publisher.rs` over the outbox and set in
-`crates/omni-notify/src/wiring.rs`. The port is unset when MCP Events are
+`crates/omni/src/wiring.rs`. The port is unset when MCP Events are
 disabled (`Ports::publish_event` then returns `Ok(false)`). An
 `EventPublication` names a catalog event, a dedup key, the source time and the
 payload:

@@ -1,9 +1,9 @@
 {
-  "project": "omni-notify",
+  "project": "omni",
   "peers": {
     "mitools": {
       "path": "../mitools",
-      "notes": "TypeScript shared library that omni-notify consumed before its Rust port; its upkeep skill was adapted from this repo's."
+      "notes": "TypeScript shared library that omni consumed before its Rust port; its upkeep skill was adapted from this repo's."
     },
     "stillair": {
       "path": "../stillair",

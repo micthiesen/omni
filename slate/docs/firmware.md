@@ -7,7 +7,7 @@ build and carry the contract types; no behaviour is implemented yet.
 
 | Path | Role |
 | --- | --- |
-| `firmware/protocol` | `slate-protocol`: the wire contract shared with Omni Notify. No dependencies; builds on the host and the H2. |
+| `firmware/protocol` | `slate-protocol`: the wire contract shared with Omni. No dependencies; builds on the host and the H2. |
 | `firmware/core` | `slate-core`: device behaviour as sans-I/O logic. Takes sampled inputs, network outcomes and an injected `Millis`; returns `Action`s. No esp-* dependency. |
 | `firmware/app` | The ESP32-H2 binary, its own workspace and target. Thin wiring only. |
 

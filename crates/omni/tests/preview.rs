@@ -9,13 +9,13 @@ use omni_testkit::TestApp;
 #[tokio::test]
 async fn seeds_typed_fixture_data_the_routes_serve() {
     let app = TestApp::new().await;
-    let mut wired = omni_notify::wiring::wire(&app.ctx, 0).await.unwrap();
+    let mut wired = omni::wiring::wire(&app.ctx, 0).await.unwrap();
     let now = app.ctx.clock.now_ms();
-    omni_notify::preview::seed(&app.ctx, now).await.unwrap();
-    for task in omni_notify::preview::fake_tasks().unwrap() {
+    omni::preview::seed(&app.ctx, now).await.unwrap();
+    for task in omni::preview::fake_tasks().unwrap() {
         app.ctx.tasks.track(task).unwrap();
     }
-    let (router, _) = omni_notify::boot::app_router(
+    let (router, _) = omni::boot::app_router(
         &app.ctx,
         &mut wired.subsystems,
         std::path::Path::new("/nonexistent"),
@@ -34,7 +34,7 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
     assert_eq!(pets[0]["weightHistory"].as_array().unwrap().len(), 91);
     let (_, activity) = app.get_json(&router, "/api/email-activity").await;
     assert_eq!(activity["activities"].as_array().unwrap().len(), 1);
-    omni_notify::preview_stylist::seed(&app.ctx).await.unwrap();
+    omni::preview_stylist::seed(&app.ctx).await.unwrap();
     let (status, stylist) = app.get_json(&router, "/api/stylist").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(stylist["wardrobe"].as_array().unwrap().len(), 5);
@@ -60,7 +60,7 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
 
 #[test]
 fn preview_streamers_are_valid_and_one_is_background() {
-    let rows = omni_live::config::rows_for(omni_notify::preview::preview_streamers(), 0).unwrap();
+    let rows = omni_live::config::rows_for(omni::preview::preview_streamers(), 0).unwrap();
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[3].tier, omni_api::streamers::StreamerTier::Background);
 }

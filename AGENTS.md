@@ -1,10 +1,10 @@
-# omni-notify
+# Omni
 
 Edit `AGENTS.md` and `.agents/skills/` directly. These are native Codex files;
 no generated copies or compatibility links are needed.
 
 Personal automation service for livestream monitoring, email processing,
-recommendations, and PressPods. It is a Rust workspace: one `omni-notify` binary serves the API, MCP endpoint and a Leptos
+recommendations, and PressPods. It is a Rust workspace: one `omni` binary serves the API, MCP endpoint and a Leptos
 frontend, and runs every scheduled task. See `docs/architecture.md`.
 
 Update this file when work establishes or changes a durable project convention.
@@ -46,12 +46,12 @@ unrelated changes, commit the scoped result, pull with rebase if the remote move
 and push. A push deploys production automatically. Do not ask for another
 confirmation already supplied by this rule or the current request.
 
-Production runs as the `omni-notify` container on `boris` (`10.10.1.100`) from
+Production runs as the `omni` container on `boris` (`10.10.1.100`) from
 `/home/michael/compose`. Boris's deploy timer also keeps the
 `executor-events-adapter` sidecar (the `omni-events-adapter` crate) on
 `:latest`; see `deploy/executor-events/`. Persistent data is under
-`/home/michael/compose/volumes/omni-notify`. The LAN UI is
-`http://omni.boris/`. Inspect failures with `docker logs omni-notify` over SSH.
+`/home/michael/compose/volumes/omni`. The LAN UI is
+`http://omni.boris/`. Inspect failures with `docker logs omni` over SSH.
 
 Prefer a committed boot migration for reproducible data changes. For one-off
 database surgery, stop the container and make a WAL-safe backup first. Direct
@@ -93,7 +93,7 @@ change; reuse authorization already given in the conversation.
   secrets, Claude session prompt text, or email bodies at info.
 - **Ports:** a subsystem crate depends only on foundation crates. Calls into
   another subsystem go through the port traits in `omni_runtime::ports`, wired
-  once in `crates/omni-notify/src/wiring.rs`; handle an unset port. The only
+  once in `crates/omni/src/wiring.rs`; handle an unset port. The only
   direct subsystem edges are `omni-ios-controls -> omni-live`,
   `omni-parcel -> omni-email` and `omni-calendar -> omni-email`;
   `cargo xtask deps-check` enforces this.
@@ -107,11 +107,12 @@ change; reuse authorization already given in the conversation.
   unknown fields in `#[serde(flatten)] extra: Extra`; use `Option` with
   `skip_serializing_if` for absent fields and a plain `Option` for stored
   nulls. Never change how keys, hashes, fingerprints, ids or idempotency keys
-  are derived: values derived with JS semantics and then persisted, hashed or
+  are derived (calendar UIDs and Message-IDs keep the `@omni-notify` domain from
+  before the rename to Omni): values derived with JS semantics and then persisted, hashed or
   compared with stored rows (UTF-16 lengths, `JSON.stringify`,
   `Number#toString`, `localeCompare`) go through `omni_core::js` only. Each
   subsystem lists its `EntityDescriptor`s; boot runs `migrate_all` over them,
-  and `omni-notify compat-audit` decodes a production copy against them.
+  and `omni compat-audit` decodes a production copy against them.
 - **Validation:** decode untrusted external, persisted, environment, AI and
   protocol values into typed serde structs before use. MCP tool inputs and model
   structured outputs are also checked against their JSON schemas (`jsonschema`).
@@ -170,7 +171,7 @@ change; reuse authorization already given in the conversation.
 - `omni-stylist`: the fit-first stylist ledger: typed records and events,
   private evidence, frozen predictions, narrow rules, the versioned runbook,
   archives and the `StylistBackup` task.
-- `omni-notify`: the binary: boot, wiring, ops routes, dashboard SSE, data
+- `omni`: the binary: boot, wiring, ops routes, dashboard SSE, data
   manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `--preview`.
 - `omni-web`, `omni-web-kit`, `omni-web-pages`: the Leptos CSR frontend (app
   shell and ops pages, shared kit, domain pages), built by trunk.
@@ -365,7 +366,7 @@ changing the audio chain.
 Higgs denoise uses the `arnndn` filter with
 `assets/press-pods/denoise.rnnn` (`DENOISE_MODEL_ASSET`); the model must remain
 in the Docker image and runtime FFmpeg must include that filter.
-`omni-notify doctor --image` checks both at image build.
+`omni doctor --image` checks both at image build.
 
 ### Pet health watch
 

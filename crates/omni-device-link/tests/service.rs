@@ -242,7 +242,7 @@ async fn keeps_waiting_for_a_result_past_the_command_timeout_by_a_slack_margin()
     let call = spawn_execute(
         &link,
         DeviceCommand::Start,
-        json!({"project": "omni-notify"}),
+        json!({"project": "omni"}),
         Duration::from_secs(10),
     );
     let jobs = poll.await.unwrap();

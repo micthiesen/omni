@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use omni_notify::boot::{self, BootTrace, ServeOptions};
+use omni::boot::{self, BootTrace, ServeOptions};
 use omni_runtime::{AppContext, BackgroundService, BootPhase, BootStep, Subsystem};
 use omni_store::cbor::JsValue;
 use omni_store::{DocMeta, DocOps as _, DocWrite as _};

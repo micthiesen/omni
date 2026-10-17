@@ -26,7 +26,7 @@ fn config() -> ApnsConfig {
         team_id: "TEAM123".into(),
         key_id: "KEY123".into(),
         bundle_id: "com.example.OmniLive".into(),
-        private_key_path: "/tmp/omni-notify-apns-key-does-not-exist.p8".into(),
+        private_key_path: "/tmp/omni-apns-key-does-not-exist.p8".into(),
     }
 }
 

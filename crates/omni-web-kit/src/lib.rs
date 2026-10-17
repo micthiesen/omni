@@ -1,4 +1,4 @@
-//! Leptos CSR kit for the Omni Notify frontend.
+//! Leptos CSR kit for the Omni frontend.
 //!
 //! `omni-web` (router, shell, ops pages) and `omni-web-pages` (domain pages)
 //! build on these modules: the API client, live dashboard data, hooks,

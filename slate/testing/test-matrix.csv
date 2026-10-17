@@ -15,6 +15,6 @@ USB-AWAKE,Firmware,Stay awake on USB power,Plug and unplug USB while idle and du
 PROVISION,Firmware,USB provisioning,"Provision dataset, server and id over the console; reboot",Attaches and checks after reboot; dataset never printed,,,
 OFFLINE-BACKOFF,Firmware,Offline behaviour,Stop OTBR for 1 h and for 8 h,Backoff follows docs/firmware.md; reattaches within one retry after OTBR returns,,,
 LOW-BATTERY,Firmware,Battery bands,Bench supply sweep through the band thresholds,Bands and hysteresis as docs/firmware.md; no waveform below critical,,,
-OTBR-BRINGUP,Infrastructure,OpenThread Border Router on boris (G-03),Run OTBR with the RCP; form the network; ping a DevKit's mesh address from the Omni Notify container,Network formed on its own channel; container reaches the mesh and back,,,
+OTBR-BRINGUP,Infrastructure,OpenThread Border Router on boris (G-03),Run OTBR with the RCP; form the network; ping a DevKit's mesh address from the Omni container,Network formed on its own channel; container reaches the mesh and back,,,
 FRAME-INTEGRITY,Firmware,No waveform on a bad frame,"Serve truncated, CRC-corrupted, wrong-version and overlong frames",Panel powers down without a waveform every time; old version kept and reported,,,
 WAVEFORM-TIMEOUT,Firmware,Stuck BUSY,Hold BUSY active past 40 s on the bench,"Waveform fault raised, panel powered down, next check reports it",,,

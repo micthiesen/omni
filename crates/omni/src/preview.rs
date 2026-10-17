@@ -1,4 +1,4 @@
-//! `omni-notify --preview [--port N]`:
+//! `omni --preview [--port N]`:
 //! the real HTTP server, subsystems and registry over a throwaway database
 //! seeded with fake streamers, statuses, viewer history, runs,
 //! recommendations, email activity and a pet, plus fake tasks that

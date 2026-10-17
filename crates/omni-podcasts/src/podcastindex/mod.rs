@@ -17,7 +17,7 @@ const RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const RETRIES: u32 = 2;
 const RETRY_BASE: Duration = Duration::from_millis(200);
-const AUTH_USER_AGENT: &str = "omni-notify/1.0";
+const AUTH_USER_AGENT: &str = "omni/1.0";
 
 #[derive(Clone)]
 pub struct PodcastIndexCredentials {

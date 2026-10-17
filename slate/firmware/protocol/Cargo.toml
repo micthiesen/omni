@@ -1,13 +1,13 @@
 [package]
 name = "slate-protocol"
-description = "The Omni Slate wire contract shared by the device firmware and the Omni Notify server"
+description = "The Omni Slate wire contract shared by the device firmware and the Omni server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# No dependencies on purpose: the server side (a future omni-notify crate) depends on this
+# No dependencies on purpose: the server side (a future omni crate) depends on this
 # crate by path, so it must build on the host and on the ESP32-H2 without features.
 [dependencies]
 

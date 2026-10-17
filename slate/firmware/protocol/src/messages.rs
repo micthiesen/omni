@@ -4,7 +4,7 @@
 //! frame transfer. Payloads are fixed little-endian binary layouts, not CBOR or JSON, so
 //! the device parses them without an allocator. `docs/protocol.md` is normative.
 
-/// UDP port of the Omni Notify CoAP endpoint.
+/// UDP port of the Omni CoAP endpoint.
 pub const SERVER_PORT: u16 = 5683;
 
 /// `POST` target for the periodic check. The body is a [`CheckRequest`].

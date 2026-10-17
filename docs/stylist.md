@@ -242,15 +242,15 @@ with the number of photos.
   `real`. It sends no messages; a failed run is logged and alerted like any
   failed task.
 - Kopia snapshots `/home/michael/compose` (including
-  `volumes/omni-notify/stylist-private`) to R2 every 20 minutes. The archives
+  `volumes/omni/stylist-private`) to R2 every 20 minutes. The archives
   and evidence files are immutable once written, so the snapshot holds a
   consistent copy; the live SQLite file itself is not snapshot-consistent.
 - Restore after losing the database, with the private directory recovered:
 
   ```bash
-  docker exec omni-notify omni-notify stylist-verify \
+  docker exec omni omni stylist-verify \
     --archive /data/stylist-private/archives/<id>.json
-  docker exec omni-notify omni-notify stylist-restore \
+  docker exec omni omni stylist-restore \
     --archive /data/stylist-private/archives/<id>.json --namespace real --allow-real
   ```
 
@@ -283,7 +283,7 @@ Because the LAN UI has no login, the overview carries no evidence bytes,
 photos, captions or free-text evidence notes; photos stay behind
 authenticated MCP. Measurements and labels are shown as recorded.
 `--preview` seeds a synthetic wardrobe into its throwaway database
-(`crates/omni-notify/src/preview_stylist.rs`).
+(`crates/omni/src/preview_stylist.rs`).
 
 ## Assistant setup
 

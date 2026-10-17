@@ -20,7 +20,7 @@ pub fn build_icalendar(
     let mut lines: Vec<String> = vec![
         "BEGIN:VCALENDAR".to_owned(),
         "VERSION:2.0".to_owned(),
-        "PRODID:-//omni-notify//EN".to_owned(),
+        "PRODID:-//omni//EN".to_owned(),
         "CALSCALE:GREGORIAN".to_owned(),
         "BEGIN:VEVENT".to_owned(),
         format!("UID:{uid}"),
@@ -295,7 +295,7 @@ mod tests {
             [
                 "BEGIN:VCALENDAR",
                 "VERSION:2.0",
-                "PRODID:-//omni-notify//EN",
+                "PRODID:-//omni//EN",
                 "CALSCALE:GREGORIAN",
                 "BEGIN:VEVENT",
                 "UID:stable@omni-notify",

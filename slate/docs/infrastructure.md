@@ -19,7 +19,7 @@ radio co-processor (RCP) running OpenThread RCP firmware (decision D-05).
 Compose service, volume and device mapping are added with the boris deployment work under
 `/home/michael/compose`; record the details there and link them here.
 
-## Omni Notify side
+## Omni side
 
 A future `omni-slate` subsystem crate in this repository, following the crate conventions
 in the root `AGENTS.md`:

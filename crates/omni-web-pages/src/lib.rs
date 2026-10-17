@@ -1,4 +1,4 @@
-//! Omni Notify domain pages.
+//! Omni domain pages.
 //!
 //! `omni-web`'s router mounts exactly these exports; their names and props
 //! are this crate's contract with the router:

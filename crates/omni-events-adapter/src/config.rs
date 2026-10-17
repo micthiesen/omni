@@ -12,7 +12,7 @@ pub const USER_AGENT: &str = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 pub const DEFAULT_PORT: u16 = 4789;
 
 const DEFAULT_EXECUTOR_BASE_URL: &str = "http://executor:4788";
-const DEFAULT_OMNI_BASE_URL: &str = "http://omni-notify:8080";
+const DEFAULT_OMNI_BASE_URL: &str = "http://omni:8080";
 
 /// Validated adapter options. `Debug` redacts the Omni token.
 #[derive(Clone)]
@@ -137,10 +137,7 @@ mod tests {
             config.options.executor_base_url.as_str(),
             "http://executor:4788/"
         );
-        assert_eq!(
-            config.options.omni_base_url.as_str(),
-            "http://omni-notify:8080/"
-        );
+        assert_eq!(config.options.omni_base_url.as_str(), "http://omni:8080/");
         assert!(!format!("{:?}", config.options).contains("\"t\""));
     }
 

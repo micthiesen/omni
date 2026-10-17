@@ -1,9 +1,9 @@
 //! Operator commands for the stylist ledger (docs/stylist.md, "Backup and restore"):
 //!
 //! ```text
-//! omni-notify stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
-//! omni-notify stylist-verify --archive FILE [--private DIR]
-//! omni-notify stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
+//! omni stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
+//! omni stylist-verify --archive FILE [--private DIR]
+//! omni stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
 //! ```
 //!
 //! `--db` defaults to `DB_NAME` and `--private` to the app's stylist directory

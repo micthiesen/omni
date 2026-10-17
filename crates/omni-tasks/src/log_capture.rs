@@ -236,7 +236,7 @@ where
 }
 
 /// Whether an event is application logging: DEBUG and above from a named logger target (`"LiveCheck"`,
-/// `"Main:TaskRegistry"`) or an `omni_*` module path. TRACE events and
+/// `"Main:TaskRegistry"`) or an `omni_*` or `omni::` module path. TRACE events and
 /// dependency internals (`hyper::proto::h1`, `rustls::client`) are not run
 /// log lines.
 pub fn is_app_event(metadata: &tracing::Metadata<'_>) -> bool {
@@ -244,7 +244,7 @@ pub fn is_app_event(metadata: &tracing::Metadata<'_>) -> bool {
         return false;
     }
     let target = metadata.target();
-    !target.contains("::") || target.starts_with("omni_")
+    !target.contains("::") || target.starts_with("omni_") || target.starts_with("omni::")
 }
 
 /// `info_span!("task_run", run_id, task)`: everything inside is attributed to the run.

@@ -477,11 +477,12 @@ impl Visit for AlertVisitor {
 }
 
 /// Application ERROR logs only: a named logger target (`"Scheduler"`,
-/// `"Main:TaskRegistry"`) or an `omni_*` module path, never dependency
-/// internals.
+/// `"Main:TaskRegistry"`) or an `omni_*` or `omni::` module path, never
+/// dependency internals.
 fn is_app_error(metadata: &tracing::Metadata<'_>) -> bool {
     let target = metadata.target();
-    *metadata.level() == Level::ERROR && (!target.contains("::") || target.starts_with("omni_"))
+    *metadata.level() == Level::ERROR
+        && (!target.contains("::") || target.starts_with("omni_") || target.starts_with("omni::"))
 }
 
 impl<S: Subscriber> tracing_subscriber::Layer<S> for AlertLayer {

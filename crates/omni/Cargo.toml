@@ -1,6 +1,6 @@
 [package]
-name = "omni-notify"
-description = "The omni-notify binary: boot, subsystem wiring, ops routes, dashboard SSE, data manager and compat tooling."
+name = "omni"
+description = "The omni binary: boot, subsystem wiring, ops routes, dashboard SSE, data manager and compat tooling."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,11 +11,11 @@ publish.workspace = true
 workspace = true
 
 [lib]
-name = "omni_notify"
+name = "omni"
 path = "src/lib.rs"
 
 [[bin]]
-name = "omni-notify"
+name = "omni"
 path = "src/main.rs"
 
 [dependencies]

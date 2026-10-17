@@ -1,4 +1,4 @@
-//! `omni-notify doctor [--image]`: runtime invariants of the image
+//! `omni doctor [--image]`: runtime invariants of the image
 //! (see docs/architecture.md, "Deployment pipeline"). The Docker build runs `doctor --image`, which
 //! fails the build when any check fails; without `--image` the checks are
 //! the same but reported for a local install.

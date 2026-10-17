@@ -11,6 +11,13 @@ ignore = [
   # no runtime code. The pinned leptos 0.8.20 still requires it; remove this
   # entry once a leptos upgrade drops paste.
   { id = "RUSTSEC-2024-0436", reason = "unmaintained proc macro reached only through leptos 0.8.20" },
+  # zip 2.4.2 is a build-dependency of sherpa-onnx-sys 1.13.8, which pins zip
+  # ^2 and extracts only the upstream iOS xcframework archive with it. Omni
+  # builds for Linux and macOS (bzip2 tarballs or SHERPA_ONNX_LIB_DIR), so the
+  # extraction code never runs. Remove once sherpa-onnx-sys allows zip >= 9.
+  { id = "RUSTSEC-2026-0367", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
+  { id = "RUSTSEC-2026-0368", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
+  { id = "RUSTSEC-2026-0369", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
 ]
 
 [licenses]

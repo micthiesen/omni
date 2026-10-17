@@ -1,6 +1,6 @@
 # Omni Slate
 
-Battery-powered 13.3-inch four-ink e-paper display for Omni Notify: ESP32-H2 on Thread,
+Battery-powered 13.3-inch four-ink e-paper display for Omni: ESP32-H2 on Thread,
 server-side rendering, a load-switched SSD2677 panel and a protected 1S pouch. This
 directory owns its requirements, parts, firmware, PCB source and test evidence; the server
 side will be an `omni-slate` crate in the parent workspace.
@@ -59,7 +59,7 @@ Tooling and authority follow crystal-shim (see [pcb/README.md](pcb/README.md)). 
 `sh scripts/check.sh` runs host fmt/clippy/tests, the H2 release build, and PCB
 lint/format/typecheck/source checks; CI runs the same in `.github/workflows/slate.yml`.
 Completed work ships directly to `main` like the rest of this repository. Pushes that only
-touch `slate/` do not trigger the Omni Notify image build or deploy.
+touch `slate/` do not trigger the Omni image build or deploy.
 
 This repository is public. Thread datasets, network keys and other credentials, and
 personal details such as addresses, never enter git.

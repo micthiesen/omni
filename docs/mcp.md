@@ -341,7 +341,7 @@ retried automatically.
 
 Set `HISTER_ACCESS_TOKEN` to enable Hister calls. `HISTER_URL` defaults to
 `https://hister.syas.ca`. Production uses a private Compose env file at
-`volumes/omni-notify/hister.env`; never put the access token in this repository.
+`volumes/omni/hister.env`; never put the access token in this repository.
 Omni sends credentials only to the configured Hister server and refuses redirects.
 
 `search_browser_history` searches captured page text with bounded results and

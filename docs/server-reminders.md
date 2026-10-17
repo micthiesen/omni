@@ -1,12 +1,12 @@
 # Server iCloud Reminders
 
-Modern CloudKit Reminders runs in Omni Notify on Boris. It does not use the Mac
+Modern CloudKit Reminders runs in Omni on Boris. It does not use the Mac
 EventKit CLI, Codex, CalDAV, or the existing email account configuration.
 
 ## Enable on Boris
 
 The shipped default is disabled. Michael must add the following environment
-variables to the `omni-notify` service's secret configuration in
+variables to the `omni` service's secret configuration in
 `/home/michael/compose`, and arrange for the container to receive them through
 the normal deployment workflow:
 
@@ -104,7 +104,7 @@ code challenges are invalidated after a restart; start a new challenge on the pa
 
 Session/trust tokens, cookies, and the mutation ledger live in authenticated
 AES-256-GCM encrypted files under `/data/reminders-private` (host:
-`/home/michael/compose/volumes/omni-notify/reminders-private`). Directory mode is
+`/home/michael/compose/volumes/omni/reminders-private`). Directory mode is
 0700 and files are 0600. Writes use atomic rename and fsync. Account identity is
 bound into encryption authentication. The store is separate from Omni's generic
 database browsing/export. Back up the encrypted directory and encryption key;

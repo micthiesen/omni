@@ -293,11 +293,11 @@ the device credential, the account is reset, or the keychain item is deleted.
 - **Toggling Castro sync off/on re-keys the device.** It disables the session
   the current credential belongs to and mints a fresh keychain credential for
   the app, orphaning ours (reads still work, writes say `Sync is disabled`).
-  Do not toggle sync on the device whose credential omni-notify uses.
+  Do not toggle sync on the device whose credential omni uses.
 - **Use a dedicated device.** The credential in use is from a spare iPad that
   the owner does not otherwise open. That device is a first-class sync peer, so
   its writes broadcast to the iPhone; and because nothing else drives it, its
-  sync is never toggled. Enrolling omni-notify as its own device is the durable
+  sync is never toggled. Enrolling omni as its own device is the durable
   setup; impersonating an actively-used phone invites exactly the re-key above.
 
 ### Backup database inventory

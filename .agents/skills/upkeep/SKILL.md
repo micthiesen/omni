@@ -52,10 +52,10 @@ Then a runtime smoke test of the real binary (catches config, boot and runtime b
 ```
 LOG_LEVEL=info DB_NAME=<scratch>/smoke.db \
   FRONTEND_PORT=3199 timeout --signal=SIGTERM 15 \
-  cargo run -p omni-notify -- --side-effects=record --web-dist crates/omni-web/dist
+  cargo run -p omni -- --side-effects=record --web-dist crates/omni-web/dist
 ```
 
-Expect: config logged, tasks registered, server listening, graceful shutdown on SIGTERM. `curl -s localhost:3199/api/health` during the run should answer. The Docker image cannot be verified locally (no container runtime on this box); CI's `image` job and the in-image `omni-notify doctor --image` cover it.
+Expect: config logged, tasks registered, server listening, graceful shutdown on SIGTERM. `curl -s localhost:3199/api/health` during the run should answer. The Docker image cannot be verified locally (no container runtime on this box); CI's `image` job and the in-image `omni doctor --image` cover it.
 
 ## 5. Ship
 

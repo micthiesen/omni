@@ -662,7 +662,7 @@ mod tests {
         );
         assert!(
             claude
-                .parse_arguments(&json!({"project": "omni-notify"}))
+                .parse_arguments(&json!({"project": "omni"}))
                 .is_some()
         );
         assert!(claude.parse_arguments(&json!({"other": "x"})).is_none());

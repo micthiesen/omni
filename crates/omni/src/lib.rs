@@ -1,4 +1,4 @@
-//! The omni-notify application: boot, subsystem wiring, ops routes,
+//! The omni application: boot, subsystem wiring, ops routes,
 //! dashboard SSE, data manager, compat audit, doctor and the preview server.
 //! `main.rs` only parses the command line and runs [`app::main`].
 

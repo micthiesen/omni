@@ -8,15 +8,15 @@ use std::collections::BTreeSet;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use omni_notify::boot;
-use omni_notify::data_manager::MANAGED_ORDER;
+use omni::boot;
+use omni::data_manager::MANAGED_ORDER;
 use omni_testkit::TestApp;
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
-async fn wired() -> (TestApp, omni_notify::wiring::Wired) {
+async fn wired() -> (TestApp, omni::wiring::Wired) {
     let app = TestApp::new().await;
-    let wired = omni_notify::wiring::wire(&app.ctx, app.ctx.clock.now_ms())
+    let wired = omni::wiring::wire(&app.ctx, app.ctx.clock.now_ms())
         .await
         .unwrap();
     (app, wired)
@@ -60,7 +60,7 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
     assert!(names.contains("RemindersSession"));
     // `/api/tasks` lists them in registration order.
     let mut ordered: Vec<String> = names.into_iter().collect();
-    ordered.sort_by_key(|n| omni_notify::wiring::task_rank(n));
+    ordered.sort_by_key(|n| omni::wiring::task_rank(n));
     assert_eq!(
         ordered.first().map(String::as_str),
         Some("McpEventDelivery")
@@ -74,7 +74,7 @@ async fn the_entity_catalog_matches_the_wired_subsystems() {
         .iter()
         .map(|d| d.name)
         .collect();
-    let catalog: BTreeSet<&str> = omni_notify::compat_audit::entity_catalog()
+    let catalog: BTreeSet<&str> = omni::compat_audit::entity_catalog()
         .iter()
         .map(|d| d.name)
         .collect();

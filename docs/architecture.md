@@ -1,6 +1,6 @@
 # Architecture
 
-omni-notify is one Rust binary (`omni-notify`) that runs scheduled tasks, an axum
+Omni is one Rust binary (`omni`) that runs scheduled tasks, an axum
 HTTP server with the JSON API, MCP endpoint and Leptos frontend, and long-lived
 background services over one SQLite document store. A second binary,
 `executor-events-adapter`, is the MCP Events sidecar deployed beside Executor.
@@ -18,7 +18,7 @@ names are `omni-*`; library names are `omni_*`.
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
   `omni-device-link`, `omni-personal`, `omni-stylist`. Each exposes
   a constructor that returns an `omni_runtime::Subsystem`.
-- **App:** `omni-notify` builds the `AppContext`, constructs every subsystem,
+- **App:** `omni` builds the `AppContext`, constructs every subsystem,
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
   the CLI.
 - **Outside the backend layering:** the frontend crates `omni-web`,
@@ -28,7 +28,7 @@ names are `omni-*`; library names are `omni_*`.
 `cargo xtask deps-check` (part of the gate and CI) enforces the direction:
 
 ```
-omni-core <- {omni-config, omni-store} <- omni-tasks <- omni-runtime <- subsystems <- omni-notify
+omni-core <- {omni-config, omni-store} <- omni-tasks <- omni-runtime <- subsystems <- omni
 omni-core <- omni-http <- {omni-alerts, omni-ai, omni-mailer} <- omni-runtime
 omni-api (serde only) <- omni-server-kit, subsystems, frontend crates
 ```
@@ -36,7 +36,7 @@ omni-api (serde only) <- omni-server-kit, subsystems, frontend crates
 Subsystem crates must not depend on each other, except for three allowlisted
 library edges: `omni-ios-controls -> omni-live`, `omni-parcel -> omni-email` and
 `omni-calendar -> omni-email`. Frontend crates may use only `omni-api` and each
-other. Nothing depends on `omni-notify`.
+other. Nothing depends on `omni`.
 
 ## Composition and ports
 
@@ -47,7 +47,7 @@ shutdown token, `TaskTracker`, ports, `SideEffectMode` and resolved paths.
 
 A `Subsystem` contributes its axum router (routes at absolute paths), tasks, MCP
 tools, entity descriptors, data-manager rows, boot steps, background services,
-email handlers and alert gates. `omni-notify` merges the routers, registers the
+email handlers and alert gates. `omni` merges the routers, registers the
 tasks and tools, and starts the services.
 
 Cross-subsystem calls go through the port traits in
@@ -55,7 +55,7 @@ Cross-subsystem calls go through the port traits in
 `EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
 `OnDeckSource`, `DeliveriesSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
-port is set once during wiring (`crates/omni-notify/src/wiring.rs`); a consumer
+port is set once during wiring (`crates/omni/src/wiring.rs`); a consumer
 must handle an unset port, because the providing subsystem may be disabled by
 configuration. Port payloads that belong to another subsystem's `omni-api` DTO
 cross as `serde_json::Value` and are decoded into the same DTO on the other side.
@@ -66,11 +66,11 @@ The Pushover client also takes one `AppPushRoute`, set by wiring from
 `SideEffectMode::Record` makes every mutating adapter (Pushover, SMTP, IMAP
 writes, CalDAV, Arr/Castro/Plex mutations, APNs, webhooks, printer, Parcel)
 record instead of sending, while reads stay live. Tests and shadow runs use it;
-select it with `omni-notify --side-effects=record` or `OMNI_SIDE_EFFECTS=record`.
+select it with `omni --side-effects=record` or `OMNI_SIDE_EFFECTS=record`.
 
 ## Boot order
 
-`crates/omni-notify/src/boot.rs`:
+`crates/omni/src/boot.rs`:
 
 1. Load config and log it redacted.
 2. Open the store.
@@ -120,7 +120,7 @@ first ran, so its format is a contract:
   `EntityDescriptor` list. Reproducible data changes are boot migrations, not
   manual edits.
 
-`omni-notify compat-audit --db <copy>` is a read-only decode and health audit
+`omni compat-audit --db <copy>` is a read-only decode and health audit
 of a copy of production: per-entity row counts, NULL payloads, CBOR and typed
 decode failures, primary-key recomputation, unknown or legacy rows, and the
 typed round trip `decode -> typed -> encode -> decode`. The source file is
@@ -171,7 +171,7 @@ hashed `/assets/*` are immutable and Brotli-precompressed, `index.html` is
 script, so the `/reminders` CSP needs only `'wasm-unsafe-eval'`.
 
 Build identity (`omni_api::build::BuildIdentity`, computed once at boot in
-`omni-notify/src/build_identity.rs`) rides on every snapshot and on
+`omni/src/build_identity.rs`) rides on every snapshot and on
 `/api/health`. `server` is `OMNI_IMAGE_REVISION` (the Dockerfile sets it from the
 `OMNI_REVISION` build arg, which CI fills with the commit SHA), else a
 fingerprint of the executable's path, size and mtime. `frontend` is a hash of the
@@ -187,14 +187,14 @@ when a later one differs.
   wasm-bindgen / wasm-opt (`deploy/web-tools/install.sh`), yt-dlp and the three
   livestream models;
 - `chef -> planner -> server`: cargo-chef cooks dependencies, then one
-  `cargo build --release --locked` builds `omni-notify`, `omni-voice-enroll` and
+  `cargo build --release --locked` builds `omni`, `omni-voice-enroll` and
   `omni-intel-doctor`. The server stage excludes the web crates,
   `omni-events-adapter` and `xtask`, so editing them keeps it cached;
 - `web -> web-dist`: `trunk build --release`, then Brotli and gzip copies;
 - `runtime` on `node:24.19.0-slim` (Node stays for `yt-dlp --js-runtimes node`),
   with ffmpeg, CUPS/brlaser, ghostscript, poppler and tini. Layers run from least
   to most frequently changed so a code change pushes only the last layers.
-  `RUN omni-notify doctor --image` fails the build when ffmpeg filters, the
+  `RUN omni doctor --image` fails the build when ffmpeg filters, the
   denoise model, printer files, sherpa models or yt-dlp are missing.
 
 The Rust stages rely on cargo-chef layers, not cache mounts, because the GitHub
@@ -205,10 +205,10 @@ CI (`.github/workflows/ci.yml`) runs three jobs in parallel, using
 clippy with `-D warnings`, `cargo xtask deps-check` and `cargo deny --locked
 check`. `test` runs `cargo nextest run --workspace --locked --profile ci`.
 `image` builds the Dockerfile with `type=gha,mode=max` layer caching. `publish`
-pushes `ghcr.io/micthiesen/omni-notify:latest` and `:<sha>` after all three
+pushes `ghcr.io/micthiesen/omni:latest` and `:<sha>` after all three
 pass, from the fully cached build. The `Executor Events Adapter` workflow builds and
 publishes the sidecar image from `deploy/executor-events/Dockerfile`.
 
-On boris, `omni-notify-deploy.timer` pulls `:latest` every minute, recreates the
-container on change, waits for its health check (`omni-notify healthcheck`) and
+On boris, `omni-deploy.timer` pulls `:latest` every minute, recreates the
+container on change, waits for its health check (`omni healthcheck`) and
 sends a Pushover notice. The same pass keeps `executor-events-adapter` current.

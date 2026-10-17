@@ -1,6 +1,6 @@
 name: Omni Slate
 
-# The Slate hardware project (slate/). Independent of the Omni Notify image: the main
+# The Slate hardware project (slate/). Independent of the Omni image: the main
 # workflow ignores slate/ changes and this one runs only for them.
 on:
   workflow_dispatch:

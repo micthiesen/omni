@@ -19,7 +19,7 @@ pub const FEED_EPISODE_LIMIT: usize = 50;
 const FEED_TITLE: &str = "PressPods";
 const FEED_DESCRIPTION: &str = "A podcast of the latest news from the web, read aloud by a robot";
 const FEED_AUTHOR: &str = "Michael Thiesen";
-const FEED_SITE_URL: &str = "https://github.com/micthiesen/omni-notify";
+const FEED_SITE_URL: &str = "https://github.com/micthiesen/omni";
 const FEED_LANGUAGE: &str = "en";
 const FEED_GENERATOR: &str = "Podcast for Node";
 

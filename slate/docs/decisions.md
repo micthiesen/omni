@@ -59,14 +59,14 @@ with a USB radio co-processor. **The study assumed "a Thread border router" with
 saying whose.** Apple's border routers do not hand their network credentials to a
 non-Matter device without an iOS app reading them with the user's consent, and reaching
 boris from their off-mesh routes would depend on Router Advertisement route options being
-accepted on a Docker host. An OTBR on boris owns its dataset, and the Omni Notify container
+accepted on a Docker host. An OTBR on boris owns its dataset, and the Omni container
 reaches the mesh through a route on the same host. Two Thread networks on different
 channels coexist without trouble. See [infrastructure.md](infrastructure.md).
 
 **Gate G-03:** choose the RCP hardware (BOM candidates) and stand up OTBR on boris before
 the firmware network bring-up (`OTBR-BRINGUP`).
 
-No Matter: Omni Notify owns both ends of the protocol, so Matter would add commissioning
+No Matter: Omni owns both ends of the protocol, so Matter would add commissioning
 and data-model machinery without reducing power or board complexity. No raw 802.15.4: the
 packet energy it saves is negligible next to the panel, and it would mean owning
 association, security and a gateway.
@@ -94,7 +94,7 @@ mesh prefix and provisioned device ids; no DTLS in Rev A.
 
 ### D-09 Server-side rendering and refresh policy
 
-Omni Notify renders every frame in the panel's native format and decides when a new
+Omni renders every frame in the panel's native format and decides when a new
 version exists: it coalesces changes, holds quiet hours, and enforces a daily refresh cap.
 Because refreshes dominate energy, this policy is the battery-life control and belongs
 where the content is known. Every frame includes a rendered "updated at" time, so a stale

@@ -3088,6 +3088,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "futures",
+ "indexmap 2.14.2",
+ "jiff",
+ "omni-ai",
+ "omni-alerts",
+ "omni-api",
+ "omni-arr",
+ "omni-calendar",
+ "omni-config",
+ "omni-core",
+ "omni-device-link",
+ "omni-email",
+ "omni-http",
+ "omni-imap",
+ "omni-ios-controls",
+ "omni-live",
+ "omni-live-intel",
+ "omni-mailer",
+ "omni-mcp",
+ "omni-mcp-kit",
+ "omni-media",
+ "omni-parcel",
+ "omni-personal",
+ "omni-podcasts",
+ "omni-presspods",
+ "omni-reminders",
+ "omni-runtime",
+ "omni-server-kit",
+ "omni-store",
+ "omni-stylist",
+ "omni-tasks",
+ "omni-testkit",
+ "rand 0.10.3",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "omni-ai"
 version = "0.1.0"
 dependencies = [
@@ -3583,58 +3635,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "wiremock",
-]
-
-[[package]]
-name = "omni-notify"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "futures",
- "indexmap 2.14.2",
- "jiff",
- "omni-ai",
- "omni-alerts",
- "omni-api",
- "omni-arr",
- "omni-calendar",
- "omni-config",
- "omni-core",
- "omni-device-link",
- "omni-email",
- "omni-http",
- "omni-imap",
- "omni-ios-controls",
- "omni-live",
- "omni-live-intel",
- "omni-mailer",
- "omni-mcp",
- "omni-mcp-kit",
- "omni-media",
- "omni-parcel",
- "omni-personal",
- "omni-podcasts",
- "omni-presspods",
- "omni-reminders",
- "omni-runtime",
- "omni-server-kit",
- "omni-store",
- "omni-stylist",
- "omni-tasks",
- "omni-testkit",
- "rand 0.10.3",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

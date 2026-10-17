@@ -93,7 +93,7 @@ fn summary(overrides: Value) -> Value {
     let mut base = json!({
         "id": "25ffb449",
         "session_id": SESSION,
-        "project": "omni-notify",
+        "project": "omni",
         "status": "idle",
         "state": "idle",
         "revision": 4,
@@ -256,13 +256,13 @@ async fn publishes_each_finished_turn_once_after_a_baseline() {
     assert_eq!(deliveries[0].name, "claude.session.turn_finished");
     assert_eq!(
         Value::Object(deliveries[0].data_json()),
-        json!({"sessionId": SESSION, "id": "25ffb449", "project": "omni-notify", "status": "idle", "revision": 6})
+        json!({"sessionId": SESSION, "id": "25ffb449", "project": "omni", "status": "idle", "revision": 6})
     );
 }
 
 #[tokio::test(start_paused = true)]
 async fn catches_a_turn_omni_started_that_ended_before_the_next_poll() {
-    let setup = Setup::new(Some("omni-notify")).await;
+    let setup = Setup::new(Some("omni")).await;
     setup.subscribe().await;
     setup
         .watcher
@@ -305,7 +305,7 @@ async fn reads_a_mid_turn_session_that_stopped_and_left_the_running_list() {
     assert_eq!(deliveries.len(), 1);
     let data = Value::Object(deliveries[0].data_json());
     assert_eq!(data["status"], "stopped");
-    assert_eq!(data["project"], "omni-notify");
+    assert_eq!(data["project"], "omni");
     assert_eq!(data["revision"], 5);
 }
 

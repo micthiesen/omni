@@ -6,7 +6,7 @@
 //!
 //! - console: `HH:mm:ss.mmm [LEVEL] <target> msg`, debug/info to stdout and
 //!   warn/error to stderr, at `LOG_LEVEL`;
-//! - optional daily file under `LOGS_PATH` (`omni-notify-YYYY-MM-DD.log`, local
+//! - optional daily file under `LOGS_PATH` (`omni-YYYY-MM-DD.log`, local
 //!   date, 14-day retention swept on the first write);
 //! - [`RunLogLayer`] (unfiltered; attribution by span);
 //! - [`AlertLayer`] (ERROR only, gated and throttled by its worker).
@@ -203,7 +203,7 @@ impl DailyFileLayer {
             .to_zoned(self.tz.clone())
             .strftime("%Y-%m-%d")
             .to_string();
-        format!("omni-notify-{date}.log")
+        format!("omni-{date}.log")
     }
 
     fn report(state: &mut FileState, what: &str, error: &dyn std::fmt::Display) {
@@ -255,7 +255,7 @@ impl DailyFileLayer {
     }
 }
 
-/// Deletes `omni-notify-*.log` files whose mtime is older than `retain_days`.
+/// Deletes `omni-*.log` files whose mtime is older than `retain_days`.
 pub fn sweep_old(directory: &Path, now_ms: i64, retain_days: i64) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;
@@ -268,7 +268,7 @@ pub fn sweep_old(directory: &Path, now_ms: i64, retain_days: i64) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.starts_with("omni-notify-") || !name.ends_with(".log") {
+        if !name.starts_with("omni-") || !name.ends_with(".log") {
             continue;
         }
         let old = entry
@@ -414,16 +414,13 @@ mod tests {
             omni_core::clock::TestClock::new(0),
         );
         // 2026-10-09T02:00:00Z is still Oct 8 in Toronto.
-        assert_eq!(
-            layer.file_name(1_791_511_200_000),
-            "omni-notify-2026-10-08.log"
-        );
+        assert_eq!(layer.file_name(1_791_511_200_000), "omni-2026-10-08.log");
     }
 
     #[test]
     fn sweeps_only_old_omni_logs() {
         let dir = tempfile::tempdir().unwrap();
-        let old = dir.path().join("omni-notify-2020-01-01.log");
+        let old = dir.path().join("omni-2020-01-01.log");
         let other = dir.path().join("other.log");
         std::fs::write(&old, "x").unwrap();
         std::fs::write(&other, "x").unwrap();

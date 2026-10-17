@@ -1,13 +1,13 @@
 //! Command-line parsing (no flag library: the surface is small and fixed).
 //!
 //! ```text
-//! omni-notify [--server-only] [--side-effects=live|record] [--web-dist DIR]
-//! omni-notify --run-task <Name>
-//! omni-notify --preview [--port N]
-//! omni-notify healthcheck
-//! omni-notify doctor [--image]
-//! omni-notify compat-audit --db COPY
-//! omni-notify stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
+//! omni [--server-only] [--side-effects=live|record] [--web-dist DIR]
+//! omni --run-task <Name>
+//! omni --preview [--port N]
+//! omni healthcheck
+//! omni doctor [--image]
+//! omni compat-audit --db COPY
+//! omni stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
 //! ```
 //!
 //! `OMNI_SIDE_EFFECTS=record` selects record mode for shadow runs like the
@@ -63,15 +63,15 @@ pub enum CliError {
 }
 
 pub const USAGE: &str = "usage:
-  omni-notify [--server-only] [--side-effects=live|record] [--web-dist DIR]
-  omni-notify --run-task <TaskName> [--side-effects=live|record]
-  omni-notify --preview [--port N] [--web-dist DIR]
-  omni-notify healthcheck
-  omni-notify doctor [--image]
-  omni-notify compat-audit --db COPY
-  omni-notify stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
-  omni-notify stylist-verify --archive FILE [--private DIR]
-  omni-notify stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
+  omni [--server-only] [--side-effects=live|record] [--web-dist DIR]
+  omni --run-task <TaskName> [--side-effects=live|record]
+  omni --preview [--port N] [--web-dist DIR]
+  omni healthcheck
+  omni doctor [--image]
+  omni compat-audit --db COPY
+  omni stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
+  omni stylist-verify --archive FILE [--private DIR]
+  omni stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
 ";
 
 fn side_effects(value: &str) -> Result<SideEffectMode, CliError> {

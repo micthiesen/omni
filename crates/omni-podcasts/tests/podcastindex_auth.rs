@@ -64,7 +64,7 @@ fn returns_all_four_required_headers() {
         header(&headers, "Authorization"),
         podcast_index_auth_hash("my-key", "my-secret", "1700000000")
     );
-    assert_eq!(header(&headers, "User-Agent"), "omni-notify/1.0");
+    assert_eq!(header(&headers, "User-Agent"), "omni/1.0");
 }
 
 #[test]

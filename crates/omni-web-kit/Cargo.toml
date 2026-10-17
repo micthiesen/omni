@@ -1,6 +1,6 @@
 [package]
 name = "omni-web-kit"
-description = "Leptos CSR kit for the Omni Notify frontend: API client, live data, hooks, components, charts, markdown, utils."
+description = "Leptos CSR kit for the Omni frontend: API client, live data, hooks, components, charts, markdown, utils."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

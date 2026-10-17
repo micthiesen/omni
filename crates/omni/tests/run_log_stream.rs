@@ -47,8 +47,8 @@ impl Task for Gated {
 }
 
 fn logging(app: &TestApp) -> impl tracing::Subscriber + Send + Sync {
-    omni_notify::logging::subscriber(
-        omni_notify::logging::LoggingSetup {
+    omni::logging::subscriber(
+        omni::logging::LoggingSetup {
             level: omni_core::LogLevel::Error,
             logs_path: None,
             tz: jiff::tz::TimeZone::UTC,

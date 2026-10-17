@@ -1,6 +1,6 @@
 [package]
 name = "omni-web-pages"
-description = "Omni Notify frontend domain pages (media, podcasts, pods, workspaces, pets, reminders, briefings, MCP, Claude)."
+description = "Omni frontend domain pages (media, podcasts, pods, workspaces, pets, reminders, briefings, MCP, Claude)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

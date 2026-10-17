@@ -1,13 +1,13 @@
 # Overview
 
 Omni Slate is a battery-powered 13.3-inch four-colour e-paper display that shows a
-dashboard rendered by Omni Notify. It hangs on a wall, refreshes when the content changes,
+dashboard rendered by Omni. It hangs on a wall, refreshes when the content changes,
 and should run six months to a year between charges.
 
 ## Rev A architecture
 
 ```text
-Omni Notify (boris)                     Slate
+Omni (boris)                     Slate
   renderer -> frame versions             ESP32-H2 Thread sleepy end device
   CoAP endpoint  <--- UDP/IPv6 --->      check every ~60 s, fetch on change
   OpenThread Border Router + RCP         SSD2677 panel on a switched 3.3 V rail
@@ -42,7 +42,7 @@ is why the refresh policy lives on the server ([protocol.md](protocol.md)).
 | [electrical.md](electrical.md) | Power tree, panel interface, pin map, PCB handoff |
 | [firmware.md](firmware.md) | Device behaviour contract and firmware stack |
 | [protocol.md](protocol.md) | Wire contract and server refresh policy |
-| [infrastructure.md](infrastructure.md) | Border router and Omni Notify server side |
+| [infrastructure.md](infrastructure.md) | Border router and Omni server side |
 | [power-budget.md](power-budget.md) | Energy model and battery sizing |
 | [mechanical.md](mechanical.md) | Envelope reservations for the enclosure |
 | [build.md](build.md) | Build sequence and procurement gates |

@@ -389,7 +389,7 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
     );
     Effect::new(move |_| {
         if let Some(name) = display.get() {
-            document().set_title(&format!("{name} Intelligence · Omni Notify"));
+            document().set_title(&format!("{name} Intelligence · Omni"));
         }
     });
     use_page_label(move || Some("Intelligence".to_owned()));

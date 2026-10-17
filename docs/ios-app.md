@@ -249,7 +249,7 @@ In **developer.apple.com/account > Certificates, Identifiers & Profiles**:
 4. Under **Keys**, create a key with Apple Push Notifications service access
    and download the `.p8` file. Apple offers the download only once. The same
    key works for development and production APNs.
-5. Copy the key to `/home/michael/compose/volumes/omni-notify/AuthKey_KEYID.p8`
+5. Copy the key to `/home/michael/compose/volumes/omni/AuthKey_KEYID.p8`
    on boris (`/data/AuthKey_KEYID.p8` in the container). Keep it out of Git.
 
 Each device reports its APNs environment (`sandbox` for development-signed

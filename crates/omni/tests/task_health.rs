@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use omni_notify::task_health::{self, HealthNote};
+use omni::task_health::{self, HealthNote};
 use omni_store::entity::EntityOps as _;
 use omni_tasks::health::TaskHealthIncident;
 use omni_tasks::persistence::{self, RunEnd};

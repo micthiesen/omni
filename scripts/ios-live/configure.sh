@@ -69,7 +69,7 @@ destination="$IOS_PROJECT_DIR/Config/Local.xcconfig"
 chmod 600 "$destination"
 
 echo "Wrote $destination"
-echo "Set the same server secret in Omni Notify:"
+echo "Set the same server secret in Omni:"
 echo "IOS_CONTROL_AUTH_TOKEN=$token"
 if [[ "$generated" == true ]]; then
   echo "A new random token was generated. Save the line above in the server environment."

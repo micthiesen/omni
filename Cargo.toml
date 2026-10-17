@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-default-members = ["crates/omni-notify"]
+default-members = ["crates/omni"]
 
 [workspace.package]
 version = "0.1.0"

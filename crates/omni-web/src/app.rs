@@ -32,7 +32,7 @@ fn NotFound(path: Memo<String>) -> impl IntoView {
     view! {
         <div class="not-found-page">
             <h1 class="page-title">"Nothing at " <span class="mono">{move || path.get()}</span></h1>
-            <p class="lede">"This link does not lead to a page in Omni Notify."</p>
+            <p class="lede">"This link does not lead to a page in Omni."</p>
             <div class="cluster">
                 <ButtonLink to="/" variant=ButtonVariant::Primary icon=Icon::Home>"Home"</ButtonLink>
                 {shell.map(|shell| view! {

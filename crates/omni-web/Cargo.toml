@@ -1,6 +1,6 @@
 [package]
 name = "omni-web"
-description = "Omni Notify single-page app (Leptos CSR, built by trunk): router, shell and ops pages."
+description = "Omni single-page app (Leptos CSR, built by trunk): router, shell and ops pages."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

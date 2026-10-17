@@ -99,7 +99,7 @@ COPY --from=sherpa-lib /opt/sherpa-onnx /opt/sherpa-onnx
 ENV SHERPA_ONNX_ARCHIVE_DIR=/opt/sherpa-onnx
 COPY --from=planner /src/recipe.json recipe.json
 RUN cargo chef cook --release --locked --recipe-path recipe.json \
-    -p omni-notify -p omni-live-intel
+    -p omni -p omni-live-intel
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo ./.cargo
 # Crates the server never links keep their cargo-chef skeletons, so frontend,
@@ -109,10 +109,10 @@ COPY --exclude=omni-web --exclude=omni-web-kit --exclude=omni-web-pages \
   crates ./crates
 # One invocation with the cook's package set: dependency features then match the
 # cooked layer exactly, and shared workspace crates compile once.
-RUN cargo build --release --locked -p omni-notify -p omni-live-intel \
-      --bin omni-notify --bin omni-voice-enroll --bin omni-intel-doctor \
+RUN cargo build --release --locked -p omni -p omni-live-intel \
+      --bin omni --bin omni-voice-enroll --bin omni-intel-doctor \
     && mkdir -p /out \
-    && install -m 0755 target/release/omni-notify target/release/omni-voice-enroll \
+    && install -m 0755 target/release/omni target/release/omni-voice-enroll \
       target/release/omni-intel-doctor /out/
 
 # --- Web frontend ---
@@ -198,7 +198,7 @@ USER node
 # firequalizer and libmp3lame, the denoise model, the brlaser filter and PPD,
 # cupsfilter, pdfinfo, the sherpa models and a runnable yt-dlp. It reads only
 # the tool and model paths, so it needs no runtime secrets.
-RUN omni-notify doctor --image
+RUN omni doctor --image
 
 # The commit this image was built from (CI passes it); after the doctor so a new
 # revision rebuilds no layer. Open pages compare it to offer a reload.
@@ -207,7 +207,7 @@ ENV OMNI_IMAGE_REVISION=${OMNI_REVISION}
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["omni-notify", "healthcheck"]
+  CMD ["omni", "healthcheck"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["omni-notify"]
+CMD ["omni"]

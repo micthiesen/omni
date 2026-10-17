@@ -9,7 +9,7 @@ services:
       # rotated token reaches the adapter on the next deploy check.
       OMNI_MCP_TOKEN: ${OMNI_MCP_TOKEN:?Set OMNI_MCP_TOKEN in the main Compose .env}
       EXECUTOR_BASE_URL: http://executor:4788
-      OMNI_BASE_URL: http://omni-notify:8080
+      OMNI_BASE_URL: http://omni:8080
       PUBLIC_MCP_ORIGIN: https://mcp.syas.ca
       EXECUTOR_ALLOWED_USER_ID: ${EXECUTOR_ALLOWED_USER_ID:?Set the existing Executor owner ID}
       PORT: "4789"

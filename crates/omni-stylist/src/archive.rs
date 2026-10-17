@@ -812,7 +812,7 @@ impl Stylist {
         if !target.is_fixture() && !allow_real {
             return Err(reject(
                 "namespace",
-                "restoring into real is an operator action (omni-notify stylist-restore --allow-real); restore into a fixture namespace",
+                "restoring into real is an operator action (omni stylist-restore --allow-real); restore into a fixture namespace",
             ));
         }
         self.ready().await?;

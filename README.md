@@ -1,17 +1,17 @@
 <p align="center"><img src="crates/omni-web/icons/icon-192.png" width="96" height="96" alt="Omni logo: a lime orbit ring brightening into a leading dot"></p>
 
-# Omni Notify
+# Omni
 
 Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs email pipelines, media and podcast recommendations, PressPods, and Arr download recovery, all exposed through a web UI and an authenticated MCP endpoint.
 
-Omni Notify is a Rust workspace. One `omni-notify` binary runs every scheduled task and serves the JSON API, the `/mcp` endpoint and a Leptos single-page frontend from one HTTP port, over a SQLite document store. See [the architecture overview](docs/architecture.md) for the crate layout, boot order and deployment pipeline.
+Omni is a Rust workspace. One `omni` binary runs every scheduled task and serves the JSON API, the `/mcp` endpoint and a Leptos single-page frontend from one HTTP port, over a SQLite document store. See [the architecture overview](docs/architecture.md) for the crate layout, boot order and deployment pipeline.
 
 ## Quick Start
 
 ```yaml
 services:
-  omni-notify:
-    image: ghcr.io/micthiesen/omni-notify:latest
+  omni:
+    image: ghcr.io/micthiesen/omni:latest
     environment:
       - PUSHOVER_TOKEN=xxx
       - PUSHOVER_USER=xxx
@@ -49,13 +49,13 @@ Destiny guest detection runs only on third-party DGG streams. It requires two mu
 Metered calls are restricted to `openai:gpt-6-luna` and capped at $3 per calendar month. Local audio inference records zero-cost usage events on the Costs page. Generate the persistent Destiny voiceprint inside the production container from at least two public clips where he is the only common speaker:
 
 ```bash
-docker exec omni-notify omni-voice-enroll \
+docker exec omni omni-voice-enroll \
   --source 'https://www.youtube.com/watch?v=FIRST' --seek 600 \
   --source 'https://www.youtube.com/watch?v=SECOND' --seek 600 \
   --output /data/livestream-intelligence/destiny.json
 ```
 
-Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.json` after enrollment. `docker exec omni-notify omni-intel-doctor --url <URL>` captures a bounded sample and reports transcript speed and speaker-match evidence.
+Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.json` after enrollment. `docker exec omni omni-intel-doctor --url <URL>` captures a bounded sample and reports transcript speed and speaker-match evidence.
 
 If the bundled speech or speaker model files are missing, empty or corrupt, boot logs `Livestream intelligence disabled: ...` and the rest of the service, including live checks, keeps running.
 
@@ -143,7 +143,7 @@ Transient failures (TTS 429/5xx, network blips) retry automatically with backoff
 
 ## Web UI
 
-The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard, a Leptos single-page app built by trunk and served from `OMNI_WEB_DIST`:
+The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni dashboard, a Leptos single-page app built by trunk and served from `OMNI_WEB_DIST`:
 
 - `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
@@ -185,7 +185,7 @@ file is generated from the same definitions registered by the server and is
 checked in tests for drift. See [the MCP operations guide](docs/mcp.md) for the
 transport, authentication, tool-family, and deployment contract.
 
-To iterate on the frontend without real credentials, `omni-notify --preview` boots the real server over a throwaway database seeded with fake streamers, runs, recommendations, email activity and a pet, with every side effect recorded and outgoing HTTP refused (see [Development](#development)).
+To iterate on the frontend without real credentials, `omni --preview` boots the real server over a throwaway database seeded with fake streamers, runs, recommendations, email activity and a pet, with every side effect recorded and outgoing HTTP refused (see [Development](#development)).
 
 ## AI Model Configuration
 
@@ -298,14 +298,14 @@ cargo fmt --all                   # format
 (cd crates/omni-web && trunk serve)
 
 # Run against .env (FRONTEND_PORT defaults to 3000)
-dotenvx run -- cargo run -p omni-notify -- --web-dist crates/omni-web/dist
+dotenvx run -- cargo run -p omni -- --web-dist crates/omni-web/dist
 
 # Fake data, no credentials, nothing leaves the machine
-DB_NAME=/tmp/omni-preview.db cargo run -p omni-notify -- --preview --port 3999 \
+DB_NAME=/tmp/omni-preview.db cargo run -p omni -- --preview --port 3999 \
   --web-dist crates/omni-web/dist
 ```
 
-Other `omni-notify` modes: `--server-only` (HTTP without the scheduler),
+Other `omni` modes: `--server-only` (HTTP without the scheduler),
 `--run-task <Name>` (one task, then exit), `--side-effects=record` (record every
 outgoing mutation instead of sending it), `healthcheck`, `doctor [--image]`, and
 `compat-audit --db <copy>`. `cargo xtask help` lists the

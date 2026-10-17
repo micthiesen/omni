@@ -1,4 +1,4 @@
-//! Shared helpers for the omni-notify integration tests.
+//! Shared helpers for the omni integration tests.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
 use std::time::Duration;
@@ -7,8 +7,8 @@ use axum::Router;
 use axum::body::{Body, BodyDataStream};
 use axum::http::{Request, StatusCode, header};
 use futures::StreamExt as _;
-use omni_notify::data_manager::DataManager;
-use omni_notify::ops::{OpsState, router};
+use omni::data_manager::DataManager;
+use omni::ops::{OpsState, router};
 use omni_runtime::AppContext;
 use tower::ServiceExt as _;
 

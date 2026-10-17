@@ -30,13 +30,13 @@ fn spawn_host(link: DeviceLinkService) -> tokio::task::JoinHandle<()> {
                 let outcome = match job.command {
                     DeviceCommand::Projects => DeviceJobOutcome::Output(json!({
                         "v": 1, "ok": true,
-                        "data": {"projects": [{"name": "omni-notify", "path": "/Users/michael/Code/omni-notify", "exists": true}]}
+                        "data": {"projects": [{"name": "omni", "path": "/Users/michael/Code/omni", "exists": true}]}
                     })),
                     DeviceCommand::List => DeviceJobOutcome::Output(json!({
                         "v": 1, "ok": true,
                         "data": {"sessions": [{
                             "session_id": "abc-123", "status": "idle", "revision": 2,
-                            "cwd": "/Users/michael/Code/omni-notify",
+                            "cwd": "/Users/michael/Code/omni",
                             "last_assistant": "Built it on MaxBook."
                         }]}
                     })),
@@ -69,12 +69,12 @@ async fn claude_tools_reach_the_host_only_through_the_long_poll_and_never_name_i
     let status = call_tool(&router, "claude_link_status", json!({})).await;
     let body = &status["result"]["structuredContent"];
     assert_eq!(body["online"], true);
-    assert_eq!(body["projects"][0]["path"], "~/Code/omni-notify");
+    assert_eq!(body["projects"][0]["path"], "~/Code/omni");
     assert!(body.get("host").is_none());
 
     let listed = call_tool(&router, "claude_sessions_list", json!({})).await;
     let session = &listed["result"]["structuredContent"]["sessions"][0];
-    assert_eq!(session["cwd"], "~/Code/omni-notify");
+    assert_eq!(session["cwd"], "~/Code/omni");
     assert_eq!(session["lastAssistant"], "Built it on the host.");
 
     let failed = call_tool(

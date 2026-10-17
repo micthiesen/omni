@@ -1273,7 +1273,7 @@ async fn matches_claude_turn_events_to_subscribed_projects() {
         "Event subscription rejected: invalid_arguments"
     );
     events
-        .subscribe(&claude(json!({"project": "omni-notify"}), URL), None)
+        .subscribe(&claude(json!({"project": "omni"}), URL), None)
         .await
         .unwrap();
     events
@@ -1298,7 +1298,7 @@ async fn matches_claude_turn_events_to_subscribed_projects() {
             .unwrap(),
     }
     };
-    events.publish(turn("omni-notify", 3)).await.unwrap();
+    events.publish(turn("omni", 3)).await.unwrap();
     events.publish(turn("dotfiles", 4)).await.unwrap();
     events.publish(turn("dotfiles", 4)).await.unwrap();
     assert_eq!(deliveries(&db.store).await.len(), 3);

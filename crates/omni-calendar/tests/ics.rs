@@ -100,7 +100,7 @@ fn full_body_is_byte_exact() {
     let ics = build_icalendar(&e, "uid-1@omni-notify", GENERATED_AT, "America/Vancouver");
     assert_eq!(
         ics,
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//omni-notify//EN\r\nCALSCALE:GREGORIAN\r\n\
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//omni//EN\r\nCALSCALE:GREGORIAN\r\n\
 BEGIN:VEVENT\r\nUID:uid-1@omni-notify\r\nDTSTAMP:20260901T123456Z\r\n\
 SUMMARY:🚧 Elevator Maintenance\r\nDTSTART;TZID=America/Vancouver:20260706T090000\r\n\
 DTEND;TZID=America/Vancouver:20260706T160000\r\nLOCATION:Building A\\, Lobby\\; East\r\n\

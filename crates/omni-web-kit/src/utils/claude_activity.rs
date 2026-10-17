@@ -590,8 +590,8 @@ mod tests {
             "sessionId": FULL_ID,
             "kind": "background",
             "title": "Fix the build",
-            "cwd": "/Users/michael/Code/omni-notify",
-            "project": "omni-notify",
+            "cwd": "/Users/michael/Code/omni",
+            "project": "omni",
             "status": status,
             "state": null,
             "startedAt": null,
@@ -630,7 +630,7 @@ mod tests {
                 call("c1", "claude_session_start"),
                 10,
                 McpCallStatus::Ok,
-                json!({"project": "omni-notify", "prompt": "Fix it"}),
+                json!({"project": "omni", "prompt": "Fix it"}),
                 json!({"session": session("busy", 1), "reused": false}),
             ),
         ];
@@ -655,7 +655,7 @@ mod tests {
             ["c1", "c2", "c4"]
         );
         assert_eq!(group.status.as_deref(), Some("idle"));
-        assert_eq!(group.project.as_deref(), Some("omni-notify"));
+        assert_eq!(group.project.as_deref(), Some("omni"));
         assert_eq!(group.latest_at, 40);
         assert!(group.latest_failed);
     }
@@ -740,10 +740,10 @@ mod tests {
             call("l", "claude_sessions_list"),
             0,
             McpCallStatus::Ok,
-            json!({"project": "omni-notify"}),
+            json!({"project": "omni"}),
             json!({"sessions": [{}, {}]}),
         );
-        assert_eq!(summarize_compact_action(&list), "2 sessions in omni-notify");
+        assert_eq!(summarize_compact_action(&list), "2 sessions in omni");
         let read = with(
             call("r", "claude_session_read"),
             0,

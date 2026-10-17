@@ -93,7 +93,7 @@ async fn records_successful_claude_calls_with_their_output_and_others_without() 
     let claude = recorder
         .start(
             meta("claude_session_start"),
-            &json!({"project": "omni-notify", "prompt": "Do it", "idempotencyKey": "k"}),
+            &json!({"project": "omni", "prompt": "Do it", "idempotencyKey": "k"}),
         )
         .await;
     claude
@@ -127,7 +127,7 @@ async fn records_successful_claude_calls_with_their_output_and_others_without() 
     );
     assert_eq!(
         omni_mcp::events::persistence::js_to_json(&claude.input),
-        json!({"project": "omni-notify", "prompt": "Do it", "idempotencyKey": "k"})
+        json!({"project": "omni", "prompt": "Do it", "idempotencyKey": "k"})
     );
     assert_eq!(
         omni_mcp::events::persistence::js_to_json(&claude.output),
