@@ -8,7 +8,7 @@ background services over one SQLite document store. A second binary,
 ## Crate layout
 
 The workspace (`Cargo.toml`, `members = ["crates/*"]`) has four layers. Crate
-names are `omni-*`; library names are `omni_*`.
+names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
 
 - **Foundation:** `omni-core`, `omni-config`, `omni-store`, `omni-tasks`,
   `omni-http`, `omni-alerts`, `omni-mailer`, `omni-ai`, `omni-server-kit`,

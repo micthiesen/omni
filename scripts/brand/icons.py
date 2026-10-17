@@ -28,6 +28,10 @@ LEAD = -45.0  # dot angle, degrees clockwise from 3 o'clock
 GAP = 31.0  # angle from the dot to each end of the ring
 SEGMENTS = 180
 
+# Bump when the artwork changes: iOS caches Home Screen icons by URL, so
+# installed web apps only pick up a new icon under a new file name.
+VERSION = 2
+
 DIM = "#34461a"
 MID = "#8fbb41"
 HI = "#d8fa94"
@@ -138,6 +142,22 @@ def render(svg_text, size, out):
     pathlib.Path(f.name).unlink()
 
 
+MANIFEST = """{
+  "name": "Omni",
+  "short_name": "Omni",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0b0d",
+  "theme_color": "#0a0b0d",
+  "icons": [
+    { "src": "/icons/icon-192-v{v}.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512-v{v}.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512-v{v}.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+"""
+
+
 def write_ico(png, out):
     """An ICO holding one 32 px PNG, for clients that only ask for /favicon.ico."""
     data = png.read_bytes()
@@ -159,10 +179,15 @@ def main():
     (WEB / "favicon.svg").write_text(small)
     render(small, 32, WEB / "favicon-32.png")
     write_ico(WEB / "favicon-32.png", WEB / "favicon.ico")
+    for old in WEB.glob("*-v*.png"):
+        old.unlink()
+    render(full, 180, WEB / f"apple-touch-icon-v{VERSION}.png")
+    # Browsers that only probe /apple-touch-icon.png get the same image.
     render(full, 180, WEB / "apple-touch-icon.png")
-    render(rounded, 192, WEB / "icon-192.png")
-    render(rounded, 512, WEB / "icon-512.png")
-    render(full, 512, WEB / "icon-maskable-512.png")
+    render(rounded, 192, WEB / f"icon-192-v{VERSION}.png")
+    render(rounded, 512, WEB / f"icon-512-v{VERSION}.png")
+    render(full, 512, WEB / f"icon-maskable-512-v{VERSION}.png")
+    (WEB / "manifest.webmanifest").write_text(MANIFEST.replace("{v}", str(VERSION)))
 
     # iOS 18+ appearances: dark and tinted variants sit on a system backdrop.
     render(full, 1024, IOS / "OmniIcon.png")

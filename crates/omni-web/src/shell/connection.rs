@@ -1,6 +1,8 @@
 //! The connection readout (rail footer and phone top bar), mapped 1:1 onto
 //! `ConnectionState`, plus the "Update" state once a snapshot reports a newer
-//! build. The dot pops once per snapshot; activating it always reloads.
+//! build. The mark is the Omni orbit: it turns slowly while live and its dot
+//! pops once per snapshot, holds still while polling, spins a short arc while
+//! reconnecting and breaks apart offline. Activating it always reloads.
 
 use leptos::html::Span;
 use leptos::prelude::*;
@@ -77,10 +79,15 @@ pub fn Connection(#[prop(optional)] compact: bool) -> impl IntoView {
         }
         updated
     });
-    let dot_class = move || {
+    let mark_class = move || {
         let (tone, _, _) = copy.get();
-        let pulse = live.connection.get() == ConnectionState::Connecting && tone == "warn";
-        format!("conn-dot {tone}{}", if pulse { " pulse" } else { "" })
+        let motion = match (live.connection.get(), tone) {
+            (_, "fault") => "",
+            (ConnectionState::Live, _) => " orbiting",
+            (ConnectionState::Connecting, _) => " seeking",
+            (ConnectionState::Polling, _) => "",
+        };
+        format!("conn-mark {tone}{motion}")
     };
     let update = move || live.build_change.get().is_some();
     let label = move || {
@@ -107,13 +114,50 @@ pub fn Connection(#[prop(optional)] compact: bool) -> impl IntoView {
                 let _ = window().location().reload();
             }
         >
-            <span node_ref=dot class=dot_class aria-hidden="true"></span>
+            <span node_ref=dot class=mark_class aria-hidden="true">
+                <ConnectionMark/>
+            </span>
             {(!compact).then(|| view! { <span role="status">{move || copy.get().1}</span> })}
             <Show when=update>
                 <span class="conn-update">"Update"</span>
             </Show>
             {(!compact).then(|| view! { <span class="detail num">{move || copy.get().2}</span> })}
         </button>
+    }
+}
+
+/// The orbit mark at 16 px: a faint track, a trail that brightens toward its
+/// head, the leading dot and the halo that breathes while an update waits.
+/// Geometry matches `scripts/brand/icons.py` (dot at the upper right, the ring
+/// ending 35 degrees either side of it).
+#[component]
+fn ConnectionMark() -> impl IntoView {
+    view! {
+        <svg class="conn-orbit" viewBox="0 0 16 16" width="16" height="16">
+            <circle class="track" cx="8" cy="8" r="5.5"/>
+            <g class="spin">
+                <circle
+                    class="trail"
+                    cx="8"
+                    cy="8"
+                    r="5.5"
+                    pathLength="360"
+                    stroke-dasharray="290 70"
+                    transform="rotate(-10 8 8)"
+                />
+                <circle
+                    class="head"
+                    cx="8"
+                    cy="8"
+                    r="5.5"
+                    pathLength="360"
+                    stroke-dasharray="110 250"
+                    transform="rotate(170 8 8)"
+                />
+                <circle class="halo" cx="11.89" cy="4.11" r="3.2"/>
+                <circle class="dot" cx="11.89" cy="4.11" r="1.9"/>
+            </g>
+        </svg>
     }
 }
 

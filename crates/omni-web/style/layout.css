@@ -156,11 +156,38 @@ a.rail-label:hover { color: var(--text); }
 }
 .conn:hover { background: var(--hover); }
 .conn .detail { margin-left: auto; color: var(--text-3); font: var(--t-read-s); }
-.conn-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 3px var(--signal-wash); }
-.conn-dot.pop { animation: pop 600ms var(--ease); }
-.conn-dot.warn { border-radius: 1px; background: var(--warn); box-shadow: none; transform: rotate(45deg); width: 6px; height: 6px; }
-.conn-dot.warn.pulse { animation: breathe 1.2s ease-in-out infinite; }
-.conn-dot.fault { border-radius: 1px; background: var(--fault); box-shadow: none; }
+/* The orbit mark (docs/design-system.md 8.1). Color comes from the tone;
+   shape and motion say the state without it. */
+.conn-mark { --mark: var(--signal); display: grid; place-items: center; flex: none; width: 16px; height: 16px; color: var(--mark); }
+.conn-mark.warn { --mark: var(--warn); }
+.conn-mark.fault { --mark: var(--fault); }
+.conn-orbit { display: block; overflow: visible; fill: none; stroke: currentColor; stroke-width: 2; }
+.conn-orbit .track { stroke-opacity: 0.12; }
+.conn-orbit .trail { stroke-opacity: 0.4; }
+.conn-orbit .dot { fill: currentColor; stroke: none; transform-box: fill-box; transform-origin: center; }
+.conn-orbit .halo { stroke: var(--signal); stroke-width: 1; stroke-opacity: 0; transform-box: fill-box; transform-origin: center; }
+.conn-orbit .spin { transform-box: view-box; transform-origin: 50% 50%; }
+/* Live: one slow turn every 14 s, and the dot pops on each snapshot. */
+.conn-mark.orbiting .spin { animation: spin 14s linear infinite; }
+.conn-mark.pop .dot { animation: pop 600ms var(--ease); }
+/* Polling: still, with a shorter trail. */
+.conn-mark.warn .trail { stroke-opacity: 0.25; }
+/* Reconnecting: only the head, chasing round quickly. */
+.conn-mark.seeking .trail { stroke-opacity: 0; }
+.conn-mark.seeking .spin { animation: spin 1.1s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+/* Offline: the ring breaks into dashes and the dot falls out of orbit. */
+.conn-mark.fault .trail, .conn-mark.fault .head { stroke-opacity: 0; }
+.conn-mark.fault .track { stroke-opacity: 0.55; stroke-dasharray: 2.2 2.6; }
+.conn-mark.fault .dot { transform: translate(1px, -1px) scale(0.85); }
+/* A newer build is serving: a halo breathes around the dot. */
+.conn.has-update .conn-orbit .halo { animation: halo 2.4s ease-in-out infinite; }
+@keyframes halo {
+  0%, 100% { stroke-opacity: 0; transform: scale(0.7); }
+  50% { stroke-opacity: 0.8; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conn.has-update .conn-orbit .halo { stroke-opacity: 0.7; }
+}
 .conn.warn { color: var(--warn); }
 .conn.fault { color: var(--fault); }
 /* A newer build is serving: a Signal tag beside the dot ("this just changed"). */
@@ -182,7 +209,7 @@ a.rail-label:hover { color: var(--text); }
   padding-right: var(--sp-2);
   align-items: center;
 }
-.app[data-rail="collapsed"] .rail .label, .app[data-rail="collapsed"] .rail-search > span, .app[data-rail="collapsed"] .rail-search .kbd, .app[data-rail="collapsed"] .rail-label, .app[data-rail="collapsed"] .rail-stream, .app[data-rail="collapsed"] .rail-empty, .app[data-rail="collapsed"] .rail-item .count, .app[data-rail="collapsed"] .rail-item .kbd, .app[data-rail="collapsed"] .conn .detail, .app[data-rail="collapsed"] .conn > span:not(.conn-dot) {
+.app[data-rail="collapsed"] .rail .label, .app[data-rail="collapsed"] .rail-search > span, .app[data-rail="collapsed"] .rail-search .kbd, .app[data-rail="collapsed"] .rail-label, .app[data-rail="collapsed"] .rail-stream, .app[data-rail="collapsed"] .rail-empty, .app[data-rail="collapsed"] .rail-item .count, .app[data-rail="collapsed"] .rail-item .kbd, .app[data-rail="collapsed"] .conn .detail, .app[data-rail="collapsed"] .conn > span:not(.conn-mark) {
   display: none;
 }
 .app[data-rail="collapsed"] .rail-item, .app[data-rail="collapsed"] .rail-search, .app[data-rail="collapsed"] .conn {
@@ -190,7 +217,6 @@ a.rail-label:hover { color: var(--text); }
   width: 44px;
   padding: 0;
 }
-.app[data-rail="collapsed"] .conn.has-update .conn-dot { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--signal); }
 .app[data-rail="collapsed"] .rail-item[aria-current="page"]::before { left: -8px; }
 .app[data-rail="collapsed"] .rail-nav { align-self: stretch; align-items: center; margin: 0 calc(var(--sp-2) * -1); padding-left: var(--sp-2); padding-right: var(--sp-2); }
 .app[data-rail="collapsed"] .rail-more { display: none; }

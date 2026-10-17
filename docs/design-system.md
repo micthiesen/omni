@@ -109,7 +109,10 @@ generates every variant (needs `rsvg-convert`): the rail's bare `mark.svg`, the
 16 px-legible `favicon.svg`, PNG, ICO and PWA icons in `crates/omni-web/icons/`
 (served from `/icons/` and the root, outside the immutable `/assets/` cache),
 and the iOS app icon with its dark and tinted appearances. Change the script and
-regenerate; never edit the outputs. Pages that cannot load `/icons/` (the
+regenerate; never edit the outputs. Home Screen and PWA icons carry a version
+in their file name (`apple-touch-icon-v2.png`): iOS caches them by URL, so bump
+`VERSION` whenever the artwork changes. The connection readout reuses the orbit
+as an animated status mark (section 8.1). Pages that cannot load `/icons/` (the
 Reminders code page) inline a flat two-color version.
 
 ### 2.6 Chart colors
@@ -452,13 +455,17 @@ The data layer is unchanged: one `/api/events` SSE per tab, 10 s
 Rail footer (desktop) and a dot in the phone top bar, mapped 1:1 onto
 `ConnectionState`:
 
+The mark is the Omni orbit at 16 px (`ConnectionMark`): a faint track, a trail
+that brightens toward its head, and the leading dot. Shape and motion carry the
+state, so color is never the only cue; reduced motion keeps every state still.
+
 | State | Look |
 |---|---|
-| Live | Signal dot that pops once per snapshot (600 ms) *(from C)*, "Live · 2s" (seconds since last snapshot, `use_now(1000)`) |
-| Polling | warn diamond, "Polling · every 10 s" |
-| Connecting / Reconnecting | warn diamond pulsing, "Reconnecting…" |
-| Error | fault square, "Offline · retry" |
-| Update available | the state above plus a Signal pill tag "Update" beside the dot (phone top bar too; a Signal ring on the dot in the collapsed rail); tooltip "Update available (app, server, or app and server changed). Reload to update" |
+| Live | Signal orbit turning once every 14 s; the dot pops once per snapshot (600 ms); "Live · 2s" (seconds since last snapshot, `use_now(1000)`) |
+| Polling | warn orbit, still, dimmer trail; "Polling · every 10 s" |
+| Connecting / Reconnecting | warn head arc alone, chasing round every 1.1 s; "Reconnecting…" |
+| Error | fault ring broken into dashes, the dot drifted off it, still; "Offline · retry" |
+| Update available | the state above plus a Signal halo breathing around the dot (2.4 s; steady under reduced motion) and a Signal pill tag "Update" beside the mark (phone top bar too; the halo alone in the collapsed rail); tooltip "Update available (app, server, or app and server changed). Reload to update" |
 
 The readout is one button titled "Reload": clicking, tapping, Enter or Space
 always does `location.reload()`. Every snapshot carries the server's `build`
