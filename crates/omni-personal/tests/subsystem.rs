@@ -79,6 +79,8 @@ async fn registers_tasks_tools_and_entities() {
             "browse_browser_history",
             "get_browser_page",
             "set_browser_page_label",
+            "notify_owner_blocked",
+            "notify_owner_requested",
         ]
     );
     let entities: Vec<&str> = subsystem.entities.iter().map(|e| e.name).collect();
@@ -89,7 +91,8 @@ async fn registers_tasks_tools_and_entities() {
             "claude-reset-delivery",
             "printer-accepted-job",
             "pet-health-alert",
-            "pet-health-dismissal"
+            "pet-health-dismissal",
+            "owner-notification"
         ]
     );
     assert_eq!(subsystem.alert_gates.len(), 2);

@@ -166,8 +166,9 @@ change; reuse authorization already given in the conversation.
 - `omni-mcp`: authenticated `/mcp` endpoint, MCP Events outbox, MCP activity,
   system/events/Claude session tools, policy inventory.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
-- `omni-personal`: pets, LAN printer, Hister, and Codex/Claude reset alerts
-  (`reset_alerts`).
+- `omni-personal`: pets, LAN printer, Hister, Codex/Claude reset alerts
+  (`reset_alerts`), and agent push notifications to the owner
+  (`owner_notify`, the `notify_owner_*` tools).
 - `omni-stylist`: the fit-first stylist ledger: typed records and events,
   private evidence, frozen predictions, narrow rules, the versioned runbook,
   archives and the `StylistBackup` task.

@@ -22506,6 +22506,300 @@
                   }
                 },
                 {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
                   "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
@@ -54964,6 +55258,300 @@
                       "url",
                       "label",
                       "verified"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
                     ],
                     "additionalProperties": false
                   }
@@ -87561,6 +88149,300 @@
                       "url",
                       "label",
                       "verified"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
                     ],
                     "additionalProperties": false
                   }
@@ -120222,6 +121104,300 @@
                   }
                 },
                 {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
                   "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
@@ -152795,6 +153971,300 @@
                       "url",
                       "label",
                       "verified"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
                     ],
                     "additionalProperties": false
                   }
@@ -185489,6 +186959,300 @@
                       "url",
                       "label",
                       "verified"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_blocked",
+                  "title": "Notify Michael of a Blocker",
+                  "description": "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "task": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "The blocked work as a short name, e.g. \"Omni MCP rollout\". The title\nbecomes \"Blocked: <task>\"."
+                      },
+                      "blocker": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240,
+                        "description": "What is blocked and why only Michael can clear it, in one or two plain\nsentences."
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 140
+                        },
+                        "description": "The exact actions for Michael, in order; each becomes a numbered line.\nName the app, page or command and the value to choose or enter."
+                      },
+                      "fromPhone": {
+                        "type": "boolean",
+                        "description": "Whether every step can be done from a phone. False tells him he needs a\ncomputer."
+                      },
+                      "meanwhile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150,
+                        "description": "What you will do while waiting, e.g. \"Continuing with tests; checking\nevery 10 minutes\"."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link that opens the place to act, such as an approval page or\npull request."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when waiting would lose\nwork, money or a deadline.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "task",
+                      "blocker",
+                      "steps",
+                      "fromPhone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "notify_owner_requested",
+                  "title": "Notify Michael as Requested",
+                  "description": "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "idempotencyKey": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$",
+                        "description": "A unique key per notification (16-128 of A-Z a-z 0-9 _ -). Reuse it\nonly to retry the same call."
+                      },
+                      "request": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Michael's request this answers, quoted or closely paraphrased, e.g.\n\"ping me when the import finishes\"."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The headline, e.g. \"Import finished\" or \"Deploy failed\"."
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 600,
+                        "description": "The outcome and anything he needs to know or do next, in plain text."
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^https://",
+                        "description": "An https link to the result, such as a pull request or page."
+                      },
+                      "urlTitle": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50,
+                        "description": "The link's button label; \"Open\" by default."
+                      },
+                      "priority": {
+                        "default": "normal",
+                        "description": "\"high\" breaks through quiet hours; use it only when he asked to be told\nurgently.",
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "high"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "idempotencyKey",
+                      "request",
+                      "title",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "recorded",
+                          "uncertain"
+                        ],
+                        "description": "\"sent\": delivered to the app or Pushover. \"recorded\": captured without\nsending (preview or test mode). \"uncertain\": the push may or may not\nhave arrived; it is never resent."
+                      },
+                      "replayed": {
+                        "type": "boolean",
+                        "description": "True when this idempotencyKey was already used and nothing new was sent."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "blocked",
+                          "requested"
+                        ],
+                        "description": "Which tool sent it: \"blocked\" or \"requested\"."
+                      },
+                      "idempotencyKey": {
+                        "type": "string"
+                      },
+                      "reservedAt": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingThisHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling hour, across both tools."
+                      },
+                      "remainingToday": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Notifications left in the rolling 24 hours, across both tools."
+                      },
+                      "note": {
+                        "type": "string",
+                        "description": "What to do next."
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "replayed",
+                      "kind",
+                      "idempotencyKey",
+                      "reservedAt",
+                      "sentAt",
+                      "remainingThisHour",
+                      "remainingToday",
+                      "note"
                     ],
                     "additionalProperties": false
                   }

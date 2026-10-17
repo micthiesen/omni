@@ -50,6 +50,7 @@ families cover:
   `parcels_get`); these tools never call Parcel
 - optional fixed-printer status and bounded public-PDF printing
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
+- agent push notifications to Michael (see "Owner notifications" below)
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
   record queries, measurement comparison, typed records and immutable events,
   private evidence, export, restore and fixture purge (see [Stylist](stylist.md))
@@ -371,6 +372,29 @@ Every print requires explicit approval because it consumes paper and toner and
 physically exposes the document. Omni waits for the final IPP job state and
 reports completion or a printer-reported failure; a timeout remains explicitly
 unconfirmed.
+
+### Owner notifications
+
+`notify_owner_blocked` and `notify_owner_requested` let an agent working
+unattended reach Michael on his phone. They are for two cases only: a genuine
+blocker only he can clear (ideally from a phone), or a notification he
+explicitly asked for ("ping me when it's done"). Progress, FYI and unrequested
+completion notices are out of scope. Omni composes the push from structured
+fields: a blocker becomes "Blocked: <task>" with the blocker, numbered steps,
+"From your phone" or "Needs a computer", and what the agent does meanwhile; a
+requested notice quotes the request it answers. Links must be `https://`
+without credentials, and priority is normal or high, never emergency.
+
+Pushes go out on the General channel (the Omni app first, then Pushover). Each
+idempotency key is reserved durably as an `owner-notification` row (30 days)
+before the push and holds only a digest of the content, never the text. A
+repeated key returns the first outcome without resending; reusing a key for
+different content is refused; an uncertain push is reported as `uncertain` and
+never resent; a definite rejection releases the key. Both tools share a durable
+limit of 4 per rolling hour and 12 per rolling day. Their Executor policy is
+`allow`, unlike other external communication, because an approval prompt would
+defeat reaching Michael while he is away; the limit and the narrow schemas
+bound misuse instead.
 
 ### Claude Code sessions on the Mac
 

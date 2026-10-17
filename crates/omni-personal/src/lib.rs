@@ -1,12 +1,14 @@
 //! Personal services: Whisker pet weights, the LAN printer, the Hister
-//! browser-history archive, and Codex / Claude Code reset alerts.
+//! browser-history archive, Codex / Claude Code reset alerts, and agent push
+//! notifications to the owner.
 //!
 //! [`subsystem`] builds the routes (`/api/pets`, `/api/pets/health`, CSV
 //! export), the tasks (`PetTracker`, `CodexResets`, `ClaudeResets`), the MCP
-//! tools (`pets_read`, `costs_read`, printer and browser-history tools), the
-//! PetTracker data-gap alert gate and the entity descriptors
-//! (`codex-reset-delivery`, `claude-reset-delivery`, `printer-accepted-job`,
-//! `pet-health-alert`) for app wiring.
+//! tools (`pets_read`, `costs_read`, printer, browser-history and
+//! `notify_owner_*` tools), the PetTracker data-gap alert gate and the entity
+//! descriptors (`codex-reset-delivery`, `claude-reset-delivery`,
+//! `printer-accepted-job`, `pet-health-alert`, `pet-health-dismissal`,
+//! `owner-notification`) for app wiring.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +24,7 @@ pub mod claude_resets;
 pub mod codex_resets;
 pub mod hister;
 pub mod mcp;
+pub mod owner_notify;
 pub mod pets;
 pub mod printer;
 pub mod reset_alerts;
@@ -29,6 +32,7 @@ pub mod reset_alerts;
 use crate::claude_resets::task::{ClaudeSource, claude_reset_task};
 use crate::codex_resets::task::{CodexSource, codex_reset_task};
 use crate::hister::HisterService;
+use crate::owner_notify::{OwnerNotification, OwnerNotifier};
 use crate::pets::alerts::{
     HealthLedger, HealthNotifier, PetGapAlertGate, PetHealthAlert, PushoverHealthNotifier,
 };
@@ -77,6 +81,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<AcceptedPrintRecord>(),
         EntityDescriptor::of::<PetHealthAlert>(),
         EntityDescriptor::of::<PetHealthDismissal>(),
+        EntityDescriptor::of::<OwnerNotification>(),
     ]
 }
 
@@ -201,6 +206,12 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
     )?;
     mcp_tools.extend(mcp::printer::tools(printer_service(ctx)?)?);
     mcp_tools.extend(mcp::browser_history::tools(hister_service(ctx)?)?);
+    mcp_tools.extend(mcp::owner_notify::tools(OwnerNotifier::new(
+        ctx.store.clone(),
+        ctx.clock.clone(),
+        ctx.pushover.clone(),
+        ctx.tracker.clone(),
+    ))?);
 
     Ok(Subsystem {
         name: NAME,
