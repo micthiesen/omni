@@ -1,6 +1,5 @@
 // Creates the public NPM proxy host for Omni's MCP gateway (docs/gateway.md).
-// Run inside the NPM container with `node --input-type=module` on stdin, like
-// deploy/executor-events/route.mjs. Uses NPM's own permission checks and
+// Run inside the NPM container with `node --input-type=module` on stdin. Uses NPM's own permission checks and
 // create/delete path; the short-lived token stays in memory and is never printed.
 //
 //   OMNI_GATEWAY_ROUTE_MODE=inspect|apply|rollback

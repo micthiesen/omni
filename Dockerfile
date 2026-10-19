@@ -102,10 +102,10 @@ RUN cargo chef cook --release --locked --recipe-path recipe.json \
     -p omni -p omni-live-intel
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo ./.cargo
-# Crates the server never links keep their cargo-chef skeletons, so frontend,
-# adapter and xtask edits leave this layer cached.
+# Crates the server never links keep their cargo-chef skeletons, so frontend and
+# xtask edits leave this layer cached.
 COPY --exclude=omni-web --exclude=omni-web-kit --exclude=omni-web-pages \
-  --exclude=omni-events-adapter --exclude=xtask \
+  --exclude=xtask \
   crates ./crates
 # One invocation with the cook's package set: dependency features then match the
 # cooked layer exactly, and shared workspace crates compile once.

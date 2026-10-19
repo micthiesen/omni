@@ -121,7 +121,7 @@ enum Era {
 /// Who a request comes from.
 #[derive(Clone, Copy, Debug)]
 pub enum Caller<'a> {
-    /// The `OMNI_MCP_TOKEN` holder at `/mcp` (Executor and its adapter).
+    /// The `OMNI_MCP_TOKEN` holder at `/mcp` (Executor).
     Token,
     /// A gateway client token or OAuth grant at `/gateway/mcp`.
     Gateway(&'a Principal),

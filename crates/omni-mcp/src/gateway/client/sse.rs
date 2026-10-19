@@ -1,8 +1,5 @@
 //! Incremental `text/event-stream` decoder (WHATWG event-stream parsing for the
 //! fields MCP uses: `event`, `data`, `id`; `retry` and comments are ignored).
-//!
-//! The same decoder as `omni-events-adapter`'s, which is retired after the
-//! gateway switchover.
 
 /// One dispatched event. Events without data are not dispatched (per spec), which
 /// also skips Streamable HTTP priming events.

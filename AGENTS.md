@@ -47,9 +47,7 @@ and push. A push deploys production automatically. Do not ask for another
 confirmation already supplied by this rule or the current request.
 
 Production runs as the `omni` container on `boris` (`10.10.1.100`) from
-`/home/michael/compose`. Boris's deploy timer also keeps the
-`executor-events-adapter` sidecar (the `omni-events-adapter` crate) on
-`:latest`; see `deploy/executor-events/`. Persistent data is under
+`/home/michael/compose`. Persistent data is under
 `/home/michael/compose/volumes/omni`. The LAN UI is
 `http://omni.boris/`. Inspect failures with `docker logs omni` over SSH.
 
@@ -178,7 +176,6 @@ change; reuse authorization already given in the conversation.
   manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `--preview`.
 - `omni-web`, `omni-web-kit`, `omni-web-pages`: the Leptos CSR frontend (app
   shell and ops pages, shared kit, domain pages), built by trunk.
-- `omni-events-adapter`: the `executor-events-adapter` sidecar binary.
 - `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP snapshots.
 - `ios/OmniLive` (not a crate): the iOS/iPadOS app, its WidgetKit extension
   (Live Slot control, On Air and Deliveries widgets) and notification service
@@ -535,8 +532,9 @@ to their origin and auth kind, write-only and never logged. Results, errors and
 annotations pass through unchanged; `tools/call` is retried only when it certainly
 did not run. Integration events are followed by `events/poll` feeds whose cursor
 is stored only after the events are queued (receipts keyed by feed and upstream
-event id); a `truncated` replay is recorded as a gap, never papered over. `/mcp`
-and the Executor sidecar stay unchanged until the switchover in `docs/gateway.md`.
+event id); a `truncated` replay is recorded as a gap, never papered over. The
+switchover in `docs/gateway.md` is done: harnesses use the gateway and the Executor
+events sidecar is retired. `/mcp` stays for Executor, unchanged.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

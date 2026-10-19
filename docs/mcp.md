@@ -4,8 +4,7 @@ This page describes `/mcp`, Omni's endpoint for Executor. Harnesses that connect
 to Omni directly use the MCP gateway at `/gateway/mcp`, which serves these same
 tools together with the configured upstream integrations ([MCP gateway](gateway.md)).
 
-Email and Claude Code wake subscriptions are documented in [MCP Events](mcp-events.md). The
-separate Executor adapter preserves the existing connection and OAuth routes.
+Email and Claude Code wake subscriptions are documented in [MCP Events](mcp-events.md).
 `events_status` reports observed event requests, subscriptions and deliveries.
 See [queued reversible archive](email-archive.md) for the exact-message archive,
 status, cancellation and restore tools.

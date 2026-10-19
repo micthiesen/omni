@@ -89,13 +89,12 @@ const SUBSYSTEM_ALLOWLIST: &[(&str, &str)] = &[
     ("omni-calendar", "omni-email"),
 ];
 
-/// Crates outside the backend layering (app binary, frontend, sidecar, tooling).
+/// Crates outside the backend layering (app binary, frontend, tooling).
 const OUTSIDE: &[&str] = &[
     "omni",
     "omni-web",
     "omni-web-kit",
     "omni-web-pages",
-    "omni-events-adapter",
     "omni-testkit",
     "xtask",
 ];

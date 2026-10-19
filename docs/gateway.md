@@ -6,9 +6,10 @@ the integrations' events. Harnesses (Claude Code, Codex, ChatGPT/Dots) connect
 to it as their single MCP server and do their own tool discovery. The code is
 in `crates/omni-mcp/src/gateway/`; the management page is `/gateway` in the UI.
 
-The gateway is additive. `/mcp` (Executor's connection to Omni, guarded by
-`OMNI_MCP_TOKEN`) and the `executor-events-adapter` sidecar keep working
-unchanged until the switchover at the end of this document.
+Harnesses moved to the gateway on 2026-10-19 (Switchover, below) and the
+`executor-events-adapter` sidecar was retired. `/mcp` (Executor's connection
+to Omni, guarded by `OMNI_MCP_TOKEN`) is unchanged and stays while Executor
+runs.
 
 ## Endpoint and access
 
@@ -272,44 +273,35 @@ a client that misses one simply lists again.
   Public DNS for `*.syas.ca` already points at the proxy and the `*.syas.ca`
   certificate covers the name.
 
-## Switchover (sidecar-free)
+## Switchover (completed 2026-10-19)
 
-The old path stays until these steps pass; nothing below is automatic.
+Harnesses used to reach Omni through Executor and the `executor-events-adapter`
+sidecar. On 2026-10-19:
 
-0. Public access (ChatGPT, and harnesses away from home): check that the
-   running revision includes `gateway::public` (Omni's own public-host
-   guard), apply the proxy host (Operations), add `- OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
-   to the omni service's `environment:` list in `/home/michael/compose`,
-   recreate omni, then run
+0. Public access: NPM proxy host 48, `gateway.syas.ca`, was created with
+   `deploy/gateway/route.mjs` (Operations), `OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
+   was added to the omni service in `/home/michael/compose`, and
    `python3 deploy/gateway/oauth-check.py https://gateway.syas.ca http://omni.boris`
-   from the LAN. It walks ChatGPT's real OAuth flow, checks that only
-   `/gateway/*` and the OAuth documents are public, and revokes its grant.
-   Harnesses on the LAN can use `http://omni.boris/gateway/mcp` without it.
-1. Configure the integrations on `/gateway` (one each): context7, deepwiki,
-   grep, mcplookup (no auth); github_com and serpapi_mcp (headers,
-   `Authorization: Bearer <key>`); artifacts and artifacts_support (OAuth,
-   Connect); karakeep (bundled, `KARAKEEP_API_ADDR`, `KARAKEEP_API_KEY`).
-   Each should be `ready` with the expected tool count.
-2. Create a client token per harness. Point Claude Code and Codex at the
-   gateway (above) in a test session first; list tools, call a read-only tool
-   from Omni and from each integration, and check the call in MCP activity.
-3. Connect ChatGPT with OAuth, approve the request, and confirm the catalog
-   in a new conversation (Refresh the connection after catalog changes).
-4. Events, for each of `email.received` (inbox) and an artifacts event:
-   subscribe from the Dot, check `/gateway` (feed `active`, subscription in
-   `events_status`), trigger a harmless event (a test mail to yourself; a
-   comment on a scratch artifact), and confirm the Dot wakes once. Restart Omni
-   (`docker compose up -d --force-recreate omni` under the maintenance lock)
-   between trigger and delivery once to confirm recovery.
-5. Only then move each harness's configuration to the gateway and remove its
-   Executor connection, and stop the Dot's Executor subscriptions.
-6. When nothing uses Executor's `/mcp` route any more: roll back the adapter's
-   NPM route (`deploy/executor-events/README.md`, Rollback), stop
-   `executor-events-adapter` and remove its deploy-timer check. `/mcp` and
-   `OMNI_MCP_TOKEN` can stay as long as Executor itself runs.
+   passed. Rerun that check after changing the route or the public-host guard;
+   it walks ChatGPT's OAuth flow, checks that only `/gateway/*` and the OAuth
+   documents are public, and revokes its grant.
+1. The integrations were configured on `/gateway`: context7, deepwiki, grep,
+   mcplookup (no auth); github_com and serpapi_mcp (headers,
+   `Authorization: Bearer <key>`); artifacts and artifacts_support (OAuth);
+   karakeep (bundled).
+2. The harnesses moved to the gateway, each with its own client token or
+   grant: the ChatGPT app (OAuth), Codex (`/etc/codex` config) and Claude Code
+   (user MCP server `omni`).
+3. The adapter's NPM route on `mcp.syas.ca` was rolled back, the sidecar was
+   stopped and removed with its deploy-timer check, and its crate, image
+   workflow and `deploy/executor-events/` were deleted from the repository.
 
-Rollback at any point: point a harness back at Executor; the gateway does not
-change Executor, `/mcp` or the adapter.
+Rollback of the public gateway route:
+`docker exec -i -w /app -e OMNI_GATEWAY_ROUTE_MODE=rollback npm node --input-type=module < route.mjs`
+from the directory holding `deploy/gateway/route.mjs` on Boris removes host 48;
+LAN harnesses keep `http://omni.boris/gateway/mcp`. A harness can also be
+pointed back at Executor's `/mcp`, which the gateway never changes; Executor
+without the adapter offers tools but no MCP Events.
 
 ## Known limits
 

@@ -67,7 +67,7 @@ network. See [the architecture overview](docs/architecture.md).
 | Server and tasks | `crates/omni` and the `crates/omni-*` subsystems |
 | Web dashboard | `crates/omni-web*` (Leptos, built by trunk), styled per [the design system](docs/design-system.md) |
 | iOS app and widgets | `ios/OmniLive` ([guide](docs/ios-app.md)) |
-| MCP Events sidecar | `crates/omni-events-adapter`, `deploy/executor-events` |
+| MCP gateway | `crates/omni-mcp/src/gateway`, `deploy/gateway` ([guide](docs/gateway.md)) |
 | Omni Slate e-paper display | `slate/` (its own workspace and gate) |
 | Logo and icons | `scripts/brand/icons.py` |
 

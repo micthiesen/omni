@@ -133,7 +133,7 @@ pub struct UnsubscribeInput {
     pub url: String,
 }
 
-/// A delegated client forwarded by the Executor adapter.
+/// A delegated client named by the delegated-owner headers at `/mcp`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventPrincipal {
     pub owner: String,

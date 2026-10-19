@@ -2,8 +2,7 @@
 
 Omni is one Rust binary (`omni`) that runs scheduled tasks, an axum
 HTTP server with the JSON API, MCP endpoint and Leptos frontend, and long-lived
-background services over one SQLite document store. A second binary,
-`executor-events-adapter`, is the MCP Events sidecar deployed beside Executor.
+background services over one SQLite document store.
 
 ## Crate layout
 
@@ -24,8 +23,7 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
   the CLI.
 - **Outside the backend layering:** the frontend crates `omni-web`,
-  `omni-web-kit` and `omni-web-pages`; the sidecar `omni-events-adapter`; the
-  dev-only `omni-testkit`; and `xtask`.
+  `omni-web-kit` and `omni-web-pages`; the dev-only `omni-testkit`; and `xtask`.
 
 `cargo xtask deps-check` (part of the gate and CI) enforces the direction:
 
@@ -190,8 +188,8 @@ when a later one differs.
   livestream models;
 - `chef -> planner -> server`: cargo-chef cooks dependencies, then one
   `cargo build --release --locked` builds `omni`, `omni-voice-enroll` and
-  `omni-intel-doctor`. The server stage excludes the web crates,
-  `omni-events-adapter` and `xtask`, so editing them keeps it cached;
+  `omni-intel-doctor`. The server stage excludes the web crates
+  and `xtask`, so editing them keeps it cached;
 - `web -> web-dist`: `trunk build --release`, then Brotli and gzip copies;
 - `mcp-stdio`: `npm ci --ignore-scripts` of `deploy/mcp-stdio/package-lock.json`,
   the stdio MCP servers the gateway bundles (copied to `/app/mcp-stdio`);
@@ -212,9 +210,8 @@ clippy with `-D warnings`, `cargo xtask deps-check` and `cargo deny --locked
 check`. `test` runs `cargo nextest run --workspace --locked --profile ci`.
 `image` builds the Dockerfile with `type=gha,mode=max` layer caching. `publish`
 pushes `ghcr.io/micthiesen/omni:latest` and `:<sha>` after all three
-pass, from the fully cached build. The `Executor Events Adapter` workflow builds and
-publishes the sidecar image from `deploy/executor-events/Dockerfile`.
+pass, from the fully cached build.
 
 On boris, `omni-deploy.timer` pulls `:latest` every minute, recreates the
 container on change, waits for its health check (`omni healthcheck`) and
-sends a Pushover notice. The same pass keeps `executor-events-adapter` current.
+sends a Pushover notice.

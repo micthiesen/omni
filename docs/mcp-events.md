@@ -1,40 +1,29 @@
-# MCP Events through Executor
+# MCP Events
 
-Omni implements MCP Events at its authenticated `/mcp` endpoint. The separate
-`executor-events-adapter` sidecar (the Rust crate
-[`omni-events-adapter`](../crates/omni-events-adapter/src/lib.rs), deployed as described in
-[`deploy/executor-events/`](../deploy/executor-events/README.md)) adds event discovery to the existing Executor connection while retaining its
-OAuth authority and tool catalog. It does not modify third-party Executor core.
+Omni implements MCP Events at its authenticated `/mcp` endpoint and at the MCP
+gateway (`/gateway/mcp`, [gateway.md](gateway.md)). Both serve the legacy
+`2025-11-25` era and the modern `2026-07-28` era
+(`crates/omni-mcp/src/rpc.rs`) and share the catalog, outbox, signing and
+retry path below. Harnesses (ChatGPT, Codex, Claude Code) subscribe through the
+gateway. `/mcp` keeps serving Executor and still accepts delegated
+subscriptions (an Executor owner and OAuth token forwarded in the
+delegated-owner headers).
 
-## Verified protocol and deployment baseline
+## History: the Executor events adapter
 
-The deployment inspected on 2026-10-01 runs Executor 1.6.10, revision
-`3890d6f5e5efd1530f0dba0fe23ada95a39caf86`, image digest
-`sha256:b9e001775d3eb7d662d347c8f7054333c78c1a4fd97cb5a86dc1d1d1406093b9`.
-It uses MCP 1.x and rejects `server/discover`. A freshly authenticated legacy
-session at `/mcp?elicitation_mode=native` listed Executor's six tools and no
-`resume` tool. Previously cached connection metadata is not evidence of that
-session's mode.
-
-On 2026-10-05 an unauthenticated modern `server/discover` to
-`https://mcp.syas.ca/mcp` received the adapter's own 401, while a legacy
-`initialize` received Executor's, so the exact `/mcp` route is live. Executor
-also serves `/<org>/mcp` and `/mcp/toolkits/<slug>`; the route does not cover
-those paths, so a ChatGPT connection must use exactly `/mcp` with Executor OAuth
-(the adapter does not accept Executor API keys) to discover events.
-
-Omni serves both the legacy `2025-11-25` era and the modern `2026-07-28` era
-(`crates/omni-mcp/src/rpc.rs`). The adapter translates modern MCP requests to the deployed
-legacy Executor host and forwards authenticated event RPC to Omni. Neither
-Executor search/invoke passthrough nor ordinary SSE notifications implement
-MCP Events. The required modern protocol is `2026-07-28`.
+Until 2026-10-19 a separate sidecar, `executor-events-adapter`, sat in front of
+Executor at `https://mcp.syas.ca/mcp`. Executor 1.6.10 spoke only MCP 1.x and
+rejected `server/discover`, so the adapter answered modern discovery itself,
+translated modern requests to Executor's legacy host, forwarded `events/*` to
+Omni's `/mcp` with the caller's Executor OAuth token, and relayed artifacts.boo
+workspaces' own events. It was retired on 2026-10-19 when the harnesses moved
+to the gateway, which serves Omni's events and follows integration events
+in-process. Its crate, image and deploy files were removed then; they remain
+in the repository history before that date.
 
 References:
 
 - [OpenAI MCP Events](https://developers.openai.com/plugins/build/mcp-events)
-- [Executor host envelope reference](https://github.com/UsefulSoftwareCo/executor/blob/98d606bd2b47b9dcc2c03a129a14b5134d9852c8/packages/hosts/mcp/src/envelope.ts)
-- [Executor API reference](https://github.com/UsefulSoftwareCo/executor/blob/98d606bd2b47b9dcc2c03a129a14b5134d9852c8/packages/core/api/src/server/executor-app.ts)
-- [Executor v2 contracts](https://github.com/UsefulSoftwareCo/executor/tree/2eb2871ecaaf168928eeb77fee89bfdc8e25c614)
 
 ## Events
 
@@ -251,34 +240,10 @@ its alerts is due.
 
 ## Other servers' events
 
-The adapter also offers the events of other MCP servers that implement MCP
-Events themselves, configured in `EVENT_UPSTREAMS` (a JSON array of
-`{key, url, token}` in the adapter's `deployment.env`). Today that is
-artifacts.boo: `{"key": "michael", "url": "https://michael.artifacts.boo/mcp",
-"token": "<agent token>"}` and the same for `support`.
-
-- `events/list` returns Omni's events, then each upstream's (fetched at most
-  every five minutes; an unreachable upstream is left out, never failing the
-  list). An event several upstreams offer is listed once, with a `workspace`
-  argument naming them (required when there is more than one). Omni's own
-  events win a name clash.
-- `events/subscribe` and `events/unsubscribe` for an upstream's event go to that
-  upstream with its token, without `workspace` or the caller's `_meta`; the
-  answer is returned as is. The upstream then checks the callback with its own
-  challenge, signs deliveries (Standard Webhooks) and retries them, and keeps
-  its own cursors, so none of Omni's outbox, receipts or withheld-token logic
-  applies. Unsubscribe identity is the upstream's: name, arguments and callback
-  URL.
-- The caller is still authenticated as the pinned Executor owner before
-  anything reaches an upstream. The upstream token acts as its owner there (for
-  artifacts.boo, an operator's agent token: it sees what that person can open),
-  so only configure tokens of the same person who owns the Executor.
-- Nothing polls an upstream: it is called only when a client lists or
-  subscribes.
-
-Tokens for artifacts.boo come from a workspace's settings (Agent tokens), or
-from its operator API (`POST /api/admin/workspaces/<slug>/tokens` with
-`{"email": "<operator>", "label": "Events adapter"}`).
+The gateway offers the events of configured integrations that support
+`events/poll` (for example artifacts.boo) and follows them with feeds; see
+"Events" in [gateway.md](gateway.md). The retired adapter instead forwarded
+subscriptions straight to those servers' webhooks.
 
 ## Delivery
 
@@ -301,8 +266,7 @@ event name and callback URL. Refresh uses the same identity. Unsubscribe is
 idempotent and scoped to that owner. Expired or revoked subscriptions do not
 receive mail.
 
-The adapter pins the configured Executor owner and validates the current OAuth
-session. Omni encrypts forwarded OAuth credentials at rest and checks them
+For delegated subscriptions at `/mcp`, Omni encrypts forwarded OAuth credentials at rest and checks them
 again through the fixed internal `OMNI_EVENTS_EXECUTOR_AUTH_URL` before delivery.
 No user-supplied authorization URL is accepted. The storage encryption key is
 derived from `OMNI_MCP_TOKEN` for this purpose. Rotating that token invalidates
@@ -322,7 +286,7 @@ So that a valid token is normally present, a delegated subscription's
 `refreshBefore` is the earlier of its granted lifetime and one minute before the
 expiry of the token it was created or refreshed with, never earlier than the
 request and never later than that expiry. Each refresh revalidates the client's
-current token through the adapter. The stored subscription lifetime (24 hours by
+current token. The stored subscription lifetime (24 hours by
 default, at most seven days) is unchanged, so an event that arrives after the
 token expires and before a late refresh stays withheld rather than failing or
 being delivered.
@@ -351,39 +315,17 @@ advertised `refreshBefore`,
 delivery counts including `withheld`, and the ten most recent deliveries with
 HTTP status, transport error, failure or `withheld` reason. Owners appear as a 12-character hash prefix. It
 never returns secrets, bearer tokens, callback paths or message content.
-`server/discover` and `tools/list` are answered by the adapter and do not appear
-here; an `events/list` row is the first Omni-side evidence of discovery. Requests
+`server/discover` and `tools/list` do not appear here; an `events/list` row is
+the first evidence of discovery. Requests
 rejected by parameter validation or an invalid delegated-owner header fail before
 logging, so a missing `events/subscribe` row does not prove ChatGPT never called.
 
-## Connected verification still required
+## Connected verification
 
-A healthy deployment and successful raw MCP calls do not prove an idle dot wakes.
-The parent must use the existing Executor connection to:
-
-1. Open the existing Executor connection in ChatGPT Plugins and select **Refresh**.
-   Confirm `email.received` is listed alongside the Executor tools, then start a
-   new Work conversation. This is the documented developer-mode
-   [metadata refresh procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
-   Refreshing Omni's tool inventory inside Executor does not refresh ChatGPT's
-   native event-source catalog. Published plugins follow continuous review.
-   Confirm `events_status` shows a new `events/list` request; if it does
-   not, ChatGPT did not reach the adapter with MCP 2026-07-28 discovery.
-2. Create an explicit Inbox or Archive subscription in the intended Work chat
-   or dot. Confirm `events/subscribe`, successful challenge verification and
-   durable subscription acceptance (`accepted` or `refreshed` in
-   `events_status`). Over the next hours, confirm `refreshed` rows arrive
-   about hourly with an advancing `refreshBefore`; repeated refreshes without
-   progress mean ChatGPT is reusing an unrotated token.
-3. Select a harmless test message or send a new test message to the chosen
-   folder. Confirm a matching outbox delivery receives HTTP 2xx and the intended
-   chat receives the identifiers. Fetch content with `email_get` if needed.
-4. Confirm a message outside the selected folder does not trigger it. Repeat a
-   source observation and confirm it does not create another event ID.
-5. Stop monitoring and confirm `events/unsubscribe` stops subsequent delivery.
-
-For the port-published events, after the Refresh in step 1 confirm all seven
-events are listed, then subscribe and observe one harmless delivery each:
+The connected lifecycle (refresh the harness, subscribe, trigger a harmless
+event, confirm one delivery and wake, unsubscribe) is the gateway switchover's
+events step in [gateway.md](gateway.md). Harmless triggers for the
+port-published events:
 
 - `task.run_finished` with `{"task": "TaskRunEvents", "status": "any"}` fires
   within a minute of subscribing; unsubscribe afterwards.
@@ -398,12 +340,5 @@ events are listed, then subscribe and observe one harmless delivery each:
   minutes before a disposable `[omni-test]` event created for that purpose.
   Delete the test event by its exact eventId afterwards.
 
-Native automation setup belongs to the parent. Do not archive real mail to test
-this integration without selecting and authorizing the exact test messages.
-
-On 2026-10-01 the public authenticated protocol checks passed: modern discovery,
-event definitions, the six native Executor tools, legacy client tools, OAuth
-challenge preservation, and callback rejection before unsafe network access.
-ChatGPT still listed only GitHub as a native event source; its connection refresh
-was not completed. No native subscription or idle-dot delivery is proven. Keep
-the parent's hourly fallback until that complete lifecycle succeeds.
+Do not archive real mail to test this without selecting and authorizing the
+exact test messages.

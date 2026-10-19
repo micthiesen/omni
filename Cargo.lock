@@ -3346,30 +3346,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "omni-events-adapter"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.23.1",
- "bytes",
- "futures",
- "hex",
- "jiff",
- "rand 0.10.3",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "omni-http"
 version = "0.1.0"
 dependencies = [
@@ -4780,7 +4756,6 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
- "url",
  "uuid",
 ]
 
