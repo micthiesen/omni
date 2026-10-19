@@ -5,8 +5,8 @@ check replays the authorization code, which revokes it.
 usage: oauth-check.py <public origin> <LAN origin> [--via <base URL>]
 
 --via sends every request for the public origin to <base URL> instead (a
-local server whose OMNI_GATEWAY_PUBLIC_URL is the public origin) and skips
-the proxy path checks, which only the public proxy can pass.
+local server or proxy whose OMNI_GATEWAY_PUBLIC_URL is the public origin),
+with the public Host header, and skips the public path checks.
 Prints statuses only; no token, code or verifier is printed or stored.
 """
 import base64
@@ -49,6 +49,9 @@ def route(url):
 def fetch(method, url, data=None, headers=None, browser=False):
     req = urllib.request.Request(route(url), data=data, method=method)
     req.add_header("User-Agent", UA)
+    if VIA and url.startswith(PUBLIC):
+        # As the proxy would: the public host, so Omni's public-host guard applies.
+        req.add_header("Host", urllib.parse.urlparse(PUBLIC).netloc)
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     if browser and browser_cookie:
@@ -83,9 +86,15 @@ step("authorization server metadata", status == 200 and asm["issuer"] == prm["au
 status, headers, _ = fetch("POST", RESOURCE, b"{}", {"Content-Type": "application/json"})
 step("unauthenticated MCP is 401 with resource_metadata", status == 401 and "resource_metadata" in headers.get("www-authenticate", ""))
 if not VIA:
-    for path in ["/api/gateway", "/gateway", "/", "/api/health", "/mcp"]:
-        status, _, _ = fetch("GET", PUBLIC + path)
-        step(f"public {path} is not served", status == 404, str(status))
+    # Everything but the exact public paths is a 404, including variants
+    # that normalize to an allowed path and the SPA fallback.
+    for path in ["/api/gateway", "/gateway", "/gateway/", "/", "/index.html", "/api/health", "/mcp",
+                 "/gateway//", "/gateway/mcp/", "//gateway/mcp", "/gateway//mcp", "/gateway/./mcp",
+                 "/x/../gateway/mcp", "/gateway/%6Dcp", "/GATEWAY/mcp", "/gateway/../api/gateway",
+                 "/gateway/..%2Fapi%2Fgateway", "/api/gateway/integrations/..%2F..%2F..%2Fgateway%2Fmcp",
+                 "/.well-known/oauth-foo", "/.well-known/oauth-authorization-server/"]:
+        status, _, body = fetch("GET", PUBLIC + path)
+        step(f"public {path} is not served", status == 404 and "<!doctype html>" not in body.lower(), str(status))
 
 verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
 challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()

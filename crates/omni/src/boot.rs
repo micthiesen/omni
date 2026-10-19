@@ -204,7 +204,18 @@ pub fn app_router(
             web_dist.display()
         );
     }
-    (omni_server_kit::app_router(parts, dist), ops)
+    let mut router = omni_server_kit::app_router(parts, dist);
+    // The public gateway host reaches the gateway's public paths only,
+    // whatever the proxy in front forwards.
+    if let Some(host) =
+        omni_mcp::gateway::public::public_host(ctx.config.omni_gateway_public_url.as_deref())
+    {
+        router = router.layer(axum::middleware::from_fn_with_state(
+            host,
+            omni_mcp::gateway::public::only_public_paths,
+        ));
+    }
+    (router, ops)
 }
 
 /// Registers tasks in [`crate::wiring::TASK_ORDER`].

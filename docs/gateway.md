@@ -50,8 +50,8 @@ upstream credentials are never accepted here. Two kinds of token exist
 
 The management API under `/api/gateway` is LAN-only like the rest of `/api`,
 and its changes also need an `Origin` header and a home-network `Host` (an IP
-literal, `localhost`, `*.boris`, `*.local` or `*.syas.ca` other than the
-public gateway host), which defeats DNS rebinding.
+literal, `localhost`, `*.boris`, `*.local` or `omni.syas.ca`), which defeats
+DNS rebinding.
 
 A 401 carries `WWW-Authenticate: Bearer resource_metadata="…"` when OAuth is
 offered.
@@ -235,10 +235,18 @@ a client that misses one simply lists again.
 
 ## Security boundaries
 
-- Public: only `/gateway/*` and `/.well-known/oauth-*` reach Omni through the
-  `gateway.syas.ca` proxy host (`deploy/gateway/route.mjs`); every other path is
-  a 404 at the proxy. `/api/*`, including `/api/gateway`, and the UI stay
-  LAN-only and same-origin for mutations.
+- Public: exactly ten paths reach Omni through the `gateway.syas.ca` proxy
+  host: `/gateway/mcp`, `/gateway/oauth/{authorize, authorize/status,
+  authorize/complete, token, register, callback}`,
+  `/.well-known/oauth-authorization-server` and
+  `/.well-known/oauth-protected-resource` (bare and `/gateway/mcp`). NPM
+  forwards the raw request URI, so `deploy/gateway/route.mjs` checks
+  `$request_uri` against that list; any other path, including encoded,
+  dotted, doubled-slash and trailing-slash variants, is a 404 at the proxy.
+  Omni enforces the same list again (`gateway::public`): a request whose
+  `Host` is the public host gets a 404 for anything else, so the management
+  page (`/gateway`), `/api/*`, `/mcp` and the SPA fallback stay LAN-only even
+  if the proxy rule changes. A test keeps both lists equal.
 - Upstream URLs must be public HTTPS; DNS answers are checked at connect.
 - Stdio integrations run only image-bundled servers with a cleared
   environment.
@@ -268,8 +276,9 @@ a client that misses one simply lists again.
 
 The old path stays until these steps pass; nothing below is automatic.
 
-0. Public access (ChatGPT, and harnesses away from home): apply the proxy
-   host (Operations), add `- OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
+0. Public access (ChatGPT, and harnesses away from home): check that the
+   running revision includes `gateway::public` (Omni's own public-host
+   guard), apply the proxy host (Operations), add `- OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
    to the omni service's `environment:` list in `/home/michael/compose`,
    recreate omni, then run
    `python3 deploy/gateway/oauth-check.py https://gateway.syas.ca http://omni.boris`
@@ -314,10 +323,10 @@ change Executor, `/mcp` or the adapter.
 - `tools/list` is served as one page.
 - A modern-era (2026-07-28) call through Cloudflare that runs longer than
   100 s can be cut by Cloudflare; legacy-era calls get keepalives.
-- Pre-registered OAuth clients (no dynamic registration) are not supported.
-- Every tool of a connected integration is callable by every gateway client
-  and grant; there are no per-client tool tiers. Hide tools you do not want
-  any harness to have.
+- Upstream OAuth servers without dynamic registration (pre-registered
+  clients, such as GitHub's) are not supported; use a header token instead.
+- Every gateway client and grant acts for the one owner and can call every
+  visible tool, by design; hide tools you want no harness to have.
 - Integration event feeds are polled one after another; an integration that
   times out delays the others' polls on that pass (each feed then backs off).
 - Changing an integration's URL or transport restarts its feeds at the new

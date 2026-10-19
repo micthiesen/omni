@@ -14,6 +14,7 @@ pub mod events;
 pub mod model;
 pub mod names;
 pub mod oauth;
+pub mod public;
 pub mod routes;
 pub mod runtime;
 pub mod secrets;

@@ -144,3 +144,96 @@ async fn api_mutations_require_the_same_origin() {
         Some("nosniff")
     );
 }
+
+fn get_from(host: &str, path: &str) -> Request<Body> {
+    Request::get(path)
+        .header(header::HOST, host)
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_public_gateway_host_reaches_only_the_gateways_public_paths() {
+    let (_app, ctx, dist) = app_with_presspods().await;
+    let mut env = omni_testkit::test_app_env();
+    env.insert(
+        "PRESSPODS_AUTH_TOKEN".to_owned(),
+        "pods-token-0123456789".to_owned(),
+    );
+    env.insert(
+        "OMNI_GATEWAY_PUBLIC_URL".to_owned(),
+        "https://gateway.example.com".to_owned(),
+    );
+    let ctx = AppContext {
+        config: Arc::new(omni_config::Config::from_env(&env).unwrap()),
+        ..ctx
+    };
+    let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
+    let public = "gateway.example.com";
+
+    let mcp = send(
+        &router,
+        Request::post("/gateway/mcp")
+            .header(header::HOST, public)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(mcp.status(), StatusCode::UNAUTHORIZED);
+    for path in [
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource/gateway/mcp",
+    ] {
+        let metadata = send(&router, get_from(public, path)).await;
+        assert_eq!(metadata.status(), StatusCode::OK, "{path}");
+        assert!(
+            header_of(&metadata, header::CONTENT_TYPE)
+                .unwrap()
+                .starts_with("application/json"),
+            "{path}"
+        );
+    }
+
+    // The management page and API, the SPA fallback, other subsystems and
+    // every variant of an allowed path are not served on the public host.
+    for path in [
+        "/gateway",
+        "/gateway/",
+        "/gateway//",
+        "/gateway/mcp/",
+        "//gateway/mcp",
+        "/gateway//mcp",
+        "/gateway/./mcp",
+        "/x/../gateway/mcp",
+        "/gateway/%6Dcp",
+        "/GATEWAY/mcp",
+        "/api/gateway",
+        "/api/gateway/integrations/..%2F..%2F..%2Fgateway%2Fmcp",
+        "/api/health",
+        "/mcp",
+        "/pods",
+        "/",
+        "/index.html",
+        "/assets/app-abc.js",
+        "/.well-known/oauth-foo",
+        "/.well-known/oauth-authorization-server/",
+    ] {
+        let response = send(&router, get_from(public, path)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        let content_type = header_of(&response, header::CONTENT_TYPE).unwrap_or_default();
+        assert!(
+            !content_type.starts_with("text/html"),
+            "{path}: {content_type}"
+        );
+    }
+    let named = send(&router, get_from("Gateway.Example.com.:443", "/gateway")).await;
+    assert_eq!(named.status(), StatusCode::NOT_FOUND);
+
+    // The home network is unaffected.
+    let page = send(&router, get_from("omni.boris", "/gateway")).await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let api = send(&router, get_from("omni.boris", "/api/gateway")).await;
+    assert_eq!(api.status(), StatusCode::OK);
+}

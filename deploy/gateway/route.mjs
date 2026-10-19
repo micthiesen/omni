@@ -6,8 +6,8 @@
 //   OMNI_GATEWAY_ROUTE_MODE=inspect|apply|rollback
 //
 // The host copies the TLS settings of the existing pods.syas.ca host (42) and
-// forwards to Omni like it, but only /gateway/* and /.well-known/oauth-* reach
-// Omni; every other path is a 404 at the proxy, so the UI and /api stay LAN-only.
+// forwards to Omni like it, but only the exact paths in publicPaths reach Omni;
+// every other path is a 404 at the proxy, so the UI and /api stay LAN-only.
 import { createHash } from "node:crypto";
 import { readFile, writeFile, unlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -22,9 +22,27 @@ const domain = "gateway.syas.ca";
 const templateId = 42;
 const recordPath = "/data/omni-gateway-route.json";
 const marker = "# omni-gateway:begin";
+// Every path Omni serves on this host (omni_mcp::gateway::public::PUBLIC_PATHS;
+// a test keeps the two lists equal).
+const publicPaths = [
+  "/gateway/mcp",
+  "/gateway/oauth/authorize",
+  "/gateway/oauth/authorize/status",
+  "/gateway/oauth/authorize/complete",
+  "/gateway/oauth/token",
+  "/gateway/oauth/register",
+  "/gateway/oauth/callback",
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-protected-resource",
+  "/.well-known/oauth-protected-resource/gateway/mcp",
+];
+const literal = (path) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const allowed = `^(${publicPaths.map(literal).join("|")})(\\?.*)?$`;
 const advanced = `${marker}
-# Only the MCP gateway and its OAuth documents are public on this host.
-location ~ ^/(?!gateway/|\\.well-known/oauth-) { return 404; }
+# Only these exact paths reach Omni. NPM forwards the raw request URI, so the
+# check runs on $request_uri: an encoded, dotted, doubled-slash or
+# trailing-slash variant of an allowed path is a 404 like everything else.
+if ($request_uri !~ "${allowed}") { return 404; }
 # Notification streams and long tool calls.
 proxy_buffering off;
 proxy_read_timeout 3600s;

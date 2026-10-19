@@ -98,8 +98,9 @@ pub fn router(state: AdminState) -> Router {
 }
 
 /// Whether `host` (without port) names Omni on the home network: an IP
-/// literal, `localhost`, a `.boris`, `.local` or `.syas.ca` name, but never
-/// the public gateway host.
+/// literal, `localhost`, a `.boris` or `.local` name, or `omni.syas.ca` (the
+/// LAN-only proxy host), but never the public gateway host. Other
+/// `syas.ca` names such as `pods.syas.ca` are public.
 fn lan_host(host: &str, public_url: Option<&str>) -> bool {
     let name = match host.rsplit_once(':') {
         Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) && !name.ends_with(':') => {
@@ -119,7 +120,8 @@ fn lan_host(host: &str, public_url: Option<&str>) -> bool {
     }
     name.parse::<std::net::IpAddr>().is_ok()
         || name == "localhost"
-        || [".boris", ".local", ".syas.ca"]
+        || name == "omni.syas.ca"
+        || [".boris", ".local"]
             .iter()
             .any(|suffix| name.ends_with(suffix))
 }
@@ -830,6 +832,7 @@ mod tests {
             "evil.example",
             "omni.boris.evil.example",
             "syas.ca.evil.example",
+            "pods.syas.ca",
             "",
         ] {
             assert!(!lan_host(host, public), "{host}");
