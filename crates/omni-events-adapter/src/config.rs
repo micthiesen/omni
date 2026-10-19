@@ -22,6 +22,28 @@ pub struct AdapterOptions {
     pub omni_mcp_token: String,
     pub allowed_user_id: String,
     pub public_mcp_origin: Url,
+    /// Other MCP servers whose events this adapter offers alongside Omni's (see `upstreams`).
+    pub event_upstreams: Vec<EventUpstream>,
+}
+
+/// An MCP server with its own events (an artifacts.boo workspace, say), reached with its own token.
+/// Its events are listed with a `workspace` argument naming `key`, and subscriptions to them go
+/// straight to `url`, which then delivers to the subscriber's callback itself.
+#[derive(Clone)]
+pub struct EventUpstream {
+    pub key: String,
+    pub url: Url,
+    pub token: String,
+}
+
+impl fmt::Debug for EventUpstream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EventUpstream")
+            .field("key", &self.key)
+            .field("url", &self.url.as_str())
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 impl fmt::Debug for AdapterOptions {
@@ -32,6 +54,7 @@ impl fmt::Debug for AdapterOptions {
             .field("omni_mcp_token", &"<redacted>")
             .field("allowed_user_id", &self.allowed_user_id)
             .field("public_mcp_origin", &self.public_mcp_origin.as_str())
+            .field("event_upstreams", &self.event_upstreams)
             .finish()
     }
 }
@@ -44,6 +67,8 @@ pub enum ConfigError {
     InvalidUrl(&'static str),
     #[error("Invalid PORT")]
     InvalidPort,
+    #[error("Invalid EVENT_UPSTREAMS: {0}")]
+    InvalidUpstreams(String),
 }
 
 /// Everything the binary needs to start.
@@ -82,8 +107,60 @@ impl AdapterOptions {
             omni_mcp_token: required(omni_mcp_token, "OMNI_MCP_TOKEN")?,
             allowed_user_id: required(allowed_user_id, "EXECUTOR_ALLOWED_USER_ID")?,
             public_mcp_origin: url(public_mcp_origin, "PUBLIC_MCP_ORIGIN")?,
+            event_upstreams: Vec::new(),
         })
     }
+}
+
+/// `EVENT_UPSTREAMS`: a JSON array of `{key, url, token}`. Keys are short lowercase names, unique;
+/// URLs are HTTPS (HTTP only to a loopback host, for tests).
+pub fn upstreams_from(raw: Option<String>) -> Result<Vec<EventUpstream>, ConfigError> {
+    let Some(raw) = raw.filter(|r| !r.trim().is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let invalid = |m: &str| ConfigError::InvalidUpstreams(m.to_owned());
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Raw {
+        key: String,
+        url: String,
+        token: String,
+    }
+    let raws: Vec<Raw> =
+        serde_json::from_str(&raw).map_err(|_| invalid("not a JSON array of {key, url, token}"))?;
+    let mut list = Vec::with_capacity(raws.len());
+    for r in raws {
+        let url = Url::parse(&r.url).map_err(|_| invalid("an upstream URL doesn't parse"))?;
+        list.push(EventUpstream {
+            key: r.key,
+            url,
+            token: r.token,
+        });
+    }
+    let mut keys = std::collections::HashSet::new();
+    for u in &list {
+        let key_ok = !u.key.is_empty()
+            && u.key.len() <= 32
+            && u.key
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !key_ok {
+            return Err(invalid(
+                "a key is 1-32 lowercase letters, digits and hyphens",
+            ));
+        }
+        if !keys.insert(u.key.clone()) {
+            return Err(invalid("keys must be unique"));
+        }
+        let loopback = matches!(u.url.host_str(), Some("127.0.0.1" | "localhost"));
+        if u.url.scheme() != "https" && !(u.url.scheme() == "http" && loopback) {
+            return Err(invalid("upstream URLs must be HTTPS"));
+        }
+        if u.token.is_empty() {
+            return Err(invalid("every upstream needs a token"));
+        }
+    }
+    Ok(list)
 }
 
 impl EnvConfig {
@@ -97,6 +174,8 @@ impl EnvConfig {
             &or("EXECUTOR_ALLOWED_USER_ID", ""),
             &or("PUBLIC_MCP_ORIGIN", ""),
         )?;
+        let mut options = options;
+        options.event_upstreams = upstreams_from(get("EVENT_UPSTREAMS"))?;
         let port = port_from(get("PORT"))?;
         Ok(Self { options, port })
     }
@@ -155,5 +234,28 @@ mod tests {
             ConfigError::InvalidUrl("PUBLIC_MCP_ORIGIN")
         );
         assert_eq!(port_from(Some("x".into())), Err(ConfigError::InvalidPort));
+    }
+
+    #[test]
+    fn event_upstreams_parse_and_reject_bad_entries() {
+        let ok = upstreams_from(Some(
+            r#"[{"key":"michael","url":"https://michael.artifacts.boo/mcp","token":"t"}]"#.into(),
+        ))
+        .unwrap();
+        assert_eq!(ok.len(), 1);
+        assert_eq!(ok[0].key, "michael");
+        assert!(!format!("{ok:?}").contains("\"t\""));
+        assert!(upstreams_from(None).unwrap().is_empty());
+        assert!(upstreams_from(Some("  ".into())).unwrap().is_empty());
+        for bad in [
+            r#"{"key":"x"}"#,
+            r#"[{"key":"Bad Key","url":"https://a.test/mcp","token":"t"}]"#,
+            r#"[{"key":"a","url":"http://a.test/mcp","token":"t"}]"#,
+            r#"[{"key":"a","url":"https://a.test/mcp","token":""}]"#,
+            r#"[{"key":"a","url":"https://a.test/mcp","token":"t"},{"key":"a","url":"https://b.test/mcp","token":"t"}]"#,
+            r#"[{"key":"a","url":"https://a.test/mcp","token":"t","extra":1}]"#,
+        ] {
+            assert!(upstreams_from(Some(bad.into())).is_err(), "{bad}");
+        }
     }
 }

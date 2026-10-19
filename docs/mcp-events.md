@@ -249,6 +249,37 @@ its alerts is due.
 - Polling: `calendar_events_list` with `from` now and `to` now plus the lead;
   `calendar_event_get` reports alarms.
 
+## Other servers' events
+
+The adapter also offers the events of other MCP servers that implement MCP
+Events themselves, configured in `EVENT_UPSTREAMS` (a JSON array of
+`{key, url, token}` in the adapter's `deployment.env`). Today that is
+artifacts.boo: `{"key": "michael", "url": "https://michael.artifacts.boo/mcp",
+"token": "<agent token>"}` and the same for `support`.
+
+- `events/list` returns Omni's events, then each upstream's (fetched at most
+  every five minutes; an unreachable upstream is left out, never failing the
+  list). An event several upstreams offer is listed once, with a `workspace`
+  argument naming them (required when there is more than one). Omni's own
+  events win a name clash.
+- `events/subscribe` and `events/unsubscribe` for an upstream's event go to that
+  upstream with its token, without `workspace` or the caller's `_meta`; the
+  answer is returned as is. The upstream then checks the callback with its own
+  challenge, signs deliveries (Standard Webhooks) and retries them, and keeps
+  its own cursors, so none of Omni's outbox, receipts or withheld-token logic
+  applies. Unsubscribe identity is the upstream's: name, arguments and callback
+  URL.
+- The caller is still authenticated as the pinned Executor owner before
+  anything reaches an upstream. The upstream token acts as its owner there (for
+  artifacts.boo, an operator's agent token: it sees what that person can open),
+  so only configure tokens of the same person who owns the Executor.
+- Nothing polls an upstream: it is called only when a client lists or
+  subscribes.
+
+Tokens for artifacts.boo come from a workspace's settings (Agent tokens), or
+from its operator API (`POST /api/admin/workspaces/<slug>/tokens` with
+`{"email": "<operator>", "label": "Events adapter"}`).
+
 ## Delivery
 
 Publishing writes the receipt and outbox rows in one transaction, then wakes the

@@ -26,6 +26,7 @@ use crate::rpc::{
     CLIENT_CAPABILITIES_KEY, PROTOCOL_VERSION_KEY, RpcRequest, complete, error_body,
     fill_cache_fields, result_body,
 };
+use crate::upstreams::Upstreams;
 
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MODERN_BODY_BYTES: usize = 262_144;
@@ -76,6 +77,7 @@ struct AppState {
     proxy: reqwest::Client,
     continuations: Continuations,
     connector: Arc<dyn LegacyConnector>,
+    upstreams: Upstreams,
 }
 
 /// Configures the adapter; the defaults are production's.
@@ -139,12 +141,14 @@ impl AdapterBuilder {
             ))
         });
         let continuations = Continuations::new(Arc::clone(&connector), self.ttl, self.max_active);
+        let upstreams = Upstreams::new(self.options.event_upstreams.clone(), http.clone());
         let state = AppState {
             options: Arc::new(self.options),
             http,
             proxy,
             continuations: continuations.clone(),
             connector,
+            upstreams,
         };
         let router = Router::new().fallback(handle).with_state(state);
         Ok(Adapter {
@@ -369,6 +373,14 @@ async fn route(state: &AppState, request: Request) -> Result<Response, Unavailab
         if !EVENT_METHODS.contains(&message.method.as_str()) {
             return Ok(rpc_error(id, -32601, "Method not found", StatusCode::OK));
         }
+        if !state.upstreams.is_empty() {
+            if message.method == "events/list" {
+                return list_events(state, raw, &identity).await;
+            }
+            if let Some(response) = upstream_subscription(state, message, id.clone()).await {
+                return Ok(response);
+            }
+        }
         return forward_event(state, &message.method, raw, &identity).await;
     }
     if message.method == "server/discover" {
@@ -515,12 +527,92 @@ async fn call_legacy(
     }
 }
 
+/// Omni's events, then the upstreams' (except any name Omni already has).
+async fn list_events(
+    state: &AppState,
+    raw: Bytes,
+    identity: &AuthenticatedOwner,
+) -> Result<Response, Unavailable> {
+    let (status, mut rpc) = omni_event(state, "events/list", raw, identity).await?;
+    if let Some(Value::Object(result)) = rpc.get_mut("result") {
+        let catalog = state.upstreams.catalog().await;
+        if let Some(Value::Array(events)) = result.get_mut("events") {
+            let taken: Vec<String> = events
+                .iter()
+                .filter_map(|e| e.get("name").and_then(Value::as_str).map(str::to_owned))
+                .collect();
+            events.extend(catalog.events_except(&taken));
+        }
+    }
+    Ok(json_response(status, &Value::Object(rpc), &[]))
+}
+
+/// A subscribe or unsubscribe for an upstream's event, sent there with its token. None for Omni's events.
+async fn upstream_subscription(
+    state: &AppState,
+    message: &RpcRequest,
+    id: Value,
+) -> Option<Response> {
+    let params = message.params.clone().unwrap_or_default();
+    let name = params.get("name").and_then(Value::as_str)?.to_owned();
+    let arguments = match params.get("arguments") {
+        Some(Value::Object(a)) => a.clone(),
+        _ => Map::new(),
+    };
+    let catalog = state.upstreams.catalog().await;
+    let route = match catalog.route(&name, &arguments)? {
+        Ok(route) => route,
+        Err(problem) => return Some(rpc_error(id, -32602, &problem, StatusCode::OK)),
+    };
+    let upstream = state.upstreams.get(&route.key)?;
+    let mut forwarded = params;
+    // The upstream speaks for itself; this request's protocol metadata stays here.
+    forwarded.remove("_meta");
+    forwarded.insert("arguments".into(), Value::Object(route.arguments));
+    Some(
+        match state
+            .upstreams
+            .call(upstream, &message.method, forwarded)
+            .await
+        {
+            Ok(mut rpc) => {
+                rpc.insert("id".into(), id);
+                if let Some(Value::Object(result)) = rpc.get_mut("result") {
+                    let wrapped = complete(std::mem::take(result));
+                    *result = wrapped;
+                }
+                json_response(StatusCode::OK, &Value::Object(rpc), &[])
+            }
+            Err(error) => {
+                tracing::warn!(upstream = %route.key, %error, method = %message.method, "upstream event request failed");
+                rpc_error(
+                    id,
+                    -32603,
+                    "That workspace's events are unavailable right now",
+                    StatusCode::OK,
+                )
+            }
+        },
+    )
+}
+
 async fn forward_event(
     state: &AppState,
     method: &str,
     raw: Bytes,
     identity: &AuthenticatedOwner,
 ) -> Result<Response, Unavailable> {
+    let (status, rpc) = omni_event(state, method, raw, identity).await?;
+    Ok(json_response(status, &Value::Object(rpc), &[]))
+}
+
+/// An events/* call to Omni for the authenticated owner: its status and JSON-RPC response (result wrapped).
+async fn omni_event(
+    state: &AppState,
+    method: &str,
+    raw: Bytes,
+    identity: &AuthenticatedOwner,
+) -> Result<(StatusCode, Map<String, Value>), Unavailable> {
     let omni = |e: String| Unavailable::Omni(e);
     let url = state
         .options
@@ -563,7 +655,7 @@ async fn forward_event(
         let wrapped = complete(std::mem::take(result));
         *result = wrapped;
     }
-    Ok(json_response(status, &Value::Object(rpc), &[]))
+    Ok((status, rpc))
 }
 
 async fn proxy_legacy(

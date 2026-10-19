@@ -44,6 +44,13 @@ Omni defaults its delegated authorization check to
 `OMNI_EVENTS_EXECUTOR_AUTH_URL` overrides that fixed internal endpoint. The
 adapter's owner ID is an existing Executor user, not a new account or API key.
 
+## Other servers' events
+
+To offer another MCP server's events (artifacts.boo workspaces), add
+`EVENT_UPSTREAMS='[{"key":"...","url":"https://.../mcp","token":"..."}]'` to
+`deployment.env` (mode 0600) and recreate the adapter with the Compose command
+below. See `docs/mcp-events.md`.
+
 ## Exact MCP route
 
 `route.mjs` is the one JavaScript file left in the repository on purpose. It
