@@ -7,7 +7,9 @@
 //! - [`activity`] / [`activity_routes`]: MCP call recording and the
 //!   `/api/mcp/activity` and `/api/claude/*` routes;
 //! - [`tools`]: the `system`, `events` and `claude-sessions` tool groups;
-//! - [`policy`]: the `docs/mcp-policy.json` inventory from registered tools.
+//! - [`policy`]: the `docs/mcp-policy.json` inventory from registered tools;
+//! - [`gateway`]: `/gateway/mcp`, the MCP gateway serving Omni's tools with
+//!   the configured upstream integrations' (`docs/gateway.md`).
 //!
 //! # Wiring
 //!
@@ -28,6 +30,7 @@ pub mod activity;
 pub mod activity_routes;
 pub mod endpoint;
 pub mod events;
+pub mod gateway;
 pub mod host;
 pub mod json;
 pub mod policy;
@@ -52,11 +55,20 @@ use crate::events::publisher::McpEventPublisher;
 use crate::events::service::McpEventService;
 use crate::events::task_runs::TaskRunWatcher;
 use crate::events::webhook::{LiveWebhookTransport, WebhookClient};
+use crate::gateway::access::DownstreamAccess;
+use crate::gateway::bundled::{BundledRegistry, default_root};
+use crate::gateway::connect::OAuthRefresher;
+use crate::gateway::oauth::client::OAuthClient;
+use crate::gateway::oauth::server::AuthorizationServer;
+use crate::gateway::routes::AdminState;
+use crate::gateway::secrets::{GatewaySecrets, SecretsError, key_path};
+use crate::gateway::{Gateway, GatewayParts};
 use crate::host::ClaudeHost;
 use crate::rpc::{McpProtocol, ProtocolSetupError};
 use crate::tasks::{
-    CLAUDE_SESSION_EVENTS_SCHEDULE, ClaudeSessionEventsTask, MCP_EVENT_DELIVERY_SCHEDULE,
-    McpEventDeliveryTask, TASK_RUN_EVENTS_SCHEDULE, TaskRunEventsTask,
+    CLAUDE_SESSION_EVENTS_SCHEDULE, ClaudeSessionEventsTask, GATEWAY_EVENT_FEEDS_SCHEDULE,
+    GATEWAY_REFRESH_SCHEDULE, GatewayEventFeedsTask, GatewayRefreshTask,
+    MCP_EVENT_DELIVERY_SCHEDULE, McpEventDeliveryTask, TASK_RUN_EVENTS_SCHEDULE, TaskRunEventsTask,
 };
 use crate::tools::claude_sessions::ClaudeDeps;
 use crate::tools::system::{ConfiguredFeatures, SystemDeps};
@@ -67,14 +79,16 @@ pub const DEFAULT_EXECUTOR_AUTH_URL: &str = "http://executor:4788/api/auth/mcp/g
 
 /// Every entity this package persists (for `migrate_all` and the compat audit).
 pub fn entities() -> Vec<EntityDescriptor> {
-    vec![
+    let mut entities = vec![
         EntityDescriptor::of::<McpCallData>(),
         EntityDescriptor::of::<EventSubscription>(),
         EntityDescriptor::of::<EventReceipt>(),
         EntityDescriptor::of::<EventDelivery>(),
         EntityDescriptor::of::<EventRequest>(),
         EntityDescriptor::of::<ClaudeSessionWatch>(),
-    ]
+    ];
+    entities.extend(gateway::model::entities());
+    entities
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -91,6 +105,10 @@ pub enum McpSetupError {
         "OMNI_DEVICE_LINK_TOKEN is set but the Claude Code host port is not; build the device link first"
     )]
     MissingClaudeHost,
+    #[error(transparent)]
+    GatewaySecrets(#[from] SecretsError),
+    #[error("invalid OMNI_GATEWAY_PUBLIC_URL: {0}")]
+    GatewayPublicUrl(String),
 }
 
 fn non_empty(value: Option<&String>) -> Option<&str> {
@@ -99,6 +117,62 @@ fn non_empty(value: Option<&String>) -> Option<&str> {
 
 fn time_zone(config: &omni_config::Config) -> jiff::tz::TimeZone {
     jiff::tz::TimeZone::get(&config.tz).unwrap_or(jiff::tz::TimeZone::UTC)
+}
+
+/// Approval requests reach the owner's phone at most this often.
+const APPROVAL_PUSH_INTERVAL_MS: i64 = 5 * 60 * 1000;
+
+/// Pushes "approve this client" to the owner, throttled: anyone on the
+/// internet can start an authorization request, so a burst cannot spam.
+fn approval_notifier(ctx: &AppContext) -> crate::gateway::oauth::server::AuthorizationNotifier {
+    let pushover = ctx.pushover.clone();
+    let tracker = ctx.tracker.clone();
+    let clock = ctx.clock.clone();
+    let page = format!(
+        "{}/gateway",
+        ctx.config.ios_control_home_url.trim_end_matches('/')
+    );
+    let last = Arc::new(std::sync::atomic::AtomicI64::new(i64::MIN / 2));
+    Arc::new(move |row: &gateway::model::AuthorizationRow| {
+        let now = clock.now_ms();
+        let previous = last.load(std::sync::atomic::Ordering::Relaxed);
+        if now - previous < APPROVAL_PUSH_INTERVAL_MS
+            || last
+                .compare_exchange(
+                    previous,
+                    now,
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                )
+                .is_err()
+        {
+            return;
+        }
+        // The app names itself, so only the redirect host is trustworthy here,
+        // and the user code stays on the sign-in page that started the request.
+        let host = url::Url::parse(&row.redirect_uri)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_else(|| "an unknown address".to_owned());
+        let message = omni_alerts::PushoverMessage {
+            title: Some("MCP gateway sign-in request".to_owned()),
+            message: format!(
+                "An app returning to {host} asks to connect to Omni's MCP gateway. If you started it, enter the code from its sign-in page on the MCP gateway page; otherwise deny it."
+            ),
+            url: Some(page.clone()),
+            url_title: Some("Open the MCP gateway".to_owned()),
+            ..omni_alerts::PushoverMessage::default()
+        };
+        let pushover = pushover.clone();
+        omni_core::spawn::spawn_tracked(&tracker, "mcp-gateway-approval-push", async move {
+            if let Err(error) = pushover
+                .send(omni_alerts::PushoverChannel::General, message)
+                .await
+            {
+                tracing::warn!(target: LOG, %error, "Gateway approval push failed");
+            }
+        });
+    })
 }
 
 /// The MCP package for one process.
@@ -110,6 +184,11 @@ pub struct McpPackage {
     host: Option<Arc<dyn ClaudeHost>>,
     recorder: ActivityRecorder,
     features: ConfiguredFeatures,
+    gateway: Gateway,
+    access: DownstreamAccess,
+    oauth: OAuthClient,
+    authorization: Option<AuthorizationServer>,
+    public_origin: Option<String>,
 }
 
 impl McpPackage {
@@ -150,6 +229,49 @@ impl McpPackage {
                 ctx.ports.clone(),
             )
         });
+        let secrets = GatewaySecrets::load_or_create(&key_path(&ctx.paths.data_dir))?;
+        let oauth = OAuthClient::new(ctx.public_http.clone());
+        let recorder =
+            ActivityRecorder::new(ctx.store.clone(), ctx.clock.clone(), ctx.tracker.clone());
+        let gateway = Gateway::new(GatewayParts {
+            store: ctx.store.clone(),
+            clock: ctx.clock.clone(),
+            http: ctx.public_http.clone(),
+            secrets: secrets.clone(),
+            refresher: Some(OAuthRefresher::new(oauth.clone())),
+            bundled: BundledRegistry::installed(&default_root(config.dockerized)),
+            tracker: ctx.tracker.clone(),
+            shutdown: ctx.shutdown.clone(),
+            recorder: recorder.clone(),
+            allow_loopback_http: false,
+            side_effects: ctx.side_effects,
+        });
+        let access = DownstreamAccess::new(
+            ctx.store.clone(),
+            ctx.clock.clone(),
+            secrets.clone(),
+            ctx.tracker.clone(),
+        );
+        if let Some(events) = &events {
+            gateway::events::extend_events(events, &gateway, &access);
+        }
+        let public_origin = non_empty(config.omni_gateway_public_url.as_ref()).map(str::to_owned);
+        let authorization = match &public_origin {
+            Some(origin) => {
+                let resource = url::Url::parse(&format!("{origin}{}", gateway::endpoint::PATH))
+                    .map_err(|e| McpSetupError::GatewayPublicUrl(e.to_string()))?;
+                Some(AuthorizationServer::new(
+                    ctx.store.clone(),
+                    ctx.clock.clone(),
+                    ctx.public_http.clone(),
+                    secrets,
+                    resource,
+                    Some(approval_notifier(ctx)),
+                    ctx.tracker.clone(),
+                ))
+            }
+            None => None,
+        };
         let watcher = match (&events, &host) {
             (Some(events), Some(host)) => Some(ClaudeSessionWatcher::new(
                 events.clone(),
@@ -160,17 +282,18 @@ impl McpPackage {
             _ => None,
         };
         Ok(Self {
-            recorder: ActivityRecorder::new(
-                ctx.store.clone(),
-                ctx.clock.clone(),
-                ctx.tracker.clone(),
-            ),
+            recorder,
             features: ConfiguredFeatures::from_config(config),
             ctx: ctx.clone(),
             token,
             events,
             watcher,
             host,
+            gateway,
+            access,
+            oauth,
+            authorization,
+            public_origin,
         })
     }
 
@@ -182,6 +305,18 @@ impl McpPackage {
 
     pub fn events(&self) -> Option<&McpEventService> {
         self.events.as_ref()
+    }
+
+    pub fn gateway(&self) -> &Gateway {
+        &self.gateway
+    }
+
+    pub fn access(&self) -> &DownstreamAccess {
+        &self.access
+    }
+
+    pub fn authorization(&self) -> Option<&AuthorizationServer> {
+        self.authorization.as_ref()
     }
 
     pub fn watcher(&self) -> Option<&ClaudeSessionWatcher> {
@@ -220,6 +355,12 @@ impl McpPackage {
     /// The subsystem serving `all_tools` (every package's, this one's included).
     pub fn subsystem(self, all_tools: Vec<McpTool>) -> Result<Subsystem, McpSetupError> {
         let ctx = &self.ctx;
+        let gateway_protocol = McpProtocol::gateway(
+            all_tools.clone(),
+            self.recorder.clone(),
+            self.events.clone(),
+            self.gateway.clone(),
+        )?;
         let protocol = match &self.token {
             Some(_) => Some(McpProtocol::new(
                 all_tools,
@@ -228,9 +369,32 @@ impl McpPackage {
             )?),
             None => None,
         };
-        let router = endpoint::router(self.token.as_deref(), protocol).merge(
-            activity_routes::router(ctx.store.clone(), ctx.clock.clone(), self.host.clone()),
-        );
+        let mut router = endpoint::router(self.token.as_deref(), protocol)
+            .merge(activity_routes::router(
+                ctx.store.clone(),
+                ctx.clock.clone(),
+                self.host.clone(),
+            ))
+            .merge(gateway::endpoint::router(
+                gateway_protocol,
+                self.access.clone(),
+                self.gateway.clone(),
+                self.authorization
+                    .as_ref()
+                    .map(AuthorizationServer::resource_metadata_url),
+                ctx.shutdown.clone(),
+            ))
+            .merge(gateway::routes::router(AdminState {
+                gateway: self.gateway.clone(),
+                access: self.access.clone(),
+                events: self.events.clone(),
+                oauth: self.oauth.clone(),
+                authorization: self.authorization.clone(),
+                public_url: self.public_origin.clone(),
+            }));
+        if let Some(server) = &self.authorization {
+            router = router.merge(server.router());
+        }
         let tz = time_zone(&ctx.config);
         let schedule = |expr: &str| {
             CronSchedule::parse(expr, &tz).map_err(|_| McpSetupError::Schedule(expr.to_owned()))
@@ -304,6 +468,42 @@ impl McpPackage {
             subsystem.tasks.push(Arc::new(ClaudeSessionEventsTask::new(
                 watcher.clone(),
                 schedule(CLAUDE_SESSION_EVENTS_SCHEDULE)?,
+            )));
+        }
+        let gateway = self.gateway.clone();
+        subsystem.boot_steps.push(BootStep {
+            phase: BootPhase::Services,
+            name: "loadGateway",
+            run: Box::new(move |_ctx: AppContext| {
+                let gateway = gateway.clone();
+                async move {
+                    gateway
+                        .load()
+                        .await
+                        .map_err(|e| BootError::new("loadGateway", e.to_string()))
+                }
+                .boxed()
+            }),
+        });
+        let worker = self.gateway.clone();
+        subsystem.services.push(BackgroundService {
+            name: "McpGateway refresh worker",
+            start: Box::new(move |_ctx: AppContext| {
+                let gateway = worker.clone();
+                async move { gateway.refresh_worker().await }.boxed()
+            }),
+            retry: None,
+        });
+        subsystem.tasks.push(Arc::new(GatewayRefreshTask::new(
+            self.gateway.clone(),
+            self.authorization.clone(),
+            schedule(GATEWAY_REFRESH_SCHEDULE)?,
+        )));
+        if let Some(events) = &self.events {
+            subsystem.tasks.push(Arc::new(GatewayEventFeedsTask::new(
+                self.gateway.clone(),
+                events.clone(),
+                schedule(GATEWAY_EVENT_FEEDS_SCHEDULE)?,
             )));
         }
         Ok(subsystem)

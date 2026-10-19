@@ -17,7 +17,9 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
   `omni-device-link`, `omni-personal`, `omni-stylist`. Each exposes
-  a constructor that returns an `omni_runtime::Subsystem`.
+  a constructor that returns an `omni_runtime::Subsystem`. `omni-mcp` also
+  hosts the MCP gateway (`/gateway/mcp`, [gateway.md](gateway.md)), which serves
+  every tool together with the configured upstream MCP integrations'.
 - **App:** `omni` builds the `AppContext`, constructs every subsystem,
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
   the CLI.
@@ -191,11 +193,15 @@ when a later one differs.
   `omni-intel-doctor`. The server stage excludes the web crates,
   `omni-events-adapter` and `xtask`, so editing them keeps it cached;
 - `web -> web-dist`: `trunk build --release`, then Brotli and gzip copies;
-- `runtime` on `node:24.19.0-slim` (Node stays for `yt-dlp --js-runtimes node`),
+- `mcp-stdio`: `npm ci --ignore-scripts` of `deploy/mcp-stdio/package-lock.json`,
+  the stdio MCP servers the gateway bundles (copied to `/app/mcp-stdio`);
+- `runtime` on `node:24.19.0-slim` (Node stays for `yt-dlp --js-runtimes node`
+  and the bundled stdio MCP servers),
   with ffmpeg, CUPS/brlaser, ghostscript, poppler and tini. Layers run from least
   to most frequently changed so a code change pushes only the last layers.
   `RUN omni doctor --image` fails the build when ffmpeg filters, the
-  denoise model, printer files, sherpa models or yt-dlp are missing.
+  denoise model, printer files, sherpa models, yt-dlp, Node or a bundled MCP
+  server are missing.
 
 The Rust stages rely on cargo-chef layers, not cache mounts, because the GitHub
 Actions cache exports layers but not mounts.

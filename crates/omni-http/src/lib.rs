@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-pub use reqwest::{Method, StatusCode};
+pub use reqwest::{Method, Response, StatusCode};
 pub use url::Url;
 
 pub mod public;
@@ -95,12 +95,16 @@ impl HttpClient {
         } else {
             (
                 build(client_builder(&cfg))?,
+                // A proxy from the environment would resolve names itself and
+                // bypass the public-address check, so the public transports never use one.
                 build(
                     client_builder(&cfg)
+                        .no_proxy()
                         .dns_resolver(PublicResolver::system(AddressPolicy::PublicOnly)),
                 )?,
                 build(
                     client_builder(&cfg)
+                        .no_proxy()
                         .dns_resolver(PublicResolver::system(AddressPolicy::AllowLoopback)),
                 )?,
             )
@@ -331,6 +335,37 @@ impl RequestBuilder {
         }
     }
 
+    /// Sends without reading the body, for streamed responses (Server-Sent
+    /// Events). Redirects are never followed: under [`RedirectRule::Error`] a
+    /// 3xx is `HttpError::Status`, otherwise it is returned. A public request
+    /// keeps its URL check and DNS guard. The timeout, when set, covers only
+    /// the response headers; the caller bounds the body.
+    pub async fn send_streaming(self) -> Result<reqwest::Response, HttpError> {
+        let (client, request) = self.inner.build_split();
+        let mut request = request.map_err(|e| map_reqwest(&e))?;
+        // reqwest's whole-request timeout would also cut a long stream.
+        *request.timeout_mut() = None;
+        if let Guard::Public(policy) = self.guard {
+            public::check_url(request.url().as_str(), policy)?;
+        }
+        let send = client.execute(request);
+        let response = match self.timeout {
+            Some(limit) => tokio::time::timeout(limit, send)
+                .await
+                .map_err(|_| HttpError::Timeout)?,
+            None => send.await,
+        }
+        // The URL may carry a credential in its query; errors never repeat it.
+        .map_err(|e| map_reqwest(&e.without_url()))?;
+        if self.redirect == RedirectRule::Error && redirect_location(&response).is_some() {
+            return Err(HttpError::Status {
+                status: response.status().as_u16(),
+                body: String::new(),
+            });
+        }
+        Ok(response)
+    }
+
     /// [`Self::send_bounded`] then JSON decode; non-2xx becomes `HttpError::Status`.
     pub async fn json_bounded<T: DeserializeOwned>(self, max_bytes: usize) -> Result<T, HttpError> {
         let response = self.send_bounded(max_bytes).await?;
@@ -434,7 +469,7 @@ async fn read_bounded(
 }
 
 /// `error` followed by its source chain, `: `-separated.
-pub(crate) fn error_chain(error: &dyn std::error::Error) -> String {
+pub fn error_chain(error: &dyn std::error::Error) -> String {
     let mut out = error.to_string();
     let mut source = error.source();
     while let Some(cause) = source {

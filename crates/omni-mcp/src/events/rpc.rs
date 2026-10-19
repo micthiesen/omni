@@ -123,7 +123,7 @@ fn check_delivery(issues: &mut Issues, params: &Map<String, Value>, with_secret:
     }
 }
 
-fn subscribe_input(params: &Map<String, Value>) -> Result<SubscribeInput, RpcError> {
+pub(crate) fn subscribe_input(params: &Map<String, Value>) -> Result<SubscribeInput, RpcError> {
     let mut issues = Issues::default();
     issues.string(params, "name", &["name"]);
     check_arguments(&mut issues, params);
@@ -195,7 +195,7 @@ fn subscribe_input(params: &Map<String, Value>) -> Result<SubscribeInput, RpcErr
     })
 }
 
-fn unsubscribe_input(params: &Map<String, Value>) -> Result<UnsubscribeInput, RpcError> {
+pub(crate) fn unsubscribe_input(params: &Map<String, Value>) -> Result<UnsubscribeInput, RpcError> {
     let mut issues = Issues::default();
     issues.string(params, "name", &["name"]);
     check_arguments(&mut issues, params);
@@ -245,7 +245,7 @@ fn principal(headers: &HeaderMap) -> Result<Option<EventPrincipal>, RpcError> {
     }
 }
 
-fn service_error(error: EventServiceError) -> RpcError {
+pub(crate) fn service_error(error: EventServiceError) -> RpcError {
     match error {
         EventServiceError::Rejected(reason) => {
             let data = json!({ "reason": reason.as_str() });

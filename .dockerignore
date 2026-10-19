@@ -10,6 +10,8 @@
 !deploy/build-tools/
 !deploy/sherpa-onnx/fetch-static-lib.sh
 !deploy/web-tools/install.sh
+!deploy/mcp-stdio/package.json
+!deploy/mcp-stdio/package-lock.json
 # Release builds never read tests, fixtures or build output, so
 # editing them must not invalidate the Rust layers. Captured golden fixtures
 # can hold production data and never enter the context.

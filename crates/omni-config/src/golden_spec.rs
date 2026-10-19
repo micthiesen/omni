@@ -8,7 +8,12 @@ use serde_json::Value;
 use super::*;
 
 /// Variables the fixture cases do not record.
-const RUST_ONLY: &[&str] = &["OMNI_DEBUG", "FFMPEG_PATH", "YT_DLP_PATH"];
+const RUST_ONLY: &[&str] = &[
+    "OMNI_DEBUG",
+    "FFMPEG_PATH",
+    "YT_DLP_PATH",
+    "OMNI_GATEWAY_PUBLIC_URL",
+];
 
 fn env(case: &Value) -> BTreeMap<String, String> {
     case["env"]

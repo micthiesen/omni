@@ -63,7 +63,7 @@ const fn item(
 }
 
 /// Every destination except `/live` (the On air header), in rail order.
-pub const NAV: [NavItem; 15] = [
+pub const NAV: [NavItem; 16] = [
     item("Home", "/", Icon::Home, Group::Top, Some('h')),
     item("Movies & TV", "/media", Icon::Film, Group::Watch, Some('m')),
     item(
@@ -107,6 +107,7 @@ pub const NAV: [NavItem; 15] = [
     ),
     item("Costs", "/costs", Icon::Coin, Group::System, Some('c')),
     item("MCP", "/mcp-activity", Icon::Plug, Group::System, None),
+    item("MCP gateway", "/gateway", Icon::Grid, Group::System, None),
     item("Claude", "/claude", Icon::Terminal, Group::System, None),
     item("Data", "/data", Icon::Database, Group::System, Some('d')),
 ];
@@ -252,6 +253,7 @@ mod tests {
         assert_eq!(current_href("/calendar"), Some("/calendar"));
         assert_eq!(current_href("/stylist"), Some("/stylist"));
         assert_eq!(current_href("/stylistx"), None);
+        assert_eq!(current_href("/gateway"), Some("/gateway"));
         assert_eq!(current_href("/podsx"), None);
         assert_eq!(current_href("/nope"), None);
     }
@@ -302,6 +304,10 @@ mod tests {
         assert_eq!(
             labels(&crumbs("/stylist", None, &CrumbNames::default())),
             [("Personal", true), ("Stylist", false)]
+        );
+        assert_eq!(
+            labels(&crumbs("/gateway", None, &CrumbNames::default())),
+            [("System", true), ("MCP gateway", false)]
         );
         let names = CrumbNames {
             page: Some("Dune".into()),

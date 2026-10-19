@@ -119,6 +119,9 @@ impl EventCrypto {
 pub fn owner_label(owner: &str) -> String {
     if owner.starts_with("executor:") {
         owner.chars().take(21).collect()
+    } else if let Some(rest) = owner.strip_prefix(crate::gateway::access::OWNER_PREFIX) {
+        // `gateway:client:<uuid>` or `gateway:grant:<id>`, shortened.
+        format!("gateway:{}", rest.chars().take(20).collect::<String>())
     } else {
         "direct".to_owned()
     }

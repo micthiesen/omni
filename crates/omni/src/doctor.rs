@@ -147,6 +147,19 @@ pub async fn checks(env: &DoctorEnv, assets_dir: &Path) -> Vec<Check> {
         Ok(version) => Check::new("yt-dlp --version", true, version.trim().to_owned()),
         Err(error) => Check::new("yt-dlp --version", false, error),
     });
+    // The MCP gateway's bundled stdio servers run with Node from the image.
+    out.push(match command_output("node", &["--version"]).await {
+        Ok(version) => Check::new("node --version", true, version.trim().to_owned()),
+        Err(error) => Check::new("node --version", false, error),
+    });
+    let bundled = omni_mcp::gateway::bundled::BundledRegistry::installed(
+        &omni_mcp::gateway::bundled::default_root(true),
+    );
+    for server in bundled.servers() {
+        if let Some(entry) = server.entry() {
+            out.push(file_check(entry));
+        }
+    }
     out
 }
 

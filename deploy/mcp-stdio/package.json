@@ -1,0 +1,9 @@
+{
+  "name": "omni-mcp-stdio",
+  "private": true,
+  "description": "Stdio MCP servers bundled in the Omni image; see crates/omni-mcp/src/gateway/bundled.rs.",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "@karakeep/mcp": "0.33.0"
+  }
+}

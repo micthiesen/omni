@@ -1,0 +1,17 @@
+Karakeep MCP server (@karakeep/mcp 0.33.0, with @karakeep/sdk 0.33.0)
+
+The Omni image includes the unmodified npm packages @karakeep/mcp and
+@karakeep/sdk, version 0.33.0, in /app/mcp-stdio/node_modules. They run as a
+separate program that Omni's MCP gateway starts and talks to over standard
+input and output; Omni does not link to or modify them.
+
+Copyright (c) the Karakeep authors.
+License: GNU Affero General Public License, version 3
+  https://www.gnu.org/licenses/agpl-3.0.txt
+Corresponding source:
+  https://github.com/karakeep-app/karakeep (tag v0.33.0, apps/mcp and packages/sdk)
+  https://registry.npmjs.org/@karakeep/mcp/-/mcp-0.33.0.tgz
+  https://registry.npmjs.org/@karakeep/sdk/-/sdk-0.33.0.tgz
+
+The exact package set installed in the image, with integrity hashes, is
+deploy/mcp-stdio/package-lock.json in Omni's repository.

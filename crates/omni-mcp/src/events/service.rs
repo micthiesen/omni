@@ -21,8 +21,9 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{Mutex, Notify};
 
-use super::catalog::{EMAIL_RECEIVED, EventArguments, event_definition};
+use super::catalog::{EMAIL_RECEIVED, EventArguments};
 use super::crypto::{EventCrypto, owner_label};
+use super::dynamic::{Definition, EventExtensions, is_gateway_owner, string_arguments};
 use super::executor_auth::{EventAuthorizer, ExecutorAuthError};
 use super::persistence::{
     DeliveryFailure, DeliveryStatus, DeliveryWithhold, EventDelivery, EventReceipt, EventRequest,
@@ -52,6 +53,8 @@ const DELIVERY_RETENTION_MS: i64 = 7 * 24 * 60 * MINUTE_MS;
 const RECEIPT_RETENTION_MS: i64 = 30 * 24 * 60 * MINUTE_MS;
 const SUBSCRIPTION_RETENTION_MS: i64 = 7 * 24 * 60 * MINUTE_MS;
 const MAX_BACKOFF_MS: i64 = 6 * 60 * MINUTE_MS;
+/// How long a delivery waits for a missing integration event definition.
+const DEFINITION_RECHECK_MS: i64 = 5 * MINUTE_MS;
 
 fn withheld_recheck_ms(reason: DeliveryWithhold) -> i64 {
     match reason {
@@ -191,6 +194,7 @@ struct Inner {
     drain_lock: Mutex<()>,
     wake: Notify,
     last_pruned_at: AtomicI64,
+    extensions: std::sync::OnceLock<EventExtensions>,
 }
 
 /// The MCP Events service; cheap to clone.
@@ -220,12 +224,32 @@ impl McpEventService {
                 drain_lock: Mutex::new(()),
                 wake: Notify::new(),
                 last_pruned_at: AtomicI64::new(0),
+                extensions: std::sync::OnceLock::new(),
             }),
         }
     }
 
     fn now(&self) -> i64 {
         self.inner.clock.now_ms()
+    }
+
+    /// Registers integration events and gateway owners (once; later calls
+    /// are ignored).
+    pub fn extend(&self, extensions: EventExtensions) {
+        let _ = self.inner.extensions.set(extensions);
+    }
+
+    fn definition<'a>(&'a self, name: &'a str) -> Option<Definition<'a>> {
+        let dynamic = self.inner.extensions.get().map(|e| e.dynamic.as_ref());
+        Definition::resolve(name, dynamic)
+    }
+
+    /// [`Self::definition`] as `owner` sees it: integration events exist only
+    /// for gateway principals, so `/mcp` callers never reach them.
+    fn definition_for<'a>(&'a self, owner: &str, name: &'a str) -> Option<Definition<'a>> {
+        self.definition(name).filter(|definition| {
+            matches!(definition, Definition::Static(_)) || is_gateway_owner(owner)
+        })
     }
 
     fn crypto(&self) -> &EventCrypto {
@@ -267,7 +291,7 @@ impl McpEventService {
         input: Option<(&str, &Value)>,
         url: Option<&str>,
     ) {
-        let definition = input.and_then(|(name, _)| event_definition(name));
+        let definition = input.and_then(|(name, _)| self.definition(name));
         let arguments = match (definition, input) {
             (Some(definition), Some((_, raw))) => definition.parse_arguments(raw),
             _ => None,
@@ -277,7 +301,7 @@ impl McpEventService {
             at: self.now(),
             method,
             owner: owner_label(owner),
-            name: definition.map(|d| d.name.to_owned()),
+            name: definition.map(|d| d.name().to_owned()),
             arguments,
             folder: None,
             callback_host: callback_host(url),
@@ -296,6 +320,12 @@ impl McpEventService {
             .await;
     }
 
+    /// Records that a gateway principal read the event catalog.
+    pub async fn record_discovery_as(&self, owner: &str) {
+        self.record_request(EventRequestMethod::List, owner, "listed", None, None)
+            .await;
+    }
+
     pub async fn subscribe(
         &self,
         input: &SubscribeInput,
@@ -305,6 +335,25 @@ impl McpEventService {
             || self.crypto().direct_owner().to_owned(),
             |p| p.owner.clone(),
         );
+        self.subscribe_owned(&owner, input, principal).await
+    }
+
+    /// A subscription owned by a gateway principal (checked at delivery).
+    pub async fn subscribe_as(
+        &self,
+        owner: &str,
+        input: &SubscribeInput,
+    ) -> Result<SubscribeResult, EventServiceError> {
+        self.subscribe_owned(owner, input, None).await
+    }
+
+    async fn subscribe_owned(
+        &self,
+        owner: &str,
+        input: &SubscribeInput,
+        principal: Option<&EventPrincipal>,
+    ) -> Result<SubscribeResult, EventServiceError> {
+        let owner = owner.to_owned();
         let result = self.subscribe_inner(&owner, input, principal).await;
         let request = Some((input.name.as_str(), &input.arguments));
         match &result {
@@ -343,8 +392,9 @@ impl McpEventService {
         principal: Option<&EventPrincipal>,
     ) -> Result<(bool, SubscribeResult), EventServiceError> {
         let token_expires_at = self.authorize_principal(owner, principal).await?;
-        let definition =
-            event_definition(&input.name).ok_or(reject(SubscriptionRejection::InvalidEvent))?;
+        let definition = self
+            .definition_for(owner, &input.name)
+            .ok_or(reject(SubscriptionRejection::InvalidEvent))?;
         let args = definition
             .parse_arguments(&input.arguments)
             .ok_or(reject(SubscriptionRejection::InvalidArguments))?;
@@ -355,7 +405,7 @@ impl McpEventService {
             return Err(reject(SubscriptionRejection::InvalidSecret));
         }
         let crypto = self.crypto();
-        let id = crypto.subscription_id(owner, definition.name, &args, &url);
+        let id = crypto.subscription_id(owner, definition.name(), &args, &url);
         let known = self.inner.store.subscription(&id).await?;
         let recently_verified = known.as_ref().is_some_and(|known| {
             known.owner == owner
@@ -406,7 +456,7 @@ impl McpEventService {
             generation: previous
                 .as_ref()
                 .map_or_else(omni_core::ids::uuid_v4, |p| p.generation.clone()),
-            name: definition.name.to_owned(),
+            name: definition.name().to_owned(),
             arguments: Some(args),
             folder: None,
             encrypted_url: crypto.seal(&url),
@@ -486,6 +536,25 @@ impl McpEventService {
             || self.crypto().direct_owner().to_owned(),
             |p| p.owner.clone(),
         );
+        self.unsubscribe_owned(&owner, input, principal).await
+    }
+
+    /// Removes a gateway principal's subscription.
+    pub async fn unsubscribe_as(
+        &self,
+        owner: &str,
+        input: &UnsubscribeInput,
+    ) -> Result<(), EventServiceError> {
+        self.unsubscribe_owned(owner, input, None).await
+    }
+
+    async fn unsubscribe_owned(
+        &self,
+        owner: &str,
+        input: &UnsubscribeInput,
+        principal: Option<&EventPrincipal>,
+    ) -> Result<(), EventServiceError> {
+        let owner = owner.to_owned();
         let request = Some((input.name.as_str(), &input.arguments));
         match self.unsubscribe_inner(&owner, input, principal).await {
             Ok(outcome) => {
@@ -520,10 +589,18 @@ impl McpEventService {
         principal: Option<&EventPrincipal>,
     ) -> Result<&'static str, EventServiceError> {
         self.authorize_principal(owner, principal).await?;
-        let Some(definition) = event_definition(&input.name) else {
-            return Ok("not_found");
+        let parsed = match self.definition_for(owner, &input.name) {
+            Some(definition) => definition
+                .parse_arguments(&input.arguments)
+                .map(|args| (definition.name().to_owned(), args)),
+            // An integration event that is offered again later must not
+            // resume to a callback that unsubscribed meanwhile.
+            None if is_gateway_owner(owner) => {
+                string_arguments(&input.arguments).map(|args| (input.name.clone(), args))
+            }
+            None => None,
         };
-        let Some(args) = definition.parse_arguments(&input.arguments) else {
+        let Some((name, args)) = parsed else {
             return Ok("not_found");
         };
         let Some(url) = validate_callback_url(&input.url) else {
@@ -531,7 +608,7 @@ impl McpEventService {
         };
         let id = self
             .crypto()
-            .subscription_id(owner, definition.name, &args, url.as_str());
+            .subscription_id(owner, &name, &args, url.as_str());
         let _state = self.inner.state_lock.lock().await;
         let prior = self.inner.store.subscription(&id).await?;
         if prior.is_none_or(|prior| prior.owner != owner) {
@@ -539,6 +616,25 @@ impl McpEventService {
         }
         self.inner.store.delete_subscription(&id).await?;
         Ok("removed")
+    }
+
+    /// Deletes every subscription `owner` holds (a revoked gateway client or
+    /// grant); their pending deliveries then fail as inactive. The count.
+    pub async fn remove_owner(&self, owner: &str) -> Result<usize, StoreError> {
+        let _state = self.inner.state_lock.lock().await;
+        let owned: Vec<String> = self
+            .inner
+            .store
+            .subscriptions()
+            .await?
+            .into_iter()
+            .filter(|row| row.owner == owner)
+            .map(|row| row.id)
+            .collect();
+        for id in &owned {
+            self.inner.store.delete_subscription(id).await?;
+        }
+        Ok(owned.len())
     }
 
     /// Whether any current subscription would receive this event name.
@@ -565,7 +661,30 @@ impl McpEventService {
     /// Queues one event for every matching subscription, once per receipt key.
     /// The receipt and outbox rows commit atomically, then delivery starts.
     pub async fn publish(&self, input: PublishInput) -> Result<bool, StoreError> {
-        let Some(definition) = event_definition(&input.name) else {
+        self.publish_inner(input, None).await
+    }
+
+    /// [`Self::publish`] for an integration event observed for one argument
+    /// set: only gateway subscriptions with exactly those arguments receive
+    /// it. `None` when the event is not offered now, so nothing was recorded
+    /// and the caller must not move past it.
+    pub async fn publish_targeted(
+        &self,
+        input: PublishInput,
+        target: &EventArguments,
+    ) -> Result<Option<bool>, StoreError> {
+        if self.definition(&input.name).is_none() {
+            return Ok(None);
+        }
+        self.publish_inner(input, Some(target)).await.map(Some)
+    }
+
+    async fn publish_inner(
+        &self,
+        input: PublishInput,
+        target: Option<&EventArguments>,
+    ) -> Result<bool, StoreError> {
+        let Some(definition) = self.definition(&input.name) else {
             return Ok(false);
         };
         let queued = {
@@ -598,7 +717,11 @@ impl McpEventService {
                     .into_iter()
                     .filter(|subscription| {
                         subscription.key_id == key_id
-                            && subscription.name == definition.name
+                            && subscription.name == definition.name()
+                            && target.is_none_or(|target| {
+                                is_gateway_owner(&subscription.owner)
+                                    && *target == subscription.effective_arguments()
+                            })
                             && subscription.expires_at > now
                             && definition.matches(&subscription.effective_arguments(), &input.data)
                     })
@@ -608,7 +731,7 @@ impl McpEventService {
                         owner: subscription.owner.clone(),
                         subscription_generation: subscription.generation.clone(),
                         event_id: event_id.clone(),
-                        name: definition.name.to_owned(),
+                        name: definition.name().to_owned(),
                         timestamp: input.timestamp.clone(),
                         data: data.clone(),
                         attempts: 0,
@@ -626,7 +749,7 @@ impl McpEventService {
                 let any = !deliveries.is_empty();
                 let receipt = EventReceipt {
                     message_key: input.receipt_key.clone(),
-                    name: Some(definition.name.to_owned()),
+                    name: Some(definition.name().to_owned()),
                     folder: input
                         .data
                         .get("folder")
@@ -768,6 +891,17 @@ impl McpEventService {
             else {
                 continue;
             };
+            if is_gateway_owner(&subscription.owner) {
+                if let Some(extensions) = self.inner.extensions.get() {
+                    let verdict = if extensions.owners.is_active(&subscription.owner).await {
+                        Verdict::Ok
+                    } else {
+                        Verdict::Withhold(DeliveryWithhold::AuthorizationInvalid)
+                    };
+                    results.insert(row.subscription_id.clone(), verdict);
+                }
+                continue;
+            }
             if !subscription.owner.starts_with("executor:") {
                 continue;
             }
@@ -830,7 +964,25 @@ impl McpEventService {
                 continue;
             }
             let subscription = self.inner.store.subscription(&row.subscription_id).await?;
-            let definition = event_definition(&row.name);
+            let definition = self.definition_for(&row.owner, &row.name);
+            // An integration event whose definition is momentarily missing (a
+            // refresh, an integration toggled off) waits instead of failing.
+            if definition.is_none()
+                && let Some(current) = &subscription
+                && is_gateway_owner(&current.owner)
+                && current.generation == row.subscription_generation
+                && current.expires_at > now
+            {
+                self.inner
+                    .store
+                    .upsert_delivery(EventDelivery {
+                        next_attempt_at: now + DEFINITION_RECHECK_MS,
+                        updated_at: now,
+                        ..row.clone()
+                    })
+                    .await?;
+                continue;
+            }
             let active = match (&subscription, definition) {
                 (Some(subscription), Some(definition)) => {
                     subscription.key_id == crypto.key_id()
@@ -849,6 +1001,26 @@ impl McpEventService {
                     .await?;
                 continue;
             };
+            // A revoked gateway client or grant holds its events until the
+            // subscription ends, exactly like an invalid Executor token; with
+            // no check registered at all, nothing is delivered.
+            if is_gateway_owner(&subscription.owner) {
+                match authorization.get(&subscription.id) {
+                    Some(Verdict::Ok) => {}
+                    Some(Verdict::Withhold(reason)) => {
+                        withheld.insert(subscription.id.clone());
+                        self.withhold(&subscription.id, *reason, now).await?;
+                        continue;
+                    }
+                    None => {
+                        self.inner
+                            .store
+                            .upsert_delivery(fail(DeliveryFailure::CredentialsUnavailable))
+                            .await?;
+                        continue;
+                    }
+                }
+            }
             if subscription.owner.starts_with("executor:") {
                 match authorization.get(&subscription.id) {
                     None => {

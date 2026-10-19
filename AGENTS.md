@@ -164,7 +164,9 @@ change; reuse authorization already given in the conversation.
   (PCS) workflow; callers own authenticated requests, encrypted cookie
   persistence and per-account serialization.
 - `omni-mcp`: authenticated `/mcp` endpoint, MCP Events outbox, MCP activity,
-  system/events/Claude session tools, policy inventory.
+  system/events/Claude session tools, policy inventory, and the MCP gateway
+  (`/gateway/mcp`: upstream integrations, downstream tokens and OAuth server,
+  integration event feeds; `docs/gateway.md`).
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
 - `omni-personal`: pets, LAN printer, Hister, Codex/Claude reset alerts
   (`reset_alerts`), and agent push notifications to the owner
@@ -517,6 +519,24 @@ sets the serving order. `crates/omni-mcp-kit/golden/tools-list.json`, both
 changing a definition run `cargo xtask mcp-golden` and review the JSON diff;
 tests fail on drift. Served schemas must stay byte-identical unless the contract
 change is intended.
+
+### MCP gateway
+
+`/gateway/mcp` (`omni-mcp/src/gateway/`, `docs/gateway.md`) serves Omni's tools
+plus each configured upstream integration's as `<id>__<tool>`; native tool and
+event names never contain `__`. It accepts only gateway client tokens (stored as
+SHA-256) and OAuth access tokens it issued, never `OMNI_MCP_TOKEN`, and downstream
+OAuth approval happens only on the LAN-only `/gateway` page. Only `/gateway/*` and
+`/.well-known/oauth-*` are public (`deploy/gateway/route.mjs`). Upstream URLs are
+public HTTPS through the SSRF-guarded client with no redirects; stdio integrations
+name an image-bundled server (`deploy/mcp-stdio` lockfile, no install scripts) and
+run with a cleared environment. Credentials are sealed with `gateway.key`, bound
+to their origin and auth kind, write-only and never logged. Results, errors and
+annotations pass through unchanged; `tools/call` is retried only when it certainly
+did not run. Integration events are followed by `events/poll` feeds whose cursor
+is stored only after the events are queued (receipts keyed by feed and upstream
+event id); a `truncated` replay is recorded as a gap, never papered over. `/mcp`
+and the Executor sidecar stay unchanged until the switchover in `docs/gateway.md`.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

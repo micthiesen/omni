@@ -31,6 +31,8 @@ pub enum Route {
     /// The read-only stylist ledger (`?ns=` picks a namespace).
     Stylist,
     Mcp,
+    /// The MCP gateway (`?integration=` opens one).
+    Gateway,
     Claude,
     NotFound,
 }
@@ -121,6 +123,7 @@ pub fn match_route(path: &str) -> Route {
         "/costs" => Route::Costs,
         "/operations" => Route::Operations,
         "/mcp-activity" => Route::Mcp,
+        "/gateway" => Route::Gateway,
         "/claude" => Route::Claude,
         "/live" => Route::Live,
         "/live/streamers" => Route::StreamerConfig,
@@ -147,6 +150,7 @@ pub fn page_title(path: &str) -> String {
         "/costs" => Some("Costs"),
         "/operations" => Some("Operations"),
         "/mcp-activity" => Some("MCP Activity"),
+        "/gateway" => Some("MCP Gateway"),
         "/claude" => Some("Claude Code"),
         _ => None,
     };
@@ -218,6 +222,9 @@ mod tests {
         assert_eq!(route("/stylist/real"), Route::NotFound);
         assert_eq!(route("/mcp-activity"), Route::Mcp);
         assert_eq!(route("/claude"), Route::Claude);
+        assert_eq!(route("/gateway"), Route::Gateway);
+        assert_eq!(route("/gateway/"), Route::Gateway);
+        assert_eq!(route("/gateway/mcp"), Route::NotFound);
         assert_eq!(route("/nope"), Route::NotFound);
         assert_eq!(route("/media/%E0%A4%A"), Route::NotFound);
         assert_eq!(route("/%ZZ"), Route::NotFound);
@@ -231,6 +238,7 @@ mod tests {
         assert_eq!(page_title("/deliveries"), "Deliveries · Omni");
         assert_eq!(page_title("/calendar"), "Calendar · Omni");
         assert_eq!(page_title("/stylist"), "Stylist · Omni");
+        assert_eq!(page_title("/gateway"), "MCP Gateway · Omni");
         assert_eq!(page_title("/workspaces/w/s"), "Omni");
         assert_eq!(page_title("/streamers/x"), "Omni");
         assert_eq!(page_title("/"), "Omni");

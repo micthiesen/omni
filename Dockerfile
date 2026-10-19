@@ -146,8 +146,17 @@ RUN find /dist -type f \
     \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
     -exec brotli -k -q 11 {} + -exec gzip -k -n -9 {} +
 
+# Stdio MCP servers the gateway can run (gateway/bundled.rs), installed from the
+# committed lockfile: exact versions, integrity hashes, no install scripts.
+FROM node:24.19.0-slim AS mcp-stdio
+WORKDIR /opt/mcp-stdio
+COPY deploy/mcp-stdio/package.json deploy/mcp-stdio/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+  && test -f node_modules/@karakeep/mcp/dist/index.js
+
 # --- Runtime ---
-# Node stays only as yt-dlp's JavaScript runtime (`--js-runtimes node`).
+# Node runs yt-dlp's JavaScript (`--js-runtimes node`) and the bundled stdio
+# MCP servers.
 FROM node:24.19.0-slim AS runtime
 
 # ffmpeg: PressPods audio pipeline (arnndn denoise, loudnorm, intro concat) and
@@ -187,6 +196,7 @@ COPY --from=speaker --chown=node:node /models/ ./assets/livestream-intelligence/
 COPY --from=segmentation --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=parakeet --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=yt-dlp /out/yt-dlp /usr/local/bin/yt-dlp
+COPY --from=mcp-stdio --chown=node:node /opt/mcp-stdio ./mcp-stdio
 COPY --chown=node:node assets ./assets
 COPY --from=web-dist --chown=node:node /dist ./web
 COPY --from=server /out/ /usr/local/bin/

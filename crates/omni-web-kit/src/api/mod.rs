@@ -15,6 +15,11 @@ use omni_api::email::{
     EmailFeedbackListResponse, EmailFeedbackResponse, EmailFeedbackVerdict, EmailPipelineName,
     EmailRuleInput, EmailRuleUpsertResponse, EmailRulesResponse,
 };
+use omni_api::gateway::{
+    AuthorizationApproval, ClientTokenCreate, ClientTokenCreated, CredentialsUpdate,
+    GatewayOverview, IntegrationCreate, IntegrationDetail, IntegrationPatch, OAuthStartResponse,
+    ToolVisibilityUpdate,
+};
 use omni_api::intelligence::{FeedbackResponse, FeedbackVerdict, IntelligenceDetailsResponse};
 use omni_api::mcp_activity::{McpActivityResponse, McpCallStatus};
 use omni_api::media::{
@@ -588,9 +593,157 @@ pub async fn fetch_claude_transcript(
     .await
 }
 
+// ----- MCP gateway -----
+
+/// A mutation that answers `204 No Content` (never retried).
+async fn send_no_content(method: client::Method, path: &str) -> Result<(), ApiClientError> {
+    let response = client::send(method, path, None).await?;
+    if response.ok() {
+        Ok(())
+    } else {
+        Err(ApiClientError::Api {
+            status: response.status,
+            message: response.error_message(),
+        })
+    }
+}
+
+/// `/api/gateway/integrations/:id` plus `suffix` (`""`, `"/refresh"`, …).
+pub fn gateway_integration_path(id: &str, suffix: &str) -> String {
+    format!("/api/gateway/integrations/{}{suffix}", enc(id))
+}
+
+/// Integrations, client tokens, grants, pending authorizations and event
+/// feeds. Credentials are reported by name only.
+pub async fn fetch_gateway() -> Result<GatewayOverview, ApiClientError> {
+    get("/api/gateway").await
+}
+
+pub async fn fetch_gateway_integration(id: &str) -> Result<IntegrationDetail, ApiClientError> {
+    get(&gateway_integration_path(id, "")).await
+}
+
+pub async fn create_gateway_integration(
+    body: &IntegrationCreate,
+) -> Result<IntegrationDetail, ApiClientError> {
+    post("/api/gateway/integrations", Some(body)).await
+}
+
+/// Absent fields stay unchanged; a new URL origin or auth kind clears the
+/// stored credentials.
+pub async fn update_gateway_integration(
+    id: &str,
+    body: &IntegrationPatch,
+) -> Result<IntegrationDetail, ApiClientError> {
+    patch(&gateway_integration_path(id, ""), Some(body)).await
+}
+
+pub async fn delete_gateway_integration(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(client::Method::Delete, &gateway_integration_path(id, "")).await
+}
+
+/// Replaces the stored headers or environment variables.
+pub async fn put_gateway_credentials(
+    id: &str,
+    body: &CredentialsUpdate,
+) -> Result<IntegrationDetail, ApiClientError> {
+    put(&gateway_integration_path(id, "/credentials"), Some(body)).await
+}
+
+/// Clears stored headers, variables and OAuth tokens.
+pub async fn clear_gateway_credentials(id: &str) -> Result<IntegrationDetail, ApiClientError> {
+    delete(&gateway_integration_path(id, "/credentials"), NO_BODY).await
+}
+
+/// Re-reads the integration's catalog; can take up to a minute.
+pub async fn refresh_gateway_integration(id: &str) -> Result<IntegrationDetail, ApiClientError> {
+    post(&gateway_integration_path(id, "/refresh"), NO_BODY).await
+}
+
+pub async fn start_gateway_oauth(id: &str) -> Result<OAuthStartResponse, ApiClientError> {
+    post(&gateway_integration_path(id, "/oauth/start"), NO_BODY).await
+}
+
+/// `body.hidden` is the full list of hidden tool names.
+pub async fn set_gateway_tool_visibility(
+    id: &str,
+    body: &ToolVisibilityUpdate,
+) -> Result<IntegrationDetail, ApiClientError> {
+    put(&gateway_integration_path(id, "/tools"), Some(body)).await
+}
+
+/// The only response that carries the new token.
+pub async fn create_gateway_client(
+    body: &ClientTokenCreate,
+) -> Result<ClientTokenCreated, ApiClientError> {
+    post("/api/gateway/clients", Some(body)).await
+}
+
+pub async fn revoke_gateway_client(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Delete,
+        &format!("/api/gateway/clients/{}", enc(id)),
+    )
+    .await
+}
+
+pub async fn revoke_gateway_grant(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Delete,
+        &format!("/api/gateway/grants/{}", enc(id)),
+    )
+    .await
+}
+
+/// Approves a pending downstream OAuth authorization with the code its
+/// sign-in page shows.
+pub async fn approve_gateway_authorization(
+    id: &str,
+    user_code: &str,
+) -> Result<(), ApiClientError> {
+    let body = AuthorizationApproval {
+        user_code: user_code.to_owned(),
+    };
+    let response = client::send(
+        client::Method::Post,
+        &format!("/api/gateway/authorizations/{}/approve", enc(id)),
+        Some(serde_json::to_string(&body).unwrap_or_default()),
+    )
+    .await?;
+    if response.ok() {
+        Ok(())
+    } else {
+        Err(ApiClientError::Api {
+            status: response.status,
+            message: response.error_message(),
+        })
+    }
+}
+
+/// Denies a pending downstream OAuth authorization.
+pub async fn deny_gateway_authorization(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Post,
+        &format!("/api/gateway/authorizations/{}/deny", enc(id)),
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_paths_encode_ids() {
+        assert_eq!(
+            gateway_integration_path("linear", "/oauth/start"),
+            "/api/gateway/integrations/linear/oauth/start"
+        );
+        assert_eq!(
+            gateway_integration_path("a/b", ""),
+            "/api/gateway/integrations/a%2Fb"
+        );
+    }
 
     #[test]
     fn query_strings_match_url_search_params() {

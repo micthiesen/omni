@@ -55,9 +55,17 @@ async fn serves_every_tool_and_registers_tasks_entities_and_the_email_handler() 
     all.extend(own);
     let mut subsystem = package.subsystem(all).unwrap();
     let names: Vec<&str> = subsystem.tasks.iter().map(|t| t.name()).collect();
-    assert_eq!(names, ["McpEventDelivery", "TaskRunEvents"]);
-    assert_eq!(subsystem.entities.len(), 6);
-    assert_eq!(subsystem.services.len(), 1);
+    assert_eq!(
+        names,
+        [
+            "McpEventDelivery",
+            "TaskRunEvents",
+            "McpGatewayRefresh",
+            "McpGatewayEventFeeds"
+        ]
+    );
+    assert_eq!(subsystem.entities.len(), 16);
+    assert_eq!(subsystem.services.len(), 2);
     assert!(subsystem.mcp_tools.is_empty());
     let steps: Vec<_> = subsystem
         .boot_steps
@@ -69,6 +77,7 @@ async fn serves_every_tool_and_registers_tasks_entities_and_the_email_handler() 
         [
             ("markInterruptedCalls", BootPhase::Reconcile),
             ("requireArchiveEcho", BootPhase::Migrate),
+            ("loadGateway", BootPhase::Services),
         ]
     );
     // Events are enabled, so boot fails until wiring sets the ArchiveEcho port.
@@ -134,7 +143,9 @@ async fn is_unavailable_without_a_token_and_rejects_an_incomplete_tool_set() {
     let mut all = other_tools(&own);
     all.extend(own);
     let subsystem = package.subsystem(all).unwrap();
-    assert!(subsystem.tasks.is_empty());
+    // Without the MCP token there are no events; the gateway still refreshes.
+    let names: Vec<&str> = subsystem.tasks.iter().map(|t| t.name()).collect();
+    assert_eq!(names, ["McpGatewayRefresh"]);
     let exchange = send(
         &subsystem.router,
         Request::builder()

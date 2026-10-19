@@ -16,6 +16,7 @@
 //! | [`StreamerConfigPage`] | `/live/streamers` | none |
 //! | [`StylistPage`] | `/stylist` (`?ns=` picks a namespace) | none |
 //! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
+//! | [`GatewayPage`] | `/gateway` (`?integration=` opens one) | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
 //! re-created when its id changes.
@@ -25,6 +26,7 @@ mod claude;
 mod common;
 pub mod deliveries;
 mod feedback;
+mod gateway;
 mod mcp;
 mod media;
 pub mod pets;
@@ -42,6 +44,7 @@ pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_sta
 pub use claude::ClaudePage;
 pub use deliveries::{DeliveriesPage, DeliveriesTile, ParcelCacheFacts, use_parcels};
 pub use feedback::{FeedbackKind, FeedbackPage};
+pub use gateway::GatewayPage;
 pub use mcp::McpPage;
 pub use media::{MediaDetailPage, MediaPage};
 pub use pets::PetsPage;

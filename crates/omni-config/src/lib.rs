@@ -282,6 +282,9 @@ config_struct! {
     omni_mcp_token: Option<String> = "OMNI_MCP_TOKEN",
     omni_device_link_token: Option<String> = "OMNI_DEVICE_LINK_TOKEN",
     omni_events_executor_auth_url: Option<String> = "OMNI_EVENTS_EXECUTOR_AUTH_URL",
+    /// The MCP gateway's public `https://` origin (no path), for downstream
+    /// OAuth and upstream OAuth callbacks; unset keeps the gateway LAN-only.
+    omni_gateway_public_url: Option<String> = "OMNI_GATEWAY_PUBLIC_URL",
     /// HTTP(S) without credentials, query or fragment; trailing slashes trimmed.
     hister_url: String = "HISTER_URL",
     hister_access_token: Option<String> = "HISTER_ACCESS_TOKEN",
@@ -555,6 +558,10 @@ impl Config {
             omni_mcp_token: env.opt("OMNI_MCP_TOKEN"),
             omni_device_link_token: env.opt("OMNI_DEVICE_LINK_TOKEN"),
             omni_events_executor_auth_url: env.opt("OMNI_EVENTS_EXECUTOR_AUTH_URL"),
+            omni_gateway_public_url: match env.opt("OMNI_GATEWAY_PUBLIC_URL") {
+                None => None,
+                Some(raw) => Some(public_origin("OMNI_GATEWAY_PUBLIC_URL", &raw)?),
+            },
             hister_url: {
                 let key = "HISTER_URL";
                 let url = env.trimmed_url(key, "https://hister.syas.ca")?;
@@ -844,6 +851,25 @@ impl Env<'_> {
     }
 }
 
+/// An `https://host[:port]` origin without credentials, path, query or fragment.
+fn public_origin(key: &'static str, raw: &str) -> Result<String, ConfigError> {
+    let url = parse_url(key, raw.trim())?;
+    let plain = url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && matches!(url.path(), "" | "/")
+        && url.query().is_none()
+        && url.fragment().is_none();
+    if !plain {
+        return Err(invalid(
+            key,
+            "Expected an https:// origin without credentials, path, query or fragment",
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
 /// `new URL(value)` (WHATWG parsing).
 fn parse_url(key: &'static str, raw: &str) -> Result<url::Url, ConfigError> {
     url::Url::parse(raw).map_err(|_| invalid(key, "Expected a valid URL"))
@@ -989,6 +1015,27 @@ mod tests {
         assert!(is_sensitive_key("WHISKER_CREDENTIALS"));
         assert!(!is_sensitive_key("PRINTER_IPP_URL"));
         assert!(!is_sensitive_key("TZ"));
+    }
+
+    #[test]
+    fn gateway_public_url_is_an_https_origin() {
+        assert_eq!(
+            public_origin("K", "https://gateway.syas.ca/").unwrap(),
+            "https://gateway.syas.ca"
+        );
+        assert_eq!(
+            public_origin("K", "https://gw.example:8443").unwrap(),
+            "https://gw.example:8443"
+        );
+        for bad in [
+            "http://gateway.syas.ca",
+            "https://gateway.syas.ca/gateway/mcp",
+            "https://user:pw@gateway.syas.ca",
+            "https://gateway.syas.ca?x=1",
+            "not a url",
+        ] {
+            assert!(public_origin("K", bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

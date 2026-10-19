@@ -280,7 +280,7 @@ and no sub-tab strip (`SectionNav` is removed).
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
 | **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
-| **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
+| **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
   `routes.rs` with tests; every existing route, alias and normalization rule is
@@ -948,6 +948,55 @@ calls, errors, average ms, policy Tag, RunStrip of recent outcomes). Toolbar:
 tool select plus status Segmented. Calls Table (dense) whose rows open the
 Inspector with args and result JSON. "Load older" stays as ShowMore.
 `use_visible_poll` 10 s unchanged; freshness note in the panel header.
+
+### `/gateway`
+
+- h1 "MCP gateway" with a lede of what the endpoint serves now. The one
+  primary action is "Add integration"; while an OAuth sign-in waits it turns
+  secondary and Approve is the primary, and a warn note with "Review" leads
+  the page.
+- Readout band: tools served (Omni's and the integrations'), integrations
+  (ready; those needing attention in warn), clients (tokens, OAuth grants,
+  waiting sign-ins), event feeds (active; gaps in warn).
+- **Endpoint** Panel: LAN and public URL rows with copy buttons (an unset
+  public URL names `OMNI_GATEWAY_PUBLIC_URL`), then Segmented `Claude Code |
+  Codex | ChatGPT` (ChatGPT only when OAuth is available) and `Public URL |
+  LAN URL`, the snippet in a code block with a copy button.
+- Wide two columns (8/4). Left **Integrations**: rows with a fixed-width
+  Status (Ready dot, Pending info, Stale and Needs auth warn, Error fault,
+  Disabled idle; "Refreshing · 12s" while a manual refresh runs, which can
+  take a minute), the name as the button that opens the inspector, mono id and
+  endpoint, an auth Tag, served of total tools, events and last refresh, and a
+  problem line: the error kind as headline, the message, the hint and the fix
+  (Connect, Set credentials or Choose auth). Refresh, Enable/Disable and a
+  chevron end the row. Right **Access**: Waiting for approval (client, client
+  and redirect hosts, an "unverified" warn Tag for self-registered apps, a
+  ticking expiry, a labeled mono input for the code the sign-in page shows;
+  Approve (enabled once eight characters are typed, Enter submits), Deny), Client tokens (mono prefix, created, last used; Revoke as a
+  destructive ConfirmButton; "New token" asks for a label and shows the token
+  once in a Signal-washed block with Copy token and Copy Claude Code command,
+  discarded on Done) and OAuth grants (client host, scope, Revoke).
+- **Event feeds** Table: state Status, the exposed event in mono over the
+  integration and upstream event (an error in fault), arguments as Tags,
+  subscribers, last and next poll, published, gaps in warn with the last gap.
+- **Inspector** (wide drawer, `?integration=<id>`): head Status, Connect
+  (primary, OAuth not connected), Refresh and Enable/Disable; the problem
+  line, facts and the last refresh (warnings as warn notes, added, changed and
+  removed names in a Disclosure); then a sticky Segmented `Tools | Resources |
+  Events | Settings` with counts. Tools: filter field, "n of m served", Show
+  or Hide all (or matching), rows with a checkbox, title, a Signal Tag for
+  tools the last refresh added or changed, the exposed name in mono with copy
+  and annotation Tags (read-only, destructive in fault, open-world); edits
+  collect in a sticky save bar (Discard, Save visibility) that sends the full
+  hidden list. Settings: name, URL, auth Segmented and timeout, with a warn
+  note when saving would clear the stored credentials; write-only credentials
+  (stored names as Tags; name plus password rows with a bearer-token shortcut;
+  saving replaces every value) or the OAuth connection (issuer, scope, access
+  expiry, refresh token; Connect or Reconnect, Disconnect); Delete behind
+  typing the id and a destructive ConfirmButton.
+- The overview polls every 30 s and every 5 s while a sign-in waits. The OAuth
+  callback (`?integration=&oauth=connected|error&message=`) shows a toast and
+  leaves the URL.
 
 ### `/claude`
 

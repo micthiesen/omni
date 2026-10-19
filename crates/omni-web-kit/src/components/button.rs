@@ -213,6 +213,10 @@ pub fn ConfirmButton(
     #[prop(into, optional)] disabled: Signal<bool>,
     #[prop(into, optional)] disabled_reason: MaybeProp<String>,
     #[prop(into, optional)] title: MaybeProp<String>,
+    /// Screen-reader-only words after the label naming what the button acts
+    /// on, for buttons repeated on every row ("Revoke" + "token laptop").
+    #[prop(into, optional)]
+    context: MaybeProp<String>,
     on_confirm: Callback<()>,
 ) -> impl IntoView {
     let armed = RwSignal::new(false);
@@ -317,6 +321,7 @@ pub fn ConfirmButton(
         >
             {leading}
             <span>{text}</span>
+            {move || context.get().map(|context| view! { <span class="sr-only">{format!(" {context}")}</span> })}
             <span class="sr-only" aria-live="polite">
                 {move || armed.get().then_some("Press again to confirm")}
             </span>

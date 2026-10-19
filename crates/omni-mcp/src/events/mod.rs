@@ -8,6 +8,7 @@
 pub mod catalog;
 pub mod claude_sessions;
 pub mod crypto;
+pub mod dynamic;
 pub mod executor_auth;
 pub mod persistence;
 pub mod publisher;

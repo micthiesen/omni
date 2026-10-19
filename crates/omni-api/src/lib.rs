@@ -51,6 +51,8 @@ pub mod calendar;
 pub mod claude;
 /// MCP Events payloads published through the event port.
 pub mod events;
+/// MCP gateway management.
+pub mod gateway;
 /// MCP activity.
 pub mod mcp_activity;
 
