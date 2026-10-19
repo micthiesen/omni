@@ -22,8 +22,8 @@ use super::pages::{self, Waiting};
 use super::{
     AuthorizationServer, CIMD_KIND, CIMD_TTL_MS, CODE_TTL_MS, DCR_KIND, LOG, MAX_CIMD_CLIENTS,
     MAX_PENDING, MAX_REDIRECT_URI_LEN, MAX_STATE_BYTES, Params, REQUEST_TTL_MS, SCOPE, clean_text,
-    is_dcr_client_id, is_known_client_shape, is_request_id, request_finished, valid_redirect_uri,
-    valid_redirect_uris,
+    is_dcr_client_id, is_known_client_shape, is_request_id, redirect_matches, request_finished,
+    valid_redirect_uri, valid_redirect_uris,
 };
 use crate::gateway::model::{AuthorizationRow, AuthorizationStatus, OAuthClientRow};
 use crate::gateway::oauth::pkce;
@@ -388,7 +388,11 @@ pub(super) async fn authorize(
             return pages::error(StatusCode::BAD_REQUEST, "Unknown app", &message);
         }
     };
-    if !client.redirect_uris.iter().any(|u| u == redirect_uri) {
+    if !client
+        .redirect_uris
+        .iter()
+        .any(|u| redirect_matches(u, redirect_uri))
+    {
         return bad("The redirect URI is not registered for this app.");
     }
 

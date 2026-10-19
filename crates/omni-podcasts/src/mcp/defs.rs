@@ -52,7 +52,7 @@ pub static PODCAST_ACCOUNT_UPDATE: ToolDef<PodcastAccountUpdateInput, PodcastAcc
     ToolDef::new(ToolInfo {
         name: "podcast_account_update",
         title: "Update Podcast Account",
-        description: "Enqueue or dequeue an episode, clear an Inbox item, or subscribe to a show. These change an external podcast account and require Executor approval.",
+        description: "Enqueue or dequeue an episode, clear an Inbox item, or subscribe to a show. These change an external podcast account and require the owner's approval.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,

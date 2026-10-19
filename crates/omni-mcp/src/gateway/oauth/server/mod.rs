@@ -642,6 +642,36 @@ pub(super) fn valid_redirect_uri(value: &str) -> bool {
     }
 }
 
+/// Whether a requested redirect URI matches a registered one: exactly, or for
+/// an `http` loopback URI (127.0.0.1, [::1], localhost) with any port, as
+/// RFC 8252 section 7.3 requires for native apps (Codex registers
+/// `http://127.0.0.1/callback` and listens on an ephemeral port).
+pub(super) fn redirect_matches(registered: &str, requested: &str) -> bool {
+    if registered == requested {
+        return true;
+    }
+    let (Ok(registered), Ok(mut requested)) = (Url::parse(registered), Url::parse(requested))
+    else {
+        return false;
+    };
+    let loopback = |url: &Url| {
+        url.scheme() == "http"
+            && match url.host() {
+                Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+                Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+                Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+                None => false,
+            }
+    };
+    if !loopback(&registered) || !loopback(&requested) || registered.port().is_some() {
+        return false;
+    }
+    if requested.set_port(None).is_err() {
+        return false;
+    }
+    requested == registered
+}
+
 /// Free text from a client: no control characters, trimmed, at most `max` characters.
 pub(super) fn clean_text(value: &str, max: usize) -> Option<String> {
     let text: String = value.chars().filter(|c| !c.is_control()).collect();
@@ -652,6 +682,35 @@ pub(super) fn clean_text(value: &str, max: usize) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loopback_redirects_match_on_any_port() {
+        let codex = "http://127.0.0.1/callback";
+        assert!(redirect_matches(codex, "http://127.0.0.1:60319/callback"));
+        assert!(redirect_matches(codex, codex));
+        assert!(redirect_matches(
+            "http://localhost/callback",
+            "http://localhost:4000/callback"
+        ));
+        assert!(!redirect_matches(codex, "http://127.0.0.1:60319/other"));
+        assert!(!redirect_matches(
+            codex,
+            "http://127.0.0.1:60319/callback?x=1"
+        ));
+        assert!(!redirect_matches(
+            codex,
+            "http://evil.example:60319/callback"
+        ));
+        assert!(!redirect_matches(codex, "http://localhost:60319/callback"));
+        assert!(!redirect_matches(
+            "https://app.example/cb",
+            "https://app.example:8443/cb"
+        ));
+        assert!(!redirect_matches(
+            "http://127.0.0.1:5000/cb",
+            "http://127.0.0.1:6000/cb"
+        ));
+    }
 
     #[test]
     fn redirect_uri_rules() {

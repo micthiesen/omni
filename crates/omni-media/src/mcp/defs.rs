@@ -105,7 +105,7 @@ pub static MEDIA_WATCHLIST_ADD: ToolDef<MediaWatchlistAddInput, MediaWatchlistAd
     ToolDef::new(ToolInfo {
         name: "media_watchlist_add",
         title: "Add to Managed Watchlist",
-        description: "Add a TMDB movie to Radarr or a TMDB series to Sonarr. A series is added with every season monitored and an immediate search for all missing episodes; use media_series_add to choose seasons. This can begin acquisition and downloads on managed services, so Executor approval is required.",
+        description: "Add a TMDB movie to Radarr or a TMDB series to Sonarr. A series is added with every season monitored and an immediate search for all missing episodes; use media_series_add to choose seasons. This can begin acquisition and downloads on managed services, so the owner's approval is required.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: false,

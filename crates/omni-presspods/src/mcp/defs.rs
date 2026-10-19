@@ -69,7 +69,7 @@ pub static PRESSPODS_SUBMIT: ToolDef<PresspodsSubmitInput, PresspodsSubmitOutput
     ToolInfo {
         name: "presspods_submit",
         title: "Submit PressPods Episode",
-        description: "Queue a public article URL for retrieval, model cleaning, TTS synthesis, podcast publication, optional Karakeep bookmarking, and notification. This has material compute/model cost and external effects, so Executor approval is required.",
+        description: "Queue a public article URL for retrieval, model cleaning, TTS synthesis, podcast publication, optional Karakeep bookmarking, and notification. This has material compute/model cost and external effects, so the owner's approval is required.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: false,
@@ -92,7 +92,7 @@ pub static PRESSPODS_RETRY: ToolDef<PresspodsRetryInput, PresspodsRetryOutput> =
     ToolInfo {
         name: "presspods_retry",
         title: "Retry PressPods Work",
-        description: "Regenerate an existing episode or retry a failed job. This starts model/TTS work and can replace a published episode, so Executor approval is required.",
+        description: "Regenerate an existing episode or retry a failed job. This starts model/TTS work and can replace a published episode, so the owner's approval is required.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: false,
@@ -114,7 +114,7 @@ pub static PRESSPODS_DELETE: ToolDef<PresspodsDeleteInput, PresspodsDeleteOutput
     ToolInfo {
         name: "presspods_delete",
         title: "Delete PressPods Resource",
-        description: "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires Executor approval.",
+        description: "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires the owner's approval.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,

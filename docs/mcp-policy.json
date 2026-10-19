@@ -1090,7 +1090,7 @@
     {
       "name": "media_watchlist_add",
       "title": "Add to Managed Watchlist",
-      "description": "Add a TMDB movie to Radarr or a TMDB series to Sonarr. A series is added with every season monitored and an immediate search for all missing episodes; use media_series_add to choose seasons. This can begin acquisition and downloads on managed services, so Executor approval is required.",
+      "description": "Add a TMDB movie to Radarr or a TMDB series to Sonarr. A series is added with every season monitored and an immediate search for all missing episodes; use media_series_add to choose seasons. This can begin acquisition and downloads on managed services, so the owner's approval is required.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1229,7 +1229,7 @@
     {
       "name": "podcast_account_update",
       "title": "Update Podcast Account",
-      "description": "Enqueue or dequeue an episode, clear an Inbox item, or subscribe to a show. These change an external podcast account and require Executor approval.",
+      "description": "Enqueue or dequeue an episode, clear an Inbox item, or subscribe to a show. These change an external podcast account and require the owner's approval.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -1303,7 +1303,7 @@
     {
       "name": "presspods_delete",
       "title": "Delete PressPods Resource",
-      "description": "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires Executor approval.",
+      "description": "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires the owner's approval.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -1347,7 +1347,7 @@
     {
       "name": "presspods_retry",
       "title": "Retry PressPods Work",
-      "description": "Regenerate an existing episode or retry a failed job. This starts model/TTS work and can replace a published episode, so Executor approval is required.",
+      "description": "Regenerate an existing episode or retry a failed job. This starts model/TTS work and can replace a published episode, so the owner's approval is required.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1364,7 +1364,7 @@
     {
       "name": "presspods_submit",
       "title": "Submit PressPods Episode",
-      "description": "Queue a public article URL for retrieval, model cleaning, TTS synthesis, podcast publication, optional Karakeep bookmarking, and notification. This has material compute/model cost and external effects, so Executor approval is required.",
+      "description": "Queue a public article URL for retrieval, model cleaning, TTS synthesis, podcast publication, optional Karakeep bookmarking, and notification. This has material compute/model cost and external effects, so the owner's approval is required.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
