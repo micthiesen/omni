@@ -100,6 +100,16 @@ fn is_project_name(value: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// A full Claude Code session ID, as the payload's `sessionId` carries it:
+/// a lowercase UUID, `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`.
+fn is_session_id(value: &str) -> bool {
+    value.len() == 36
+        && value.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_digit() || matches!(c, 'a'..='f'),
+        })
+}
+
 /// `^[A-Za-z0-9][A-Za-z0-9._:%-]{0,199}$`: configured and discovered streamer IDs.
 fn is_streamer_id(value: &str) -> bool {
     let mut chars = value.chars();
@@ -191,16 +201,14 @@ impl EventDefinition {
                     .then(|| IndexMap::from([("folder".to_owned(), folder.to_owned())]))
             }
             EventKind::ClaudeTurnFinished => {
-                if args.keys().any(|key| key != "project") {
-                    return None;
-                }
-                match args.get("project") {
-                    None => Some(IndexMap::new()),
-                    Some(Value::String(project)) if is_project_name(project) => {
-                        Some(IndexMap::from([("project".to_owned(), project.clone())]))
-                    }
-                    Some(_) => None,
-                }
+                let args = string_arguments(raw, &["project", "exactSessionId"])?;
+                Some(canonical(vec![
+                    ("project", identifier(args, "project", is_project_name)?),
+                    (
+                        "exactSessionId",
+                        identifier(args, "exactSessionId", is_session_id)?,
+                    ),
+                ]))
             }
             EventKind::LivestreamStatusChanged => {
                 let args = string_arguments(raw, &["streamer", "transition", "includeBackground"])?;
@@ -301,11 +309,14 @@ impl EventDefinition {
             EventKind::EmailReceived => {
                 data.get("folder").and_then(Value::as_str) == args.get("folder").map(String::as_str)
             }
-            EventKind::ClaudeTurnFinished => match args.get("project") {
-                None => true,
-                Some(project) if project.is_empty() => true,
-                Some(project) => data.get("project").and_then(Value::as_str) == Some(project),
-            },
+            EventKind::ClaudeTurnFinished => {
+                let project_ok = match args.get("project") {
+                    None => true,
+                    Some(project) if project.is_empty() => true,
+                    Some(project) => data_str(data, "project") == Some(project.as_str()),
+                };
+                project_ok && same(args, "exactSessionId", data, "sessionId")
+            }
             EventKind::LivestreamStatusChanged => {
                 same(args, "streamer", data, "streamerId")
                     && selected(args, "transition", data, "transition")
@@ -362,6 +373,11 @@ impl EventDefinition {
                     "project": {
                         "type": "string",
                         "description": "Only sessions in this project (see claude_link_status)",
+                    },
+                    "exactSessionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Only this session: its full sessionId from claude_sessions_list or claude_session_start, not the short id or a prefix. With project, both must match.",
                     },
                 },
                 "additionalProperties": false,
@@ -666,6 +682,80 @@ mod tests {
                 .is_some()
         );
         assert!(claude.parse_arguments(&json!({"other": "x"})).is_none());
+    }
+
+    const SESSION: &str = "068e5d6d-877d-46cb-8514-ee47317af8c6";
+
+    #[test]
+    fn claude_arguments_take_an_optional_full_session_id() {
+        let claude = definition(CLAUDE_TURN_FINISHED);
+        assert_eq!(
+            claude.parse_arguments(&json!({"exactSessionId": SESSION})),
+            Some(args(&[("exactSessionId", SESSION)]))
+        );
+        for rejected in [
+            json!("068e5d6d"),
+            json!("068e5d6d-877d-46cb-8514"),
+            json!(SESSION.to_uppercase()),
+            json!(format!(" {SESSION}")),
+            json!(format!("{SESSION}0")),
+            json!("068e5d6d-877d-46cb-8514+ee47317af8c6"),
+            json!(""),
+            json!(null),
+            json!(["068e5d6d-877d-46cb-8514-ee47317af8c6"]),
+        ] {
+            assert!(
+                claude
+                    .parse_arguments(&json!({"exactSessionId": rejected}))
+                    .is_none(),
+                "{rejected} should be rejected"
+            );
+        }
+        let both = claude
+            .parse_arguments(&json!({"project": "omni", "exactSessionId": SESSION}))
+            .unwrap();
+        assert_eq!(
+            canonical_event_arguments(&both),
+            format!(r#"{{"exactSessionId":"{SESSION}","project":"omni"}}"#)
+        );
+        // Project-only and unfiltered subscriptions keep their identities.
+        let project = claude.parse_arguments(&json!({"project": "omni"})).unwrap();
+        assert_eq!(canonical_event_arguments(&project), r#"{"project":"omni"}"#);
+        assert_eq!(
+            canonical_event_arguments(&claude.parse_arguments(&json!({})).unwrap()),
+            "{}"
+        );
+    }
+
+    #[test]
+    fn claude_matching_honors_project_and_exact_session() {
+        let claude = definition(CLAUDE_TURN_FINISHED);
+        let other = "a47778af-36a9-4c0b-a5fb-0b87fcb8e4b0";
+        let turn = |session: &str, project: Value| {
+            data(json!({"sessionId": session, "id": &session[..8], "project": project}))
+        };
+        let parse = |raw: Value| claude.parse_arguments(&raw).unwrap();
+
+        let all = parse(json!({}));
+        assert!(claude.matches(&all, &turn(other, json!(null))));
+
+        let project = parse(json!({"project": "omni"}));
+        assert!(claude.matches(&project, &turn(SESSION, json!("omni"))));
+        assert!(claude.matches(&project, &turn(other, json!("omni"))));
+        assert!(!claude.matches(&project, &turn(SESSION, json!("dotfiles"))));
+        assert!(!claude.matches(&project, &turn(SESSION, json!(null))));
+
+        let session = parse(json!({"exactSessionId": SESSION}));
+        assert!(claude.matches(&session, &turn(SESSION, json!("omni"))));
+        assert!(claude.matches(&session, &turn(SESSION, json!(null))));
+        assert!(!claude.matches(&session, &turn(other, json!("omni"))));
+        assert!(!claude.matches(&session, &data(json!({"id": &SESSION[..8]}))));
+
+        let both = parse(json!({"project": "omni", "exactSessionId": SESSION}));
+        assert!(claude.matches(&both, &turn(SESSION, json!("omni"))));
+        assert!(!claude.matches(&both, &turn(SESSION, json!("dotfiles"))));
+        assert!(!claude.matches(&both, &turn(SESSION, json!(null))));
+        assert!(!claude.matches(&both, &turn(other, json!("omni"))));
     }
 
     fn definition(name: &str) -> &'static EventDefinition {

@@ -108,17 +108,30 @@ fn summary(overrides: Value) -> Value {
     base
 }
 
+fn subscription(arguments: Value) -> SubscribeInput {
+    SubscribeInput {
+        name: "claude.session.turn_finished".to_owned(),
+        arguments,
+        url: "https://chatgpt.example.com/events/claude".to_owned(),
+        secret: format!(
+            "whsec_{}",
+            base64::engine::general_purpose::STANDARD.encode([7u8; 32])
+        ),
+        ttl_ms: None,
+    }
+}
+
 struct Setup {
     store: Store,
     host: FakeHost,
     watcher: ClaudeSessionWatcher,
     events: McpEventService,
-    project: Option<&'static str>,
+    arguments: Value,
     _db: omni_testkit::TestStore,
 }
 
 impl Setup {
-    async fn new(project: Option<&'static str>) -> Self {
+    async fn new(arguments: Value) -> Self {
         let clock = clock();
         let db = test_store(&clock).await;
         let events = common::with_active_owners(McpEventService::new(
@@ -141,30 +154,14 @@ impl Setup {
             host,
             watcher,
             events,
-            project,
+            arguments,
             _db: db,
         }
     }
 
     async fn subscribe(&self) {
-        let secret = format!(
-            "whsec_{}",
-            base64::engine::general_purpose::STANDARD.encode([7u8; 32])
-        );
         self.events
-            .subscribe_as(
-                &common::owner(),
-                &SubscribeInput {
-                    name: "claude.session.turn_finished".to_owned(),
-                    arguments: match self.project {
-                        Some(project) => json!({ "project": project }),
-                        None => json!({}),
-                    },
-                    url: "https://chatgpt.example.com/events/claude".to_owned(),
-                    secret,
-                    ttl_ms: None,
-                },
-            )
+            .subscribe_as(&common::owner(), &subscription(self.arguments.clone()))
             .await
             .unwrap();
     }
@@ -227,7 +224,7 @@ fn needs_a_baseline_and_a_settled_session_that_moved_on() {
 
 #[tokio::test(start_paused = true)]
 async fn stays_idle_without_a_subscription_or_while_the_host_is_offline() {
-    let setup = Setup::new(None).await;
+    let setup = Setup::new(json!({})).await;
     setup.watcher.poll().await.unwrap();
     assert!(setup.host.0.lock().unwrap().calls.is_empty());
     setup.subscribe().await;
@@ -238,7 +235,7 @@ async fn stays_idle_without_a_subscription_or_while_the_host_is_offline() {
 
 #[tokio::test(start_paused = true)]
 async fn publishes_each_finished_turn_once_after_a_baseline() {
-    let setup = Setup::new(None).await;
+    let setup = Setup::new(json!({})).await;
     setup.subscribe().await;
     setup.set_sessions(vec![summary(json!({"revision": 2}))]);
     setup.watcher.poll().await.unwrap();
@@ -261,7 +258,7 @@ async fn publishes_each_finished_turn_once_after_a_baseline() {
 
 #[tokio::test(start_paused = true)]
 async fn catches_a_turn_omni_started_that_ended_before_the_next_poll() {
-    let setup = Setup::new(Some("omni")).await;
+    let setup = Setup::new(json!({"project": "omni"})).await;
     setup.subscribe().await;
     setup
         .watcher
@@ -280,7 +277,7 @@ async fn catches_a_turn_omni_started_that_ended_before_the_next_poll() {
 
 #[tokio::test(start_paused = true)]
 async fn reads_a_mid_turn_session_that_stopped_and_left_the_running_list() {
-    let setup = Setup::new(None).await;
+    let setup = Setup::new(json!({})).await;
     setup.subscribe().await;
     setup.set_sessions(vec![summary(
         json!({"status": "busy", "state": "working", "revision": 3}),
@@ -310,7 +307,7 @@ async fn reads_a_mid_turn_session_that_stopped_and_left_the_running_list() {
 
 #[tokio::test(start_paused = true)]
 async fn ignores_turns_from_a_different_project() {
-    let setup = Setup::new(Some("dotfiles")).await;
+    let setup = Setup::new(json!({"project": "dotfiles"})).await;
     setup.subscribe().await;
     setup.set_sessions(vec![summary(
         json!({"status": "busy", "state": "working", "revision": 3}),
@@ -321,9 +318,79 @@ async fn ignores_turns_from_a_different_project() {
     assert!(setup.deliveries().await.is_empty());
 }
 
+/// Two sessions in `omni` each finish a turn; returns the delivered session IDs.
+async fn delivered_sessions(arguments: Value) -> Vec<String> {
+    const OTHER: &str = "a47778af-36a9-4c0b-a5fb-0b87fcb8e4b0";
+    let other = |overrides: Value| {
+        let mut row = summary(overrides);
+        row["id"] = json!("a47778af");
+        row["session_id"] = json!(OTHER);
+        row
+    };
+    let setup = Setup::new(arguments).await;
+    setup.subscribe().await;
+    let working = json!({"status": "busy", "state": "working", "revision": 3});
+    setup.set_sessions(vec![summary(working.clone()), other(working)]);
+    setup.watcher.poll().await.unwrap();
+    let finished = json!({"revision": 6});
+    setup.set_sessions(vec![summary(finished.clone()), other(finished)]);
+    setup.watcher.poll().await.unwrap();
+    setup
+        .deliveries()
+        .await
+        .iter()
+        .map(|delivery| {
+            delivery.data_json()["sessionId"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn delivers_only_the_exact_session_when_one_is_named() {
+    assert_eq!(delivered_sessions(json!({})).await.len(), 2);
+    assert_eq!(
+        delivered_sessions(json!({"exactSessionId": SESSION})).await,
+        [SESSION]
+    );
+    assert_eq!(
+        delivered_sessions(json!({"project": "omni", "exactSessionId": SESSION})).await,
+        [SESSION]
+    );
+    assert!(
+        delivered_sessions(json!({"project": "dotfiles", "exactSessionId": SESSION}))
+            .await
+            .is_empty()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn rejects_a_short_or_partial_session_id() {
+    let setup = Setup::new(json!({})).await;
+    for session in [
+        "25ffb449",
+        "25ffb449-1111-4222-8333",
+        "25FFB449-1111-4222-8333-444455556666",
+    ] {
+        let rejected = setup
+            .events
+            .subscribe_as(
+                &common::owner(),
+                &subscription(json!({"exactSessionId": session})),
+            )
+            .await;
+        assert_eq!(
+            rejected.unwrap_err().to_string(),
+            "Event subscription rejected: invalid_arguments"
+        );
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn waits_for_a_new_revision_after_a_turn_omni_started() {
-    let setup = Setup::new(None).await;
+    let setup = Setup::new(json!({})).await;
     setup.subscribe().await;
     setup
         .watcher
@@ -346,7 +413,7 @@ async fn waits_for_a_new_revision_after_a_turn_omni_started() {
 
 #[tokio::test(start_paused = true)]
 async fn forgets_sessions_the_host_cannot_read() {
-    let setup = Setup::new(None).await;
+    let setup = Setup::new(json!({})).await;
     setup.subscribe().await;
     setup
         .watcher

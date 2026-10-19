@@ -31907,6 +31907,11 @@
                       "project": {
                         "type": "string",
                         "description": "Only sessions in this project (see claude_link_status)"
+                      },
+                      "exactSessionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Only this session: its full sessionId from claude_sessions_list or claude_session_start, not the short id or a prefix. With project, both must match."
                       }
                     },
                     "additionalProperties": false
@@ -64718,6 +64723,11 @@
                       "project": {
                         "type": "string",
                         "description": "Only sessions in this project (see claude_link_status)"
+                      },
+                      "exactSessionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Only this session: its full sessionId from claude_sessions_list or claude_session_start, not the short id or a prefix. With project, both must match."
                       }
                     },
                     "additionalProperties": false
@@ -97407,6 +97417,11 @@
                       "project": {
                         "type": "string",
                         "description": "Only sessions in this project (see claude_link_status)"
+                      },
+                      "exactSessionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Only this session: its full sessionId from claude_sessions_list or claude_session_start, not the short id or a prefix. With project, both must match."
                       }
                     },
                     "additionalProperties": false

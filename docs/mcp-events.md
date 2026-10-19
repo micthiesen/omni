@@ -89,10 +89,23 @@ feedback loops.
 ### `claude.session.turn_finished`
 
 Fires when a Claude Code session on the Claude Code host finishes a turn or
-stops. The optional `project` argument limits it to one project. The payload
-holds the session ID, short ID, project, status and transcript revision; read the
-reply with `claude_session_get` (`includeResult`). No prompt or reply text
-travels in callbacks.
+stops. The optional `project` argument limits it to one project, and the
+optional `exactSessionId` argument to one session: its full `sessionId` (a
+lowercase UUID from `claude_sessions_list` or `claude_session_start`), never
+the short ID or a prefix, which are rejected. With both, an event must match
+both. Omitting `exactSessionId` leaves project-only and unfiltered
+subscriptions, and their identities, unchanged. The payload holds the session
+ID, short ID, project, status and transcript revision; read the reply with
+`claude_session_get` (`includeResult`). No prompt or reply text travels in
+callbacks.
+
+Rollback caveat: builds before `exactSessionId` ignore the stored argument
+when matching and reject it when parsing. After rolling back past it, an
+existing `exactSessionId` subscription receives every session's turn events
+(the same payloads an unfiltered subscriber gets), cannot be unsubscribed or
+refreshed by its arguments, and stops only at its `refreshBefore` expiry
+(24 hours by default, at most 7 days). Unsubscribe those subscriptions, which
+`events_status` lists with their arguments, before rolling back.
 
 While any subscription for it is active and the host link is online, the
 `ClaudeSessionEvents` task lists the host's running sessions every 15 seconds and
