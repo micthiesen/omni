@@ -105,19 +105,27 @@ async fn the_data_manager_lists_every_entity_in_order() {
 }
 
 #[tokio::test]
-async fn the_mcp_endpoint_serves_the_golden_tool_list() {
+async fn the_gateway_serves_the_golden_tool_list() {
     let (app, mut wired) = wired().await;
     let (router, _) = boot::app_router(
         &app.ctx,
         &mut wired.subsystems,
         std::path::Path::new("/nonexistent"),
     );
-    let request = Request::post("/mcp")
+    let secrets = omni_mcp::gateway::secrets::GatewaySecrets::load_or_create(
+        &omni_mcp::gateway::secrets::key_path(&app.ctx.paths.data_dir),
+    )
+    .unwrap();
+    let access = omni_mcp::gateway::access::DownstreamAccess::new(
+        app.ctx.store.clone(),
+        app.ctx.clock.clone(),
+        secrets,
+        app.ctx.tracker.clone(),
+    );
+    let (_, token) = access.create_client("wiring").await.unwrap();
+    let request = Request::post("/gateway/mcp")
         .header(header::HOST, "localhost")
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer {}", omni_testkit::TEST_MCP_TOKEN),
-        )
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::ACCEPT, "application/json, text/event-stream")
         .header(header::CONTENT_TYPE, "application/json")
         .header("mcp-protocol-version", "2025-06-18")

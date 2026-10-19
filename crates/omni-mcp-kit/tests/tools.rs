@@ -8,7 +8,7 @@ use omni_mcp_kit::registry::{
     RegistryError, RegistryServer, ToolRegistry, call_tool_result, standalone_context,
 };
 use omni_mcp_kit::{
-    Annotations, ExecutorPolicy, Policy, ToolContext, ToolDef, ToolDefinition, ToolError,
+    Annotations, ApprovalPolicy, Policy, ToolContext, ToolDef, ToolDefinition, ToolError,
     ToolHandler, ToolInfo, ToolOutput, ToolPhase, raw_tool, typed_tool,
 };
 use schemars::JsonSchema;
@@ -25,7 +25,7 @@ const READ_ONLY: Annotations = Annotations {
 const ALLOW: Policy = Policy {
     side_effects: &[],
     cost: "none",
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 // Schema-only types are never constructed.
@@ -70,7 +70,7 @@ static BROWSE: ToolDef<Empty, Empty> = ToolDef::new(ToolInfo {
     policy: Policy {
         side_effects: &["Reads history"],
         cost: "none",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -116,7 +116,7 @@ fn definitions_build_metadata_with_derived_schemas() {
     let meta = LIST.meta().unwrap();
     assert_eq!(meta.name, "briefings_list");
     assert_eq!(meta.annotations, READ_ONLY);
-    assert_eq!(meta.policy.recommended_policy, ExecutorPolicy::Allow);
+    assert_eq!(meta.policy.recommended_policy, ApprovalPolicy::Allow);
     assert_eq!(
         omni_core::js::json_stringify(&Value::Object((*meta.input_schema).clone())),
         concat!(

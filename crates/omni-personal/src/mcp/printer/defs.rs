@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{Lit, Literal, positive};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static GET_PRINTER_STATUS: ToolDef<GetPrinterStatusInput, GetPrinterStatusOutput> =
@@ -22,7 +22,7 @@ pub static GET_PRINTER_STATUS: ToolDef<GetPrinterStatusInput, GetPrinterStatusOu
         policy: Policy {
             side_effects: &["Reads status from the fixed LAN printer"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -44,7 +44,7 @@ pub static PRINT_DOCUMENT: ToolDef<PrintDocumentInput, PrintDocumentOutput> = To
                 "Physically exposes the printed document",
             ],
             cost: "Consumes paper, toner, and electricity; no paid API",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );

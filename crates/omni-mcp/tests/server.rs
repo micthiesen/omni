@@ -1,8 +1,9 @@
-//! The `/mcp` endpoint.
+//! The protocol layer `/gateway/mcp` serves, for one gateway principal
+//! (authentication is covered by the gateway tests).
 //!
 //! Tools owned by other packages (email attachments, Hister, podcasts,
 //! printer) are served here by closure-backed handlers: the cases check the
-//! protocol layer this package owns (auth, listing, input validation and
+//! protocol layer this package owns (listing, input validation and
 //! defaults, custom content, failed results). Email handler behavior is
 //! tested in `omni-email`. The endpoint is stateless, so an
 //! initialize/initialized handshake must leave nothing behind.
@@ -181,29 +182,7 @@ async fn reports_an_unconfigured_hister_integration_as_a_tool_error() {
 }
 
 #[tokio::test]
-async fn returns_401_before_mcp_handling_for_missing_and_invalid_credentials() {
-    let clock = clock();
-    let store = test_store(&clock).await;
-    let router = mcp_router(&store.store, &clock, Vec::new(), None);
-    let body = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}).to_string();
-    for authorization in [None, Some("Bearer wrong-token"), Some("Basic abc")] {
-        let mut builder = Request::builder()
-            .method("POST")
-            .uri("/mcp")
-            .header("content-type", "application/json");
-        if let Some(value) = authorization {
-            builder = builder.header("authorization", value);
-        }
-        let exchange = send(&router, builder.body(Body::from(body.clone())).unwrap()).await;
-        assert_eq!(exchange.status, StatusCode::UNAUTHORIZED);
-        assert_eq!(exchange.header("www-authenticate"), Some("Bearer"));
-        assert_eq!(exchange.header("cache-control"), Some("no-store"));
-        assert_eq!(exchange.message(), json!({"error": "Unauthorized"}));
-    }
-}
-
-#[tokio::test]
-async fn serves_the_production_hono_route_over_real_http_with_auth_and_clean_shutdown() {
+async fn serves_over_real_http_with_clean_shutdown() {
     let clock = clock();
     let store = test_store(&clock).await;
     let shutdown = tokio_util::sync::CancellationToken::new();
@@ -218,44 +197,16 @@ async fn serves_the_production_hono_route_over_real_http_with_auth_and_clean_shu
                     .await
                     .unwrap();
             });
-            (format!("http://{address}/mcp"), handle)
+            (format!("http://{address}/gateway/mcp"), handle)
         }
     };
     let http = omni_testkit::no_network();
-    let (unconfigured_url, unconfigured) = serve(omni_mcp::endpoint::router(None, None)).await;
-    let response = http
-        .request(
-            omni_http::Method::POST,
-            omni_http::Url::parse(&unconfigured_url).unwrap(),
-        )
-        .send_bounded(4096)
-        .await
-        .unwrap();
-    assert_eq!(response.status.as_u16(), 503);
-
     let (url, configured) = serve(mcp_router(&store.store, &clock, Vec::new(), None)).await;
-    let unauthorized = http
-        .request(
-            omni_http::Method::POST,
-            omni_http::Url::parse(&url).unwrap(),
-        )
-        .header("content-type", "application/json")
-        .body(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}).to_string())
-        .send_bounded(4096)
-        .await
-        .unwrap();
-    assert_eq!(unauthorized.status.as_u16(), 401);
-    assert_eq!(
-        unauthorized.headers.get("www-authenticate").unwrap(),
-        "Bearer"
-    );
-
     let listed = http
         .request(
             omni_http::Method::POST,
             omni_http::Url::parse(&url).unwrap(),
         )
-        .bearer_auth(TOKEN)
         .header("content-type", "application/json")
         .header("accept", "application/json, text/event-stream")
         .body(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).to_string())
@@ -275,7 +226,6 @@ async fn serves_the_production_hono_route_over_real_http_with_auth_and_clean_shu
         omni_mcp::tools::TOOL_ORDER.len()
     );
     shutdown.cancel();
-    unconfigured.await.unwrap();
     configured.await.unwrap();
 }
 
@@ -307,10 +257,16 @@ async fn initializes_and_lists_the_complete_typed_tool_surface_with_the_official
         "omni"
     );
     let golden = omni_mcp_kit::golden::handshake().unwrap();
-    assert_eq!(
-        discovered["result"]["instructions"],
-        golden["legacy"]["initialize"]["instructions"]
+    let instructions = discovered["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.starts_with("Omni is the owner's MCP gateway"));
+    assert!(
+        instructions.ends_with(
+            golden["legacy"]["initialize"]["instructions"]
+                .as_str()
+                .unwrap()
+        )
     );
+    assert!(!instructions.contains("Executor"));
     let listed = send(
         &router,
         request(
@@ -442,7 +398,7 @@ async fn paginates_reads_rejects_malformed_bounds_and_preserves_policy_semantics
     let policy = &meta("task_run").policy;
     assert_eq!(
         policy.recommended_policy,
-        omni_mcp_kit::ExecutorPolicy::RequireApproval
+        omni_mcp_kit::ApprovalPolicy::RequireApproval
     );
     assert!(
         policy
@@ -485,7 +441,7 @@ async fn runs_a_mocked_consequential_podcast_account_mutation_without_external_e
     );
     assert_eq!(
         meta("podcast_account_update").policy.recommended_policy,
-        omni_mcp_kit::ExecutorPolicy::RequireApproval
+        omni_mcp_kit::ApprovalPolicy::RequireApproval
     );
 }
 
@@ -607,8 +563,7 @@ async fn closes_cleanly_after_initialization() {
         &router,
         Request::builder()
             .method("DELETE")
-            .uri("/mcp")
-            .header("authorization", format!("Bearer {TOKEN}"))
+            .uri("/gateway/mcp")
             .body(Body::empty())
             .unwrap(),
     )

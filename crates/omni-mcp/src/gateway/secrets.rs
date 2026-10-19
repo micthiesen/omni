@@ -43,56 +43,71 @@ pub fn key_path(data_dir: &Path) -> PathBuf {
     data_dir.join(KEY_FILE)
 }
 
-impl GatewaySecrets {
-    /// Reads the key file, creating it (0600) on first use. The key is
-    /// written to a temporary file and linked into place, so a crash never
-    /// leaves a partial key; an existing key is never replaced.
-    pub fn load_or_create(path: &Path) -> Result<Self, SecretsError> {
-        let fail = |reason: String| SecretsError::KeyFile {
-            path: path.to_owned(),
-            reason,
-        };
-        match std::fs::read_to_string(path) {
-            Ok(text) => {
-                let bytes = URL_SAFE_NO_PAD
-                    .decode(text.trim())
-                    .map_err(|_| fail("not base64url".to_owned()))?;
-                let key: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| fail("not a 256-bit key".to_owned()))?;
-                Ok(Self { key })
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-                    std::fs::create_dir_all(dir).map_err(|e| fail(e.to_string()))?;
-                }
-                let mut key = [0u8; 32];
-                rand::fill(&mut key);
-                let staging = path.with_extension(format!("tmp-{}", std::process::id()));
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create(true).truncate(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt as _;
-                    options.mode(0o600);
-                }
-                let written = options.open(&staging).and_then(|mut file| {
-                    file.write_all(URL_SAFE_NO_PAD.encode(key).as_bytes())?;
-                    file.sync_all()
-                });
-                // A hard link fails if another process created the key first.
-                let linked = written.and_then(|()| std::fs::hard_link(&staging, path));
-                let _ = std::fs::remove_file(&staging);
-                match linked {
-                    Ok(()) => Ok(Self { key }),
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                        Self::load_or_create(path)
-                    }
-                    Err(error) => Err(fail(error.to_string())),
-                }
-            }
-            Err(error) => Err(fail(error.to_string())),
+/// Reads a 256-bit key file (base64url), creating it (0600) with `initial`
+/// on first use. The key is written to a temporary file and linked into
+/// place, so a crash never leaves a partial key; an existing key is never
+/// replaced. Shared by `gateway.key` and `mcp-events.key`.
+pub fn load_or_create_key_file(
+    path: &Path,
+    initial: &dyn Fn() -> [u8; 32],
+) -> Result<[u8; 32], SecretsError> {
+    let fail = |reason: String| SecretsError::KeyFile {
+        path: path.to_owned(),
+        reason,
+    };
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            let bytes = URL_SAFE_NO_PAD
+                .decode(text.trim())
+                .map_err(|_| fail("not base64url".to_owned()))?;
+            bytes
+                .try_into()
+                .map_err(|_| fail("not a 256-bit key".to_owned()))
         }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir).map_err(|e| fail(e.to_string()))?;
+            }
+            let key = initial();
+            let staging = path.with_extension(format!("tmp-{}", std::process::id()));
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt as _;
+                options.mode(0o600);
+            }
+            let written = options.open(&staging).and_then(|mut file| {
+                file.write_all(URL_SAFE_NO_PAD.encode(key).as_bytes())?;
+                file.sync_all()
+            });
+            // A hard link fails if another process created the key first.
+            let linked = written.and_then(|()| std::fs::hard_link(&staging, path));
+            let _ = std::fs::remove_file(&staging);
+            match linked {
+                Ok(()) => Ok(key),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    load_or_create_key_file(path, initial)
+                }
+                Err(error) => Err(fail(error.to_string())),
+            }
+        }
+        Err(error) => Err(fail(error.to_string())),
+    }
+}
+
+/// A fresh random 256-bit key.
+pub fn random_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    rand::fill(&mut key);
+    key
+}
+
+impl GatewaySecrets {
+    /// Reads `gateway.key`, creating a random one on first use
+    /// ([`load_or_create_key_file`]).
+    pub fn load_or_create(path: &Path) -> Result<Self, SecretsError> {
+        load_or_create_key_file(path, &random_key).map(|key| Self { key })
     }
 
     /// A fixed key (tests).

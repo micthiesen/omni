@@ -35,7 +35,7 @@ impl McpCallStatus {
     }
 }
 
-/// The recommended Executor policy of a tool (`docs/mcp-policy.json`).
+/// The recommended approval policy of a tool (`docs/mcp-policy.json`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecommendedPolicy {
     #[serde(rename = "allow")]

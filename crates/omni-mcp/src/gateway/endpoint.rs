@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::access::DownstreamAccess;
 use super::service::{CatalogChange, Gateway};
-use crate::endpoint::json_response;
+use crate::json::json_response;
 use crate::rpc::{MAX_REQUEST_BYTES, McpProtocol};
 
 pub const PATH: &str = omni_api::gateway::GATEWAY_MCP_PATH;

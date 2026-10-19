@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static EVENTS_STATUS: ToolDef<EventsStatusInput, EventsStatusOutput> = ToolDef::new(ToolInfo {
@@ -22,7 +22,7 @@ pub static EVENTS_STATUS: ToolDef<EventsStatusInput, EventsStatusOutput> = ToolD
     policy: Policy {
         side_effects: &[],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 

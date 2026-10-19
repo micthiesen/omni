@@ -1,32 +1,31 @@
-# Executor MCP
+# MCP tools
 
-This page describes `/mcp`, Omni's endpoint for Executor. Harnesses that connect
-to Omni directly use the MCP gateway at `/gateway/mcp`, which serves these same
-tools together with the configured upstream integrations ([MCP gateway](gateway.md)).
+This page describes Omni's own MCP tools. They are served by the MCP gateway at
+`/gateway/mcp`, Omni's only MCP endpoint, together with the configured upstream
+integrations ([MCP gateway](gateway.md)).
 
 Email and Claude Code wake subscriptions are documented in [MCP Events](mcp-events.md).
 `events_status` reports observed event requests, subscriptions and deliveries.
 See [queued reversible archive](email-archive.md) for the exact-message archive,
 status, cancellation and restore tools.
 
-Omni serves a streamable-HTTP MCP endpoint at `/mcp` on its existing HTTP port,
-`FRONTEND_PORT` (3000 by default). The endpoint uses the official MCP server
-transport, advertises the general server name `omni`, and supports the normal
-MCP initialization, discovery, and tool-call flow.
+The endpoint is streamable HTTP on Omni's existing HTTP port, `FRONTEND_PORT`
+(3000 by default). It advertises the general server name `omni` and supports the
+normal MCP initialization, discovery, and tool-call flow. There is no other MCP
+route: the former `/mcp` endpoint was removed, and a request to it gets the
+ordinary non-MCP handling.
 
-Every request to `/mcp` requires this header:
+Every request requires this header:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-The server reads the token only from `OMNI_MCP_TOKEN`. In production it refuses
-to start when the value is absent, shorter than 32 characters, or has fewer than
-12 distinct characters. Authentication compares fixed-length token digests in
-constant time, returns `401` for missing or invalid credentials, disables
-caching, and never logs the token. Tests use explicit fake tokens. Production
-tokens belong in the Boris Compose secret configuration and must not be added to
-this repository.
+Only gateway client tokens (stored as SHA-256) and the OAuth access tokens the
+gateway issued are accepted; see [MCP gateway](gateway.md) for how they are
+created and revoked. Authentication returns `401` for missing or invalid
+credentials, disables caching, and never logs the token. Tests use explicit
+fake tokens.
 
 ## Tool surface
 
@@ -352,8 +351,8 @@ Omni sends credentials only to the configured Hister server and refuses redirect
 cursors. `browse_browser_history` lists up to 100 recently indexed pages with
 title/URL and date filters. `get_browser_page` reads stored plain text in chunks
 without fetching the original website. `set_browser_page_label` replaces or clears
-one existing page's label and verifies it by reading it back; its Executor policy
-requires approval. Bulk deletion, reindexing, crawling, token administration, and
+one existing page's label and verifies it by reading it back; its recommended
+policy requires approval. Bulk deletion, reindexing, crawling, token administration, and
 raw HTML are not exposed.
 
 Use history proactively when prior reading or research materially improves a
@@ -394,7 +393,7 @@ before the push and holds only a digest of the content, never the text. A
 repeated key returns the first outcome without resending; reusing a key for
 different content is refused; an uncertain push is reported as `uncertain` and
 never resent; a definite rejection releases the key. Both tools share a durable
-limit of 4 per rolling hour and 12 per rolling day. Their Executor policy is
+limit of 4 per rolling hour and 12 per rolling day. Their recommended policy is
 `allow`, unlike other external communication, because an approval prompt would
 defeat reaching Michael while he is away; the limit and the narrow schemas
 bound misuse instead.
@@ -414,14 +413,17 @@ tools), arrays at 20 items, and keys that look like secrets are redacted. Only
 `claude_*` calls also keep a bounded copy of their output. The newest 2,000 calls
 are kept; calls left running by a restart are marked `interrupted` at boot.
 
-The LAN UI shows this history at `/mcp-activity` (`/mcp` is the endpoint), and `/claude` organizes Claude session
+The LAN UI shows this history at `/mcp-activity`, and `/claude` organizes Claude session
 actions by session alongside the Mac's live sessions and link state. Their data
 comes from `GET /api/mcp/activity` and `GET /api/claude/*`, which are read-only.
 
-## Executor policy
+## Approval policy
 
-Executor is expected to apply policy before every tool call. Reads, searches,
-drafts, previews, and ordinary reversible local changes are normally allowed.
+Approval is the connected client's responsibility (Claude Code, Codex,
+ChatGPT); Omni does not enforce it. The annotations and the recommended policy
+below guide the client, and the MCP activity UI shows each tool's recommended
+policy and counts calls that require approval. Reads, searches, drafts,
+previews, and ordinary reversible local changes are normally allowed.
 External communications and consequential actions require explicit owner
 approval. This includes sending email, changing calendars or podcast accounts,
 starting media acquisition, publishing PressPods content, invoking paid models
@@ -432,7 +434,8 @@ MCP annotations describe behavior only. They do not grant approval and
 `destructiveHint` is not used merely to signal approval risk. The complete
 machine-readable contract is [`docs/mcp-policy.json`](mcp-policy.json). Each
 entry contains the actual annotations, side effects, cost characteristics, and
-one recommended Executor policy: `allow`, `require_approval`, or `block`.
+one `recommendedPolicy`: `allow`, `require_approval`, or `block` (the Rust
+`ApprovalPolicy`).
 
 ## Tool definitions and snapshots
 
@@ -480,7 +483,7 @@ maintained by hand.
 ## Deployment boundary
 
 Omni owns the code, endpoint, authentication middleware, schemas, tool
-implementations, and policy inventory. The Boris Compose deployment owns the
-production token, Executor configuration, reverse-proxy exposure, networks, and
-live approval policies. Only `/mcp` needs to be routed to the existing container
-port; Omni's current web routes and health behavior remain unchanged.
+implementations, and policy inventory. The Boris Compose deployment owns
+reverse-proxy exposure and networks. Only `/gateway/*` and the
+`/.well-known/oauth-*` documents are routed publicly ([MCP gateway](gateway.md));
+Omni's other web routes and health behavior are LAN-only.

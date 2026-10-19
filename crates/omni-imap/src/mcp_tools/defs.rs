@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{EMAIL_PATTERN, Lit, Literal, positive};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static EMAIL_DRAFT_CREATE: ToolDef<EmailDraftCreateInput, EmailDraftCreateOutput> =
@@ -24,7 +24,7 @@ pub static EMAIL_DRAFT_CREATE: ToolDef<EmailDraftCreateInput, EmailDraftCreateOu
                 "Creates a draft in the configured email account, including copies of any referenced private PDF attachments",
             ],
             cost: "No per-call paid API expected",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -44,7 +44,7 @@ pub static EMAIL_SEND: ToolDef<EmailSendInput, EmailSendOutput> = ToolDef::new(T
             "May append a private copy in the Sent mailbox",
         ],
         cost: "Consumes SMTP provider quota",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -62,7 +62,7 @@ pub static EMAIL_SEND_STATUS: ToolDef<EmailSendStatusInput, EmailSendStatusOutpu
         policy: Policy {
             side_effects: &[],
             cost: "No paid API",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -81,7 +81,7 @@ pub static EMAIL_SENT_COPY_REPAIR: ToolDef<EmailSentCopyRepairInput, EmailSentCo
         policy: Policy {
             side_effects: &["May append one private Sent copy; never sends email"],
             cost: "No paid API",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -101,7 +101,7 @@ pub static EMAIL_ARCHIVE_QUEUE: ToolDef<EmailArchiveQueueInput, EmailArchiveQueu
                 "Queues one exact Inbox message for native MOVE or scoped UIDPLUS COPY and source removal",
             ],
             cost: "No paid API; bounded IMAP reads and one scoped mailbox move",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -119,7 +119,7 @@ pub static EMAIL_ARCHIVE_STATUS: ToolDef<EmailArchiveStatusInput, EmailArchiveSt
         policy: Policy {
             side_effects: &["May read Inbox and Archive to reconcile an uncertain action"],
             cost: "No paid API; bounded IMAP reads",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -137,7 +137,7 @@ pub static EMAIL_ARCHIVE_CANCEL: ToolDef<EmailArchiveCancelInput, EmailArchiveCa
         policy: Policy {
             side_effects: &["Cancels one queued archive action before any mailbox mutation"],
             cost: "No paid API",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -157,7 +157,7 @@ pub static EMAIL_ARCHIVE_RESTORE: ToolDef<EmailArchiveRestoreInput, EmailArchive
                 "Restores one exact recorded Archive UID using native MOVE or verified COPY and exact-source UID EXPUNGE",
             ],
             cost: "No paid API; bounded IMAP reads and one scoped mailbox move",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -177,7 +177,7 @@ pub static EMAIL_ATTACHMENT_GET: ToolDef<EmailAttachmentGetInput, EmailAttachmen
                 "Reads one private attachment from the configured personal mailbox; returns bytes to the authenticated consumer",
             ],
             cost: "No paid API; bounded read-only IMAP lookup",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 

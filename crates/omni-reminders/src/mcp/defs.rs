@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{Lit, Literal, NumberLiterals, nullable, one_of};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static LIST_REMINDER_LISTS: ToolDef<ListReminderListsInput, ListReminderListsOutput> =
@@ -22,7 +22,7 @@ pub static LIST_REMINDER_LISTS: ToolDef<ListReminderListsInput, ListReminderList
         policy: Policy {
             side_effects: &["Reads private server iCloud Reminders"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -40,7 +40,7 @@ pub static GET_REMINDER_LIST: ToolDef<GetReminderListInput, GetReminderListOutpu
         policy: Policy {
             side_effects: &["Reads private server iCloud Reminders"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -59,7 +59,7 @@ pub static UPDATE_REMINDER_LIST: ToolDef<UpdateReminderListInput, UpdateReminder
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -79,7 +79,7 @@ pub static GET_REMINDER_RECURRENCE: ToolDef<
     policy: Policy {
         side_effects: &["Reads private server iCloud Reminders"],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -99,7 +99,7 @@ pub static CREATE_REMINDER_RECURRENCE: ToolDef<
     policy: Policy {
         side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
         cost: "none",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -119,7 +119,7 @@ pub static UPDATE_REMINDER_RECURRENCE: ToolDef<
     policy: Policy {
         side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
         cost: "none",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -139,7 +139,7 @@ pub static REMOVE_REMINDER_RECURRENCE: ToolDef<
     policy: Policy {
         side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
         cost: "none",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -159,7 +159,7 @@ pub static COMPLETE_RECURRING_REMINDER: ToolDef<
     policy: Policy {
         side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
         cost: "none",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -177,7 +177,7 @@ pub static LIST_REMINDERS: ToolDef<ListRemindersInput, ListRemindersOutput> = To
         policy: Policy {
             side_effects: &["Reads private server iCloud Reminders"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -195,7 +195,7 @@ pub static GET_REMINDER: ToolDef<GetReminderInput, GetReminderOutput> = ToolDef:
     policy: Policy {
         side_effects: &["Reads private server iCloud Reminders"],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -213,7 +213,7 @@ pub static CREATE_REMINDER: ToolDef<CreateReminderInput, CreateReminderOutput> =
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -232,7 +232,7 @@ pub static UPDATE_REMINDER: ToolDef<UpdateReminderInput, UpdateReminderOutput> =
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -251,7 +251,7 @@ pub static COMPLETE_REMINDER: ToolDef<CompleteReminderInput, CompleteReminderOut
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -270,7 +270,7 @@ pub static REOPEN_REMINDER: ToolDef<ReopenReminderInput, ReopenReminderOutput> =
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -289,7 +289,7 @@ pub static DELETE_REMINDER: ToolDef<DeleteReminderInput, DeleteReminderOutput> =
         policy: Policy {
             side_effects: &["Mutates the exact owner's iCloud reminder after durable reservation"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );

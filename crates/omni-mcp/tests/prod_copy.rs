@@ -141,7 +141,6 @@ async fn every_wp12_entity_row_decodes_and_round_trips() {
         store.clone(),
         clock.clone(),
         Arc::new(Inert),
-        None,
         Ports::default(),
     );
     let status = service.status().await.unwrap();

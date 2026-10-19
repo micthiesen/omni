@@ -1,6 +1,6 @@
 //! The modern-era client flow
-//! (server/discover, events/list, events/subscribe, events/unsubscribe) with
-//! delegated-owner headers on the authenticated endpoint.
+//! (server/discover, events/list, events/subscribe, events/unsubscribe) for a
+//! gateway principal.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -12,8 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use base64::Engine as _;
 use common::*;
 use futures::future::BoxFuture;
-use omni_core::clock::Clock as _;
-use omni_mcp::events::executor_auth::{EventAuthorizer, ExecutorAuthError};
 use omni_mcp::events::persistence::EventRequestMethod;
 use omni_mcp::events::service::McpEventService;
 use omni_mcp::events::webhook::{
@@ -47,47 +45,21 @@ impl WebhookPort for Webhook {
     }
 }
 
-struct Authorizer {
-    accepted: Arc<AtomicBool>,
-    owner: String,
-    clock: Arc<omni_core::clock::TestClock>,
-}
-
-impl EventAuthorizer for Authorizer {
-    fn authorize<'a>(
-        &'a self,
-        owner: &'a str,
-        bearer: &'a str,
-    ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>> {
-        let ok = self.accepted.load(Ordering::SeqCst)
-            && owner == self.owner
-            && bearer == "Bearer delegated-fixture";
-        let expiry = self.clock.now_ms() + 60 * 60_000;
-        Box::pin(async move { Ok(ok.then_some(expiry)) })
-    }
-}
-
 #[tokio::test(start_paused = true)]
-async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authenticated_endpoint() {
+async fn advertises_events_and_handles_list_subscribe_unsubscribe_for_a_gateway_principal() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let owner = format!("executor:{}", "a".repeat(64));
+    let owner = owner();
     let fail_verification = Arc::new(AtomicBool::new(false));
-    let accepted = Arc::new(AtomicBool::new(true));
-    let events = McpEventService::new(
+    let events = with_active_owners(McpEventService::new(
         TOKEN,
         db.store.clone(),
         clock.clone(),
         Arc::new(Webhook {
             fail_verification: fail_verification.clone(),
         }),
-        Some(Arc::new(Authorizer {
-            accepted: accepted.clone(),
-            owner: owner.clone(),
-            clock: clock.clone(),
-        })),
         Ports::default(),
-    );
+    ));
     let router = mcp_router(&db.store, &clock, Vec::new(), Some(events.clone()));
     let meta = json!({
         "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -101,8 +73,6 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
             &[
                 ("mcp-protocol-version", "2026-07-28"),
                 ("mcp-method", method),
-                ("x-omni-events-owner", owner.as_str()),
-                ("x-omni-events-authorization", "Bearer delegated-fixture"),
             ],
         )
     };
@@ -137,7 +107,7 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
     );
     let requests = events.store().requests().await.unwrap();
     assert!(requests.iter().any(|r| r.method == EventRequestMethod::List
-        && r.owner == format!("executor:{}", "a".repeat(12))
+        && r.owner == owner
         && r.outcome == "listed"));
 
     let secret = format!(
@@ -167,12 +137,7 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
     assert!(subscribed["result"]["refreshBefore"].is_string());
     let persisted = events.store().subscription(&id).await.unwrap().unwrap();
     assert_eq!(persisted.owner, owner);
-    assert!(
-        !persisted
-            .encrypted_authorization
-            .unwrap()
-            .contains("delegated-fixture")
-    );
+    assert_eq!(persisted.encrypted_authorization, None);
 
     let http = send(
         &router,
@@ -204,24 +169,6 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
         json!({"reason": "challenge_failed"})
     );
     fail_verification.store(false, Ordering::SeqCst);
-
-    accepted.store(false, Ordering::SeqCst);
-    let principal = send(
-        &router,
-        modern(
-            "events/subscribe",
-            5,
-            input("https://chatgpt.example.com/events/callback"),
-        ),
-    )
-    .await
-    .message();
-    assert_eq!(principal["error"]["code"], -32001);
-    assert_eq!(
-        principal["error"]["data"],
-        json!({"reason": "invalid_principal"})
-    );
-    accepted.store(true, Ordering::SeqCst);
 
     let removed = send(
         &router,

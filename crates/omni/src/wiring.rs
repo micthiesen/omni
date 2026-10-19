@@ -181,9 +181,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
         let _ = ports.set_claude_session_notifier(Arc::new(watcher.clone()));
     }
     // Subsystems built above read this port when they publish, not at build time.
-    if let Some(publisher) = mcp.event_publisher() {
-        let _ = ports.set_event_publisher(Arc::new(publisher));
-    }
+    let _ = ports.set_event_publisher(Arc::new(mcp.event_publisher()));
 
     let retry_handlers: Vec<Arc<dyn EmailHandler>> = parcel_handlers
         .iter()
@@ -192,7 +190,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
         .collect();
     let mut email_handlers = Vec::new();
     if let Some(source) = mail_source {
-        email_handlers.extend(mcp.email_handler());
+        email_handlers.push(mcp.email_handler());
         email_handlers.extend(retry_handlers.iter().cloned());
         let _ = ports.set_email_retry_handlers(Arc::new(RetryHandlers::new(&retry_handlers)));
         let mut dispatcher = Subsystem::named("email-dispatcher");

@@ -143,25 +143,12 @@ fn rejects_sender_overrides_with_a_typed_error() {
 
 #[test]
 fn token_rules_have_typed_errors() {
-    let strong = "0123456789abcdefghijklmnopqrstuv";
+    assert!(load(&[("DOCKERIZED", "true")]).is_ok());
     assert!(matches!(
-        load(&[("DOCKERIZED", "true")]),
-        Err(ConfigError::Invalid {
-            key: "OMNI_MCP_TOKEN",
-            ..
-        })
+        load(&[("OMNI_DEVICE_LINK_TOKEN", "weak")]),
+        Err(ConfigError::WeakToken("OMNI_DEVICE_LINK_TOKEN"))
     ));
-    assert!(matches!(
-        load(&[("OMNI_MCP_TOKEN", "weak")]),
-        Err(ConfigError::WeakToken("OMNI_MCP_TOKEN"))
-    ));
-    assert!(matches!(
-        load(&[
-            ("OMNI_MCP_TOKEN", strong),
-            ("OMNI_DEVICE_LINK_TOKEN", strong)
-        ]),
-        Err(ConfigError::TokensEqual)
-    ));
+    assert!(load(&[("OMNI_DEVICE_LINK_TOKEN", "0123456789abcdefghijklmnopqrstuv")]).is_ok());
 }
 
 #[test]
@@ -206,12 +193,7 @@ fn binary_paths_default_like_js_or() {
 fn db_path_follows_sqlite_layer_config() {
     let local = load(&[]).expect("config");
     assert_eq!(local.db_path(), std::path::PathBuf::from("docstore.db"));
-    let docker = load(&[
-        ("DOCKERIZED", "true"),
-        ("DB_NAME", "docstore.db"),
-        ("OMNI_MCP_TOKEN", "0123456789abcdefghijklmnopqrstuv"),
-    ])
-    .expect("config");
+    let docker = load(&[("DOCKERIZED", "true"), ("DB_NAME", "docstore.db")]).expect("config");
     assert_eq!(
         docker.db_path(),
         std::path::PathBuf::from("/data/docstore.db")

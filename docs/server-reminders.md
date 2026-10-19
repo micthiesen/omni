@@ -58,8 +58,8 @@ LAN client. The legacy
 `.boris` HTTPS certificate still does not match; use the new hostname for HTTPS.
 
 Keep `pods.syas.ca`'s existing public `/pods/*` routes and its deny filter for other
-paths. Do not apply the LAN ACL to those podcast integrations. Preserve Executor's
-existing authenticated Omni connection and verify it after proxy changes.
+paths. Do not apply the LAN ACL to those podcast integrations. Preserve the gateway's
+public routes (`/gateway/*`, [gateway.md](gateway.md)) and verify them after proxy changes.
 
 The manual **Verify Reminders LAN boundary** GitHub workflow probes the existing
 public ingress from a hosted runner, including forged LAN headers, legacy aliases,
@@ -115,7 +115,7 @@ losing either loses session trust and mutation reconciliation history.
 `list_reminder_lists`, `list_reminders` (also searches title and notes),
 `get_reminder`, `create_reminder`, `update_reminder`, `complete_reminder`,
 `reopen_reminder`, and `delete_reminder` are bounded tools under existing MCP
-bearer authentication. Writes recommend Executor approval. Lists and reminders
+bearer authentication. Writes recommend client approval. Lists and reminders
 use exact CloudKit record IDs. Reads cap snapshots at 50 pages and 10,000 records;
 an incomplete snapshot is an error, not an empty result.
 

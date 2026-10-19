@@ -4,7 +4,7 @@
 //! own types. After changing anything here run `cargo xtask mcp-golden` and
 //! review the snapshot diff.
 
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 const ANNOTATIONS: Annotations = Annotations {
@@ -17,7 +17,7 @@ const ANNOTATIONS: Annotations = Annotations {
 const POLICY: Policy = Policy {
     side_effects: &[],
     cost: "No external traffic or monetary cost; reads Omni's cached Parcel data",
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 pub static PARCELS_LIST: ToolDef<ParcelsListInput, ParcelsListOutput> = ToolDef::new(ToolInfo {

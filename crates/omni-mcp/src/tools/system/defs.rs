@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use omni_mcp_kit::schema::{Lit, Literal, lead_description, nullable};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 use serde_json::{Map, Value};
 
@@ -24,7 +24,7 @@ pub static SYSTEM_STATUS: ToolDef<SystemStatusInput, SystemStatusOutput> = ToolD
     policy: Policy {
         side_effects: &[],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -41,7 +41,7 @@ pub static TASKS_LIST: ToolDef<TasksListInput, TasksListOutput> = ToolDef::new(T
     policy: Policy {
         side_effects: &[],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -61,7 +61,7 @@ pub static TASK_RUN: ToolDef<TaskRunInput, TaskRunOutput> = ToolDef::new(ToolInf
             "Effects depend on the selected task and may include external communications or external mutations",
         ],
         cost: "task-dependent; some tasks invoke paid AI, search, notification, or media services",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -79,7 +79,7 @@ pub static TASK_RUNS_LIST: ToolDef<TaskRunsListInput, TaskRunsListOutput> = Tool
         policy: Policy {
             side_effects: &[],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -97,7 +97,7 @@ pub static TASK_RUN_GET: ToolDef<TaskRunGetInput, TaskRunGetOutput> = ToolDef::n
     policy: Policy {
         side_effects: &[],
         cost: "none",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -115,7 +115,7 @@ pub static LIVESTREAMS_LIST: ToolDef<LivestreamsListInput, LivestreamsListOutput
         policy: Policy {
             side_effects: &[],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -134,7 +134,7 @@ pub static LIVESTREAM_GET: ToolDef<LivestreamGetInput, LivestreamGetOutput> = To
         policy: Policy {
             side_effects: &[],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );

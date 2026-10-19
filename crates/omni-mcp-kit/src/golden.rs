@@ -17,7 +17,7 @@ pub const HANDSHAKE_JSON: &str = include_str!("../golden/handshake.json");
 pub const POLICY_JSON: &str = include_str!("../golden/mcp-policy.json");
 
 /// `schemaVersion` of the policy inventory.
-pub const POLICY_SCHEMA_VERSION: u32 = 1;
+pub const POLICY_SCHEMA_VERSION: u32 = 2;
 
 /// The golden `handshake.json`.
 pub fn handshake() -> Result<Value, ToolMetaError> {
@@ -47,7 +47,7 @@ pub fn policy_inventory(metas: &[&ToolMeta]) -> Value {
                 "annotations": meta.annotations,
                 "sideEffects": meta.policy.side_effects,
                 "cost": meta.policy.cost,
-                "recommendedExecutorPolicy": meta.policy.recommended_policy,
+                "recommendedPolicy": meta.policy.recommended_policy,
             })
         })
         .collect();

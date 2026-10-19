@@ -42,7 +42,6 @@ fn events(store: &Store, clock: &Arc<omni_core::clock::TestClock>) -> McpEventSe
         store.clone(),
         clock.clone(),
         Arc::new(Webhook),
-        None,
         Ports::default(),
     )
 }
@@ -89,11 +88,27 @@ async fn strict_event_params_see_only_non_envelope_meta() {
     .message();
     assert!(lifted["result"]["events"].is_array(), "{lifted}");
 
+    let unsubscribe = |meta: Value| {
+        json!({
+            "name": "email.received",
+            "arguments": {"folder": "inbox"},
+            "delivery": {"mode": "webhook", "url": "https://hooks.example.com/x"},
+            "_meta": meta,
+        })
+    };
+    let lifted = send(
+        &router,
+        modern("events/unsubscribe", unsubscribe(envelope(json!({})))),
+    )
+    .await
+    .message();
+    assert_eq!(lifted["result"]["resultType"], "complete", "{lifted}");
+
     let progress = send(
         &router,
         modern(
-            "events/list",
-            json!({"_meta": envelope(json!({"progressToken": 1}))}),
+            "events/unsubscribe",
+            unsubscribe(envelope(json!({"progressToken": 1}))),
         ),
     )
     .await
@@ -101,7 +116,7 @@ async fn strict_event_params_see_only_non_envelope_meta() {
     assert_eq!(progress["error"]["code"], json!(-32602));
     assert_eq!(
         progress["error"]["message"],
-        json!("Invalid params for events/list: Unrecognized key: \"_meta\"")
+        json!("Invalid params for events/unsubscribe: Unrecognized key: \"_meta\"")
     );
 
     let legacy_meta = send(
@@ -109,29 +124,30 @@ async fn strict_event_params_see_only_non_envelope_meta() {
         legacy(&json!({
             "jsonrpc": "2.0",
             "id": 8,
-            "method": "events/list",
-            "params": {"_meta": {"progressToken": "p"}},
+            "method": "events/unsubscribe",
+            "params": unsubscribe(json!({"progressToken": "p"})),
         })),
     )
     .await
     .message();
     assert_eq!(legacy_meta["error"]["code"], json!(-32602));
 
+    let mut retried = unsubscribe(json!(null));
+    retried.as_object_mut().unwrap().remove("_meta");
+    retried["requestState"] = json!("opaque");
+    retried["inputResponses"] = json!({});
     let legacy_retry = send(
         &router,
         legacy(&json!({
             "jsonrpc": "2.0",
             "id": 9,
-            "method": "events/list",
-            "params": {"requestState": "opaque", "inputResponses": {}},
+            "method": "events/unsubscribe",
+            "params": retried,
         })),
     )
     .await
     .message();
-    assert!(
-        legacy_retry["result"]["events"].is_array(),
-        "{legacy_retry}"
-    );
+    assert_eq!(legacy_retry["result"], json!({}), "{legacy_retry}");
 }
 
 #[tokio::test(start_paused = true)]

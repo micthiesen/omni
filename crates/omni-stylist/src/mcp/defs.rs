@@ -2,7 +2,7 @@
 //! service inputs and outputs in `crate::api`). After changing anything here
 //! run `cargo xtask mcp-golden` and review the snapshot diff.
 
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 
 use crate::api::{
     AppendEventInput, AppendEventOutput, ArchivesListInput, ArchivesListOutput, CompareInput,
@@ -30,7 +30,7 @@ const NO_COST: &str = "No external traffic or monetary cost";
 const READ_POLICY: Policy = Policy {
     side_effects: &[],
     cost: NO_COST,
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 pub static STYLIST_CONTEXT_GET: ToolDef<ContextInput, ContextOutput> = ToolDef::new(ToolInfo {
@@ -68,7 +68,7 @@ pub static STYLIST_RECORD_SAVE: ToolDef<SaveRecordInput, SaveRecordOutput> = Too
         policy: Policy {
             side_effects: &["Writes the private stylist ledger in Omni's database"],
             cost: NO_COST,
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -82,7 +82,7 @@ pub static STYLIST_EVENT_APPEND: ToolDef<AppendEventInput, AppendEventOutput> = 
         policy: Policy {
             side_effects: &["Writes the private stylist ledger in Omni's database"],
             cost: NO_COST,
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -96,7 +96,7 @@ pub static STYLIST_EVIDENCE_STORE: ToolDef<StoreEvidenceInput, StoreEvidenceOutp
         policy: Policy {
             side_effects: &["Stores a private file and writes the stylist ledger in Omni"],
             cost: NO_COST,
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -124,7 +124,7 @@ pub static STYLIST_EXPORT: ToolDef<ExportInput, ExportOutput> = ToolDef::new(Too
     policy: Policy {
         side_effects: &["Writes a private archive file in Omni's data volume"],
         cost: NO_COST,
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -151,7 +151,7 @@ pub static STYLIST_RESTORE: ToolDef<RestoreInput, RestoreOutput> = ToolDef::new(
     policy: Policy {
         side_effects: &["Writes a fixture namespace in the private stylist ledger"],
         cost: NO_COST,
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -170,7 +170,7 @@ pub static STYLIST_FIXTURE_PURGE: ToolDef<PurgeInput, PurgeOutput> = ToolDef::ne
             "Deletes a fixture namespace from the private stylist ledger after archiving it",
         ],
         cost: NO_COST,
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 

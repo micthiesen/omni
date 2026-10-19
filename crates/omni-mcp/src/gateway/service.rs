@@ -16,7 +16,7 @@ use omni_api::gateway::{
 use omni_core::clock::SharedClock;
 use omni_http::SideEffectMode;
 use omni_http::public::PublicHttpClient;
-use omni_mcp_kit::{Annotations, ExecutorPolicy, ToolMeta, ToolPolicy};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, ToolMeta, ToolPolicy};
 use omni_store::cbor::Extra;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{Store, StoreError};
@@ -638,9 +638,9 @@ impl Gateway {
                 side_effects: Vec::new(),
                 cost: String::new(),
                 recommended_policy: if tool.as_ref().and_then(|t| t.read_only()) == Some(true) {
-                    ExecutorPolicy::Allow
+                    ApprovalPolicy::Allow
                 } else {
-                    ExecutorPolicy::RequireApproval
+                    ApprovalPolicy::RequireApproval
                 },
             },
         };

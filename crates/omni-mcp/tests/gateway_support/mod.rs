@@ -540,7 +540,6 @@ impl Fixture {
             store.clone(),
             clock.clone(),
             webhook.clone(),
-            None,
             Ports::default(),
         );
         omni_mcp::gateway::events::extend_events(&events, &gateway, &access);

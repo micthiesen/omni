@@ -22,8 +22,8 @@ use omni_store::Store;
 use serde_json::{Map, Value, json};
 
 use crate::activity::{ActivityQuery, get_mcp_activity};
-use crate::endpoint::json_response;
 use crate::host::{ClaudeHost, HostCommand, HostError};
+use crate::json::json_response;
 use crate::tools::claude_sessions::{to_item, to_session};
 
 const LIVE_TIMEOUT: Duration = Duration::from_secs(30);

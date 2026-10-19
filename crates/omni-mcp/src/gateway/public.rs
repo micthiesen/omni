@@ -3,17 +3,10 @@
 //!
 //! The proxy host for `OMNI_GATEWAY_PUBLIC_URL` forwards only these exact
 //! paths (`deploy/gateway/route.mjs` checks the raw request URI against the
-//! same list). [`only_public_paths`] enforces it again inside Omni: a request
+//! same list). [`omni_server_kit::public_host`] enforces it again inside Omni: a request
 //! that names the public host gets a 404 for any other path, including the
 //! management page, `/api/*`, `/mcp`, the SPA fallback and encoded, dotted,
 //! doubled-slash or trailing-slash variants of an allowed path.
-
-use std::sync::Arc;
-
-use axum::extract::{Request, State};
-use axum::http::{StatusCode, header};
-use axum::middleware::Next;
-use axum::response::Response;
 
 /// Every path the public host serves, compared exactly with the raw path.
 pub const PUBLIC_PATHS: [&str; 10] = [
@@ -33,41 +26,9 @@ pub fn is_public_path(path: &str) -> bool {
     PUBLIC_PATHS.contains(&path)
 }
 
-/// The host of `OMNI_GATEWAY_PUBLIC_URL`, lowercased, when it is set.
-pub fn public_host(public_url: Option<&str>) -> Option<Arc<str>> {
-    let url = url::Url::parse(public_url?).ok()?;
-    Some(Arc::from(url.host_str()?.to_ascii_lowercase()))
-}
-
-/// The host a request names (`Host`, or the HTTP/2 authority), lowercased,
-/// without port or trailing dot.
-fn request_host(request: &Request) -> Option<String> {
-    let raw = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .or_else(|| request.uri().authority().map(|a| a.as_str()))?;
-    let name = match raw.rsplit_once(':') {
-        Some((name, port)) if !name.ends_with(']') && port.bytes().all(|b| b.is_ascii_digit()) => {
-            name
-        }
-        _ => raw,
-    };
-    Some(name.trim_end_matches('.').to_ascii_lowercase())
-}
-
-/// Middleware over the whole application: requests naming the public host
-/// reach only [`PUBLIC_PATHS`].
-pub async fn only_public_paths(
-    State(public): State<Arc<str>>,
-    request: Request,
-    next: Next,
-) -> Response {
-    if request_host(&request).as_deref() == Some(&*public) && !is_public_path(request.uri().path())
-    {
-        return omni_server_kit::api_error(StatusCode::NOT_FOUND, "Not found");
-    }
-    next.run(request).await
+/// The guard for the host of `OMNI_GATEWAY_PUBLIC_URL`, when it is set.
+pub fn public_host(public_url: Option<&str>) -> Option<omni_server_kit::public_host::PublicHost> {
+    omni_server_kit::public_host::PublicHost::new(public_url, is_public_path)
 }
 
 #[cfg(test)]
@@ -119,31 +80,5 @@ mod tests {
             .filter_map(|line| line.trim().strip_prefix('"')?.strip_suffix("\","))
             .collect();
         assert_eq!(listed, PUBLIC_PATHS);
-    }
-
-    #[test]
-    fn the_public_host_is_compared_without_port_case_or_trailing_dot() {
-        let request = |host: &str| {
-            Request::builder()
-                .uri("/gateway/mcp")
-                .header(header::HOST, host)
-                .body(axum::body::Body::empty())
-                .unwrap()
-        };
-        for host in [
-            "gateway.example.com",
-            "Gateway.Example.com:443",
-            "gateway.example.com.",
-        ] {
-            assert_eq!(
-                request_host(&request(host)).as_deref(),
-                Some("gateway.example.com")
-            );
-        }
-        assert_eq!(
-            public_host(Some("https://Gateway.Example.com")).as_deref(),
-            Some("gateway.example.com")
-        );
-        assert_eq!(public_host(None), None);
     }
 }

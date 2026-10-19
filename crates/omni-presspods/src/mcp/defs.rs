@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{Lit, Literal, one_of};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static PRESSPODS_LIST: ToolDef<PresspodsListInput, PresspodsListOutput> = ToolDef::new(
@@ -22,7 +22,7 @@ pub static PRESSPODS_LIST: ToolDef<PresspodsListInput, PresspodsListOutput> = To
         policy: Policy {
             side_effects: &[],
             cost: "No external traffic or monetary cost",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -41,7 +41,7 @@ pub static PRESSPODS_EPISODE_GET: ToolDef<PresspodsEpisodeGetInput, PresspodsEpi
         policy: Policy {
             side_effects: &[],
             cost: "No external traffic or monetary cost",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -61,7 +61,7 @@ pub static PRESSPODS_TRANSCRIPT_READ: ToolDef<
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -83,7 +83,7 @@ pub static PRESSPODS_SUBMIT: ToolDef<PresspodsSubmitInput, PresspodsSubmitOutput
                 "Publishes an episode to the personal feed and sends a notification after processing",
             ],
             cost: "May incur metadata/cleaning model and TTS charges; ElevenLabs is approximately $0.10 per 1,000 characters when configured",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -105,7 +105,7 @@ pub static PRESSPODS_RETRY: ToolDef<PresspodsRetryInput, PresspodsRetryOutput> =
                 "May replace an existing published episode and send a notification",
             ],
             cost: "May incur metadata/cleaning model and TTS charges",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -126,7 +126,7 @@ pub static PRESSPODS_DELETE: ToolDef<PresspodsDeleteInput, PresspodsDeleteOutput
                 "Permanently removes local episode/audio data or a queued/failed job and its checkpoints",
             ],
             cost: "No monetary cost",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );

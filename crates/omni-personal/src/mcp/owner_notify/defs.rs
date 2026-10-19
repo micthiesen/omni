@@ -3,7 +3,7 @@
 //! The handlers decode and encode with these same types. After changing
 //! anything here run `cargo xtask mcp-golden` and review the snapshot diff.
 
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ const POLICY: Policy = Policy {
         "Sends one push notification to Michael's phone (Omni app, or Pushover when the app is not set up)",
     ],
     cost: "No monetary cost; one push. Shares a limit of 4 per hour and 12 per day",
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 pub static NOTIFY_OWNER_BLOCKED: ToolDef<NotifyOwnerBlockedInput, NotifyOwnerOutput> = ToolDef::new(

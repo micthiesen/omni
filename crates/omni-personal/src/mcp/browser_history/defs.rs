@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{Lit, Literal, date, lead_description};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static SEARCH_BROWSER_HISTORY: ToolDef<SearchBrowserHistoryInput, SearchBrowserHistoryOutput> =
@@ -22,7 +22,7 @@ pub static SEARCH_BROWSER_HISTORY: ToolDef<SearchBrowserHistoryInput, SearchBrow
         policy: Policy {
             side_effects: &["Reads the owner's private Hister index"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -40,7 +40,7 @@ pub static BROWSE_BROWSER_HISTORY: ToolDef<BrowseBrowserHistoryInput, BrowseBrow
         policy: Policy {
             side_effects: &["Reads the owner's private Hister index"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -58,7 +58,7 @@ pub static GET_BROWSER_PAGE: ToolDef<GetBrowserPageInput, GetBrowserPageOutput> 
         policy: Policy {
             side_effects: &["Reads the owner's private Hister index"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -80,7 +80,7 @@ pub static SET_BROWSER_PAGE_LABEL: ToolDef<SetBrowserPageLabelInput, SetBrowserP
                 "Reads the stored document to verify the label",
             ],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 

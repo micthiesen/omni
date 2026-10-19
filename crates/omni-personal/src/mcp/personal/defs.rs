@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use omni_mcp_kit::schema::{Lit, Literal, NumberLiterals, one_of};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static PETS_READ: ToolDef<PetsReadInput, PetsReadOutput> = ToolDef::new(ToolInfo {
@@ -23,7 +23,7 @@ pub static PETS_READ: ToolDef<PetsReadInput, PetsReadOutput> = ToolDef::new(Tool
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -40,7 +40,7 @@ pub static COSTS_READ: ToolDef<CostsReadInput, CostsReadOutput> = ToolDef::new(T
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 

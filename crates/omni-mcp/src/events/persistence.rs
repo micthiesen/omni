@@ -26,7 +26,9 @@ pub enum DeliveryFailure {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeliveryWithhold {
+    /// The owning gateway client or grant is revoked.
     AuthorizationInvalid,
+    /// Executor could not be asked; only on rows from before the gateway.
     AuthorizationUnavailable,
 }
 
@@ -68,9 +70,10 @@ pub struct EventSubscription {
     pub encrypted_previous_secret: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_secret_until: Option<i64>,
+    /// An Executor delegated token, on rows from before the gateway; never written now.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encrypted_authorization: Option<String>,
-    /// Advertised refresh time; never later than a delegated token's expiry.
+    /// Advertised refresh time (the expiry).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_before: Option<i64>,
     pub expires_at: i64,
@@ -140,7 +143,7 @@ pub struct EventDelivery {
     pub status: DeliveryStatus,
     pub created_at: i64,
     pub updated_at: i64,
-    /// Pending without an attempt because the stored authorization does not validate.
+    /// Pending without an attempt because the owner's access is revoked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub withheld: Option<DeliveryWithhold>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -412,7 +415,7 @@ mod tests {
             id: "r".into(),
             at: 1,
             method: EventRequestMethod::Subscribe,
-            owner: "direct".into(),
+            owner: "legacy".into(),
             name: None,
             arguments: None,
             folder: Some("archive".into()),

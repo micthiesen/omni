@@ -39,6 +39,18 @@ struct RouteState {
     auth_token: Arc<str>,
 }
 
+/// Whether a raw path may be served on the public PressPods host
+/// (`PRESSPODS_PUBLIC_URL`): the token-checked feed, content-addressed audio
+/// and the artwork podcast apps fetch. Everything else, including public
+/// submission, stays on the LAN.
+pub fn is_public_path(path: &str) -> bool {
+    path == "/pods/rss"
+        || path == "/pods/logo.jpeg"
+        || path
+            .strip_prefix("/pods/audio/")
+            .is_some_and(crate::storage::is_audio_file_name)
+}
+
 /// The router; `None` without `PRESSPODS_AUTH_TOKEN` (no routes are mounted).
 pub fn router(service: PressPods) -> Option<Router> {
     let token = service

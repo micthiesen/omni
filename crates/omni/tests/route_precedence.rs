@@ -237,3 +237,78 @@ async fn the_public_gateway_host_reaches_only_the_gateways_public_paths() {
     let api = send(&router, get_from("omni.boris", "/api/gateway")).await;
     assert_eq!(api.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn the_public_pods_host_reaches_only_the_feed_audio_and_artwork() {
+    let (_app, ctx, dist) = app_with_presspods().await;
+    let mut env = omni_testkit::test_app_env();
+    env.insert(
+        "PRESSPODS_AUTH_TOKEN".to_owned(),
+        "pods-token-0123456789".to_owned(),
+    );
+    env.insert(
+        "PRESSPODS_PUBLIC_URL".to_owned(),
+        "https://pods.example.com".to_owned(),
+    );
+    let ctx = AppContext {
+        config: Arc::new(omni_config::Config::from_env(&env).unwrap()),
+        ..ctx
+    };
+    let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
+    let public = "pods.example.com";
+
+    let feed = send(&router, get_from(public, "/pods/rss")).await;
+    assert_eq!(
+        feed.status(),
+        StatusCode::UNAUTHORIZED,
+        "the feed still needs its token"
+    );
+    let authed = send(
+        &router,
+        get_from(public, "/pods/rss?authToken=pods-token-0123456789"),
+    )
+    .await;
+    assert_eq!(authed.status(), StatusCode::OK);
+    let audio = send(&router, get_from(public, "/pods/audio/missing.mp3")).await;
+    assert_eq!(audio.status(), StatusCode::NOT_FOUND);
+
+    for path in [
+        "/pods",
+        "/pods/",
+        "/pods/some-episode",
+        "/x/../pods/",
+        "/api/gateway/integrations/..%2F..%2F..%2Fpods%2Fx",
+        "/api/press-pods/episodes",
+        "/api/health",
+        "/",
+        "/index.html",
+        "/assets/app-abc.js",
+        "/gateway",
+    ] {
+        let response = send(&router, get_from(public, path)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        let content_type = header_of(&response, header::CONTENT_TYPE).unwrap_or_default();
+        assert!(
+            !content_type.starts_with("text/html"),
+            "{path}: {content_type}"
+        );
+    }
+    let submit = send(
+        &router,
+        Request::post("/pods/episodes")
+            .header(header::HOST, public)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        submit.status(),
+        StatusCode::NOT_FOUND,
+        "public submission is closed"
+    );
+
+    // The home network is unaffected.
+    let page = send(&router, get_from("omni.boris", "/pods")).await;
+    assert_eq!(page.status(), StatusCode::OK);
+}

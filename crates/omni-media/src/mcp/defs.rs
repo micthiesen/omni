@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use omni_mcp_kit::schema::{Lit, Literal, one_of, positive};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static MEDIA_CATALOG_SEARCH: ToolDef<MediaCatalogSearchInput, MediaCatalogSearchOutput> =
@@ -24,7 +24,7 @@ pub static MEDIA_CATALOG_SEARCH: ToolDef<MediaCatalogSearchInput, MediaCatalogSe
         policy: Policy {
             side_effects: &["Reads the public TMDB catalog"],
             cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -42,7 +42,7 @@ pub static MEDIA_CATALOG_GET: ToolDef<MediaCatalogGetInput, MediaCatalogGetOutpu
         policy: Policy {
             side_effects: &["Reads the public TMDB catalog"],
             cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -61,7 +61,7 @@ pub static MEDIA_CATALOG_BROWSE: ToolDef<MediaCatalogBrowseInput, MediaCatalogBr
         policy: Policy {
             side_effects: &["Reads the public TMDB catalog"],
             cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -79,7 +79,7 @@ pub static MEDIA_LIBRARY_LIST: ToolDef<MediaLibraryListInput, MediaLibraryListOu
         policy: Policy {
             side_effects: &["Reads the configured Plex account and server"],
             cost: "No expected monetary cost; bounded account API traffic",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -97,7 +97,7 @@ pub static MEDIA_WATCHLIST_LIST: ToolDef<MediaWatchlistListInput, MediaWatchlist
         policy: Policy {
             side_effects: &["Reads the configured Radarr and Sonarr accounts"],
             cost: "No expected monetary cost; bounded account API traffic",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -118,7 +118,7 @@ pub static MEDIA_WATCHLIST_ADD: ToolDef<MediaWatchlistAddInput, MediaWatchlistAd
                 "May begin media acquisition and downloads",
             ],
             cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -136,7 +136,7 @@ pub static MEDIA_SERIES_GET: ToolDef<MediaSeriesGetInput, MediaSeriesGetOutput> 
         policy: Policy {
             side_effects: &["Reads the configured Sonarr account"],
             cost: "No expected monetary cost; bounded account API traffic",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -158,7 +158,7 @@ pub static MEDIA_SERIES_ADD: ToolDef<MediaSeriesAddInput, MediaSeriesAddOutput> 
                 "May begin media acquisition and downloads for the listed seasons",
             ],
             cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -182,7 +182,7 @@ pub static MEDIA_SERIES_SEASONS_SET: ToolDef<
             "Newly released episodes of monitored seasons may download",
         ],
         cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -203,7 +203,7 @@ pub static MEDIA_SERIES_SEARCH: ToolDef<MediaSeriesSearchInput, MediaSeriesSearc
                 "Begins media acquisition and downloads for the listed seasons",
             ],
             cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -223,7 +223,7 @@ pub static MEDIA_RECOMMENDATIONS_LIST: ToolDef<
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -243,7 +243,7 @@ pub static MEDIA_RECOMMENDATION_GET: ToolDef<
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -263,7 +263,7 @@ pub static MEDIA_RECOMMENDATION_FEEDBACK: ToolDef<
     policy: Policy {
         side_effects: &["Updates local recommendation feedback used by future taste analysis"],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -281,7 +281,7 @@ pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> 
         policy: Policy {
             side_effects: &[],
             cost: "No external traffic or monetary cost",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );

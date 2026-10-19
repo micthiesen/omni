@@ -121,14 +121,13 @@ impl Setup {
     async fn new(project: Option<&'static str>) -> Self {
         let clock = clock();
         let db = test_store(&clock).await;
-        let events = McpEventService::new(
+        let events = common::with_active_owners(McpEventService::new(
             "test-omni-bearer",
             db.store.clone(),
             clock.clone(),
             Arc::new(Accept),
-            None,
             Ports::default(),
-        );
+        ));
         let host = FakeHost::default();
         host.0.lock().unwrap().online = true;
         let watcher = ClaudeSessionWatcher::new(
@@ -153,7 +152,8 @@ impl Setup {
             base64::engine::general_purpose::STANDARD.encode([7u8; 32])
         );
         self.events
-            .subscribe(
+            .subscribe_as(
+                &common::owner(),
                 &SubscribeInput {
                     name: "claude.session.turn_finished".to_owned(),
                     arguments: match self.project {
@@ -164,7 +164,6 @@ impl Setup {
                     secret,
                     ttl_ms: None,
                 },
-                None,
             )
             .await
             .unwrap();

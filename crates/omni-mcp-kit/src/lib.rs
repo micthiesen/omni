@@ -24,10 +24,11 @@ pub mod golden;
 pub mod registry;
 pub mod schema;
 
-/// Recommended Executor policy (`docs/mcp-policy.json`).
+/// A tool's recommended approval policy (`docs/mcp-policy.json`), for the
+/// connected client to apply before calling it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExecutorPolicy {
+pub enum ApprovalPolicy {
     Allow,
     RequireApproval,
     Block,
@@ -43,13 +44,13 @@ pub struct Annotations {
     pub open_world_hint: bool,
 }
 
-/// `ToolPolicy`: side effects, cost and the recommended Executor policy.
+/// `ToolPolicy`: side effects, cost and the recommended approval policy.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolPolicy {
     pub side_effects: Vec<String>,
     pub cost: String,
-    pub recommended_policy: ExecutorPolicy,
+    pub recommended_policy: ApprovalPolicy,
 }
 
 /// The metadata of one tool, as served by `tools/list` plus its policy.
@@ -99,12 +100,12 @@ pub enum ToolMetaError {
     Handshake(String),
 }
 
-/// A tool's recommended policy: side effects, cost and Executor policy.
+/// A tool's recommended policy: side effects, cost and approval policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Policy {
     pub side_effects: &'static [&'static str],
     pub cost: &'static str,
-    pub recommended: ExecutorPolicy,
+    pub recommended: ApprovalPolicy,
 }
 
 /// The hand-written part of a tool's contract; [`ToolDef`] adds the schemas.

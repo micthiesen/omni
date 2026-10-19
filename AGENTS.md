@@ -161,10 +161,10 @@ change; reuse authorization already given in the conversation.
 - `omni-reminders`: server iCloud Reminders and the shared protected-access
   (PCS) workflow; callers own authenticated requests, encrypted cookie
   persistence and per-account serialization.
-- `omni-mcp`: authenticated `/mcp` endpoint, MCP Events outbox, MCP activity,
-  system/events/Claude session tools, policy inventory, and the MCP gateway
-  (`/gateway/mcp`: upstream integrations, downstream tokens and OAuth server,
-  integration event feeds; `docs/gateway.md`).
+- `omni-mcp`: the MCP gateway, Omni's only MCP endpoint (`/gateway/mcp`:
+  Omni's tools, upstream integrations, downstream tokens and OAuth server,
+  integration event feeds; `docs/gateway.md`), the MCP Events outbox, MCP
+  activity, system/events/Claude session tools and the policy inventory.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
 - `omni-personal`: pets, LAN printer, Hister, Codex/Claude reset alerts
   (`reset_alerts`), and agent push notifications to the owner
@@ -463,12 +463,13 @@ bearer-token validation.
 
 Claude Code session tools reach the Mac only through its outbound `omni-link`
 long-poll, authenticated by `OMNI_DEVICE_LINK_TOKEN`, which must never equal or
-substitute for the MCP token. Withdraw jobs the Mac has not picked up; never
+substitute for any MCP credential. Withdraw jobs the Mac has not picked up; never
 retry a delivered job whose outcome is unknown. Session starts stay limited to
 the dotfiles `claude-rc` project list, enforced on the Mac. MCP tools describe
 a generic "Claude Code host": never mention Mac, macOS, or the hostname in tool
 text, results, or errors (the UI may). Sessions run with full access by design;
-approval happens through tool policy, so do not add a permission mode. See
+approval is the connected client's, guided by tool policy, so do not add a
+permission mode. See
 `docs/claude-sessions.md`.
 
 Hister tools read a captured-page archive, not a complete browser visit log.
@@ -501,11 +502,13 @@ transactions and locks, with a stable dedup key, a payload the catalog schema
 accepts (identifiers, state and at most one 200-character title; no bodies,
 notes, error text or full URLs), and a publish failure that never fails or
 repeats the source work. Never hold the outbox lock across webhook or
-authorization I/O. Events deliver only with a stored delegated token that
-validates at delivery time. Executor tokens expire hourly; advertise
-`refreshBefore` no later than the delegated token's expiry, hold events as
-`withheld` until a refresh stores a valid token or the subscription ends, and
-never extend access to deliver sooner. See `docs/mcp-events.md`.
+authorization I/O. Events are always enabled and every subscription is owned by
+a gateway principal (`gateway:client:<id>` or `gateway:grant:<id>`); delivery
+requires the owning client or grant to still be active, and holds the events as
+`withheld` while it is revoked. `refreshBefore` is the subscription's expiry.
+The outbox key lives in `mcp-events.key` (data directory, 0600), migrated once
+from the old `OMNI_MCP_TOKEN` derivation so existing subscriptions keep their
+ids; never change it. See `docs/mcp-events.md`.
 
 Each MCP tool's contract (name, title, description, annotations, policy, and
 input/output schemas derived from `schemars::JsonSchema` types) is a `ToolDef`
@@ -519,10 +522,11 @@ change is intended.
 
 ### MCP gateway
 
-`/gateway/mcp` (`omni-mcp/src/gateway/`, `docs/gateway.md`) serves Omni's tools
+`/gateway/mcp` (`omni-mcp/src/gateway/`, `docs/gateway.md`) is Omni's only MCP
+endpoint and serves Omni's tools
 plus each configured upstream integration's as `<id>__<tool>`; native tool and
 event names never contain `__`. It accepts only gateway client tokens (stored as
-SHA-256) and OAuth access tokens it issued, never `OMNI_MCP_TOKEN`, and downstream
+SHA-256) and OAuth access tokens it issued, and downstream
 OAuth approval happens only on the LAN-only `/gateway` page. Only `/gateway/*` and
 `/.well-known/oauth-*` are public (`deploy/gateway/route.mjs`). Upstream URLs are
 public HTTPS through the SSRF-guarded client with no redirects; stdio integrations
@@ -532,9 +536,7 @@ to their origin and auth kind, write-only and never logged. Results, errors and
 annotations pass through unchanged; `tools/call` is retried only when it certainly
 did not run. Integration events are followed by `events/poll` feeds whose cursor
 is stored only after the events are queued (receipts keyed by feed and upstream
-event id); a `truncated` replay is recorded as a gap, never papered over. The
-switchover in `docs/gateway.md` is done: harnesses use the gateway and the Executor
-events sidecar is retired. `/mcp` stays for Executor, unchanged.
+event id); a `truncated` replay is recorded as a gap, never papered over.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

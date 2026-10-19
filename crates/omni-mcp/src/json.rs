@@ -4,9 +4,24 @@
 //! handler runs; tool output is put in schema order with unknown keys stripped
 //! before it is serialized into the `text` content block. The endpoint applies
 //! these projections to every tool, whichever package owns it, so served
-//! values keep their established shape.
+//! values keep their established shape. [`json_response`] writes HTTP bodies
+//! with the same `JSON.stringify` semantics.
 
+use axum::body::Body;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::Response;
 use serde_json::{Map, Value};
+
+/// A JSON body serialized with JS `JSON.stringify` semantics.
+pub fn json_response(status: StatusCode, value: &Value) -> Response {
+    let mut response = Response::new(Body::from(omni_core::js::json_stringify(value)));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response
+}
 
 /// A JS number as JSON: integral values within the safe range print without a
 /// fraction (`6`, not `6.0`), like `JSON.stringify`.

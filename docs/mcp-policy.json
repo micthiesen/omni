@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedFrom": "omni-mcp tool definitions",
   "tools": [
     {
@@ -16,7 +16,7 @@
         "Reads the owner's private Hister index"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_changes_list",
@@ -30,7 +30,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_event_create",
@@ -46,7 +46,7 @@
         "Creates an event in the primary iCloud calendar"
       ],
       "cost": "No paid API; a few CalDAV requests",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "calendar_event_delete",
@@ -63,7 +63,7 @@
         "With attendeeNotifications \"send\", iCloud emails the attendees"
       ],
       "cost": "No paid API; a few CalDAV requests",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "calendar_event_get",
@@ -77,7 +77,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_event_preview",
@@ -91,7 +91,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_event_update",
@@ -108,7 +108,7 @@
         "With attendeeNotifications \"send\", iCloud emails the attendees"
       ],
       "cost": "No paid API; a few CalDAV requests",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "calendar_events_list",
@@ -122,7 +122,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_events_search",
@@ -136,7 +136,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_status",
@@ -150,7 +150,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_tracked_events_list",
@@ -164,7 +164,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "calendar_write_status",
@@ -178,7 +178,7 @@
       },
       "sideEffects": [],
       "cost": "None; at most a few CalDAV reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "claude_link_status",
@@ -194,7 +194,7 @@
         "Reads Omni's link state and the host's project configuration"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "claude_session_get",
@@ -210,7 +210,7 @@
         "Reads session status and transcripts on the host"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "claude_session_read",
@@ -226,7 +226,7 @@
         "Reads a session transcript on the host"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "claude_session_send",
@@ -243,7 +243,7 @@
         "The agent may edit files, run commands, commit, push, and use the network"
       ],
       "cost": "Consumes Claude subscription usage",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "claude_session_start",
@@ -260,7 +260,7 @@
         "The agent may edit files, run commands, commit, push, and use the network"
       ],
       "cost": "Consumes Claude subscription usage",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "claude_session_stop",
@@ -276,7 +276,7 @@
         "Ends the session's running process and any turn in progress"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "claude_sessions_list",
@@ -292,7 +292,7 @@
         "Reads session metadata and transcripts on the host"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "complete_recurring_reminder",
@@ -308,7 +308,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "complete_reminder",
@@ -324,7 +324,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "costs_read",
@@ -338,7 +338,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "create_reminder",
@@ -354,7 +354,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "create_reminder_recurrence",
@@ -370,7 +370,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "delete_reminder",
@@ -386,7 +386,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_activity_get",
@@ -400,7 +400,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_activity_list",
@@ -414,7 +414,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_archive_cancel",
@@ -430,7 +430,7 @@
         "Cancels one queued archive action before any mailbox mutation"
       ],
       "cost": "No paid API",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_archive_queue",
@@ -446,7 +446,7 @@
         "Queues one exact Inbox message for native MOVE or scoped UIDPLUS COPY and source removal"
       ],
       "cost": "No paid API; bounded IMAP reads and one scoped mailbox move",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_archive_restore",
@@ -462,7 +462,7 @@
         "Restores one exact recorded Archive UID using native MOVE or verified COPY and exact-source UID EXPUNGE"
       ],
       "cost": "No paid API; bounded IMAP reads and one scoped mailbox move",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_archive_status",
@@ -478,7 +478,7 @@
         "May read Inbox and Archive to reconcile an uncertain action"
       ],
       "cost": "No paid API; bounded IMAP reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_attachment_get",
@@ -494,7 +494,7 @@
         "Reads one private attachment from the configured personal mailbox; returns bytes to the authenticated consumer"
       ],
       "cost": "No paid API; bounded read-only IMAP lookup",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_draft_create",
@@ -510,7 +510,7 @@
         "Creates a draft in the configured email account, including copies of any referenced private PDF attachments"
       ],
       "cost": "No per-call paid API expected",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_feedback_list",
@@ -524,7 +524,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_feedback_set",
@@ -540,7 +540,7 @@
         "Changes persistent correction data injected into future triage prompts"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_get",
@@ -556,7 +556,7 @@
         "Reads one message from the configured personal mailbox"
       ],
       "cost": "No paid API; one bounded IMAP lookup",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_health",
@@ -570,7 +570,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_reprocess",
@@ -587,7 +587,7 @@
         "Reruns extraction and may submit a parcel, mutate CalDAV, or send a notification"
       ],
       "cost": "May incur configured LLM and third-party workflow costs",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_retry_clear",
@@ -603,7 +603,7 @@
         "Deletes a pending persistent retry"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_retry_list",
@@ -617,7 +617,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_rules_delete",
@@ -633,7 +633,7 @@
         "Deletes a persistent sender rule and changes future email filtering"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_rules_list",
@@ -647,7 +647,7 @@
       },
       "sideEffects": [],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_rules_upsert",
@@ -663,7 +663,7 @@
         "Changes persistent sender filtering for future email workflows"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_search",
@@ -679,7 +679,7 @@
         "Reads matching messages from the configured personal mailbox"
       ],
       "cost": "No paid API; bounded IMAP reads",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_send",
@@ -696,7 +696,7 @@
         "May append a private copy in the Sent mailbox"
       ],
       "cost": "Consumes SMTP provider quota",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "email_send_status",
@@ -710,7 +710,7 @@
       },
       "sideEffects": [],
       "cost": "No paid API",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "email_sent_copy_repair",
@@ -726,7 +726,7 @@
         "May append one private Sent copy; never sends email"
       ],
       "cost": "No paid API",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "events_status",
@@ -740,7 +740,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "get_browser_page",
@@ -756,7 +756,7 @@
         "Reads the owner's private Hister index"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "get_printer_status",
@@ -772,7 +772,7 @@
         "Reads status from the fixed LAN printer"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "get_reminder",
@@ -788,7 +788,7 @@
         "Reads private server iCloud Reminders"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "get_reminder_list",
@@ -804,7 +804,7 @@
         "Reads private server iCloud Reminders"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "get_reminder_recurrence",
@@ -820,7 +820,7 @@
         "Reads private server iCloud Reminders"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "list_reminder_lists",
@@ -836,7 +836,7 @@
         "Reads private server iCloud Reminders"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "list_reminders",
@@ -852,7 +852,7 @@
         "Reads private server iCloud Reminders"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "livestream_get",
@@ -866,7 +866,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "livestream_settings_update",
@@ -882,7 +882,7 @@
         "Changes which livestreams Omni tracks and notifies about"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "livestreams_list",
@@ -896,7 +896,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_catalog_browse",
@@ -912,7 +912,7 @@
         "Reads the public TMDB catalog"
       ],
       "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_catalog_get",
@@ -928,7 +928,7 @@
         "Reads the public TMDB catalog"
       ],
       "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_catalog_search",
@@ -944,7 +944,7 @@
         "Reads the public TMDB catalog"
       ],
       "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_library_list",
@@ -960,7 +960,7 @@
         "Reads the configured Plex account and server"
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_recommendation_feedback",
@@ -976,7 +976,7 @@
         "Updates local recommendation feedback used by future taste analysis"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_recommendation_get",
@@ -990,7 +990,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_recommendations_list",
@@ -1004,7 +1004,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_series_add",
@@ -1021,7 +1021,7 @@
         "May begin media acquisition and downloads for the listed seasons"
       ],
       "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_series_get",
@@ -1037,7 +1037,7 @@
         "Reads the configured Sonarr account"
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_series_search",
@@ -1054,7 +1054,7 @@
         "Begins media acquisition and downloads for the listed seasons"
       ],
       "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_series_seasons_set",
@@ -1071,7 +1071,7 @@
         "Newly released episodes of monitored seasons may download"
       ],
       "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_taste_read",
@@ -1085,7 +1085,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_watchlist_add",
@@ -1102,7 +1102,7 @@
         "May begin media acquisition and downloads"
       ],
       "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_watchlist_list",
@@ -1118,7 +1118,7 @@
         "Reads the configured Radarr and Sonarr accounts"
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "notify_owner_blocked",
@@ -1134,7 +1134,7 @@
         "Sends one push notification to Michael's phone (Omni app, or Pushover when the app is not set up)"
       ],
       "cost": "No monetary cost; one push. Shares a limit of 4 per hour and 12 per day",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "notify_owner_requested",
@@ -1150,7 +1150,7 @@
         "Sends one push notification to Michael's phone (Omni app, or Pushover when the app is not set up)"
       ],
       "cost": "No monetary cost; one push. Shares a limit of 4 per hour and 12 per day",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "parcels_get",
@@ -1164,7 +1164,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "parcels_list",
@@ -1178,7 +1178,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "pets_read",
@@ -1192,7 +1192,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_account_list",
@@ -1208,7 +1208,7 @@
         "Reads the configured podcast account through its rate-limited client"
       ],
       "cost": "No expected monetary cost; consumes bounded private account API traffic",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_account_search",
@@ -1224,7 +1224,7 @@
         "Searches the configured podcast account through its rate-limited client"
       ],
       "cost": "No expected monetary cost; consumes bounded private account API traffic",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_account_update",
@@ -1240,7 +1240,7 @@
         "Changes queue, Inbox, or subscription state on an external podcast account"
       ],
       "cost": "No expected monetary cost; consumes private account API traffic",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "podcast_recommendation_feedback",
@@ -1256,7 +1256,7 @@
         "Updates local podcast feedback used by future taste analysis"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_recommendation_get",
@@ -1270,7 +1270,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_recommendations_list",
@@ -1284,7 +1284,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "podcast_taste_read",
@@ -1298,7 +1298,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "presspods_delete",
@@ -1314,7 +1314,7 @@
         "Permanently removes local episode/audio data or a queued/failed job and its checkpoints"
       ],
       "cost": "No monetary cost",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "presspods_episode_get",
@@ -1328,7 +1328,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "presspods_list",
@@ -1342,7 +1342,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "presspods_retry",
@@ -1359,7 +1359,7 @@
         "May replace an existing published episode and send a notification"
       ],
       "cost": "May incur metadata/cleaning model and TTS charges",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "presspods_submit",
@@ -1377,7 +1377,7 @@
         "Publishes an episode to the personal feed and sends a notification after processing"
       ],
       "cost": "May incur metadata/cleaning model and TTS charges; ElevenLabs is approximately $0.10 per 1,000 characters when configured",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "presspods_transcript_read",
@@ -1391,7 +1391,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "print_document",
@@ -1409,7 +1409,7 @@
         "Physically exposes the printed document"
       ],
       "cost": "Consumes paper, toner, and electricity; no paid API",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "remove_reminder_recurrence",
@@ -1425,7 +1425,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "reopen_reminder",
@@ -1441,7 +1441,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "search_browser_history",
@@ -1457,7 +1457,7 @@
         "Reads the owner's private Hister index"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "set_browser_page_label",
@@ -1474,7 +1474,7 @@
         "Reads the stored document to verify the label"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "streamer_config_create",
@@ -1490,7 +1490,7 @@
         "Changes which livestreams Omni tracks and notifies about"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "streamer_config_delete",
@@ -1506,7 +1506,7 @@
         "Stops tracking and notifying about a livestream"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "streamer_config_update",
@@ -1522,7 +1522,7 @@
         "Changes which livestreams Omni tracks and notifies about"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "streamer_configs_list",
@@ -1536,7 +1536,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "streamer_configs_reorder",
@@ -1552,7 +1552,7 @@
         "Changes the display order of tracked livestreams"
       ],
       "cost": "None",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_archives_list",
@@ -1566,7 +1566,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_context_get",
@@ -1580,7 +1580,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_event_append",
@@ -1596,7 +1596,7 @@
         "Writes the private stylist ledger in Omni's database"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_evidence_get",
@@ -1610,7 +1610,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_evidence_store",
@@ -1626,7 +1626,7 @@
         "Stores a private file and writes the stylist ledger in Omni"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_export",
@@ -1642,7 +1642,7 @@
         "Writes a private archive file in Omni's data volume"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_fixture_purge",
@@ -1658,7 +1658,7 @@
         "Deletes a fixture namespace from the private stylist ledger after archiving it"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_measurements_compare",
@@ -1672,7 +1672,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_record_save",
@@ -1688,7 +1688,7 @@
         "Writes the private stylist ledger in Omni's database"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_records_query",
@@ -1702,7 +1702,7 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "stylist_restore",
@@ -1718,7 +1718,7 @@
         "Writes a fixture namespace in the private stylist ledger"
       ],
       "cost": "No external traffic or monetary cost",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "system_status",
@@ -1732,7 +1732,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "task_run",
@@ -1749,7 +1749,7 @@
         "Effects depend on the selected task and may include external communications or external mutations"
       ],
       "cost": "task-dependent; some tasks invoke paid AI, search, notification, or media services",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "task_run_get",
@@ -1763,7 +1763,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "task_runs_list",
@@ -1777,7 +1777,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "tasks_list",
@@ -1791,7 +1791,7 @@
       },
       "sideEffects": [],
       "cost": "none",
-      "recommendedExecutorPolicy": "allow"
+      "recommendedPolicy": "allow"
     },
     {
       "name": "update_reminder",
@@ -1807,7 +1807,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "update_reminder_list",
@@ -1823,7 +1823,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "update_reminder_recurrence",
@@ -1839,7 +1839,7 @@
         "Mutates the exact owner's iCloud reminder after durable reservation"
       ],
       "cost": "none",
-      "recommendedExecutorPolicy": "require_approval"
+      "recommendedPolicy": "require_approval"
     }
   ]
 }

@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::lead_description;
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static CLAUDE_LINK_STATUS: ToolDef<ClaudeLinkStatusInput, ClaudeLinkStatusOutput> =
@@ -22,7 +22,7 @@ pub static CLAUDE_LINK_STATUS: ToolDef<ClaudeLinkStatusInput, ClaudeLinkStatusOu
         policy: Policy {
             side_effects: &["Reads Omni's link state and the host's project configuration"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -40,7 +40,7 @@ pub static CLAUDE_SESSIONS_LIST: ToolDef<ClaudeSessionsListInput, ClaudeSessions
         policy: Policy {
             side_effects: &["Reads session metadata and transcripts on the host"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -58,7 +58,7 @@ pub static CLAUDE_SESSION_GET: ToolDef<ClaudeSessionGetInput, ClaudeSessionGetOu
         policy: Policy {
             side_effects: &["Reads session status and transcripts on the host"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -76,7 +76,7 @@ pub static CLAUDE_SESSION_READ: ToolDef<ClaudeSessionReadInput, ClaudeSessionRea
         policy: Policy {
             side_effects: &["Reads a session transcript on the host"],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -97,7 +97,7 @@ pub static CLAUDE_SESSION_START: ToolDef<ClaudeSessionStartInput, ClaudeSessionS
                 "The agent may edit files, run commands, commit, push, and use the network",
             ],
             cost: "Consumes Claude subscription usage",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -118,7 +118,7 @@ pub static CLAUDE_SESSION_SEND: ToolDef<ClaudeSessionSendInput, ClaudeSessionSen
                 "The agent may edit files, run commands, commit, push, and use the network",
             ],
             cost: "Consumes Claude subscription usage",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -136,7 +136,7 @@ pub static CLAUDE_SESSION_STOP: ToolDef<ClaudeSessionStopInput, ClaudeSessionSto
         policy: Policy {
             side_effects: &["Ends the session's running process and any turn in progress"],
             cost: "none",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 

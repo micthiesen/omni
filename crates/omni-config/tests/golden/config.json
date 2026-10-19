@@ -488,17 +488,9 @@
   "ok": false
  },
  {
-  "name": "mcp:docker-missing",
+  "name": "docker:minimal",
   "env": {
    "DOCKERIZED": "true"
-  },
-  "ok": false
- },
- {
-  "name": "mcp:docker-strong",
-  "env": {
-   "DOCKERIZED": "true",
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv"
   },
   "ok": true,
   "config": {
@@ -527,7 +519,6 @@
    "TZ": "America/Vancouver",
    "SMTP_PORT": 587,
    "FRONTEND_PORT": 3000,
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "HISTER_URL": "https://hister.syas.ca",
    "PRESSPODS_TTS_PROVIDER": "higgs",
    "IOS_CONTROL_HOME_URL": "http://omni.boris",
@@ -535,46 +526,8 @@
   }
  },
  {
-  "name": "mcp:docker-weak",
-  "env": {
-   "DOCKERIZED": "true",
-   "OMNI_MCP_TOKEN": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  },
-  "ok": false
- },
- {
-  "name": "mcp:dev-empty",
-  "env": {
-   "OMNI_MCP_TOKEN": ""
-  },
-  "ok": false
- },
- {
-  "name": "mcp:dev-weak",
-  "env": {
-   "OMNI_MCP_TOKEN": "short"
-  },
-  "ok": false
- },
- {
-  "name": "mcp:whitespace",
-  "env": {
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv x"
-  },
-  "ok": false
- },
- {
-  "name": "device:equal",
-  "env": {
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
-   "OMNI_DEVICE_LINK_TOKEN": "0123456789abcdefghijklmnopqrstuv"
-  },
-  "ok": false
- },
- {
   "name": "device:weak",
   "env": {
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "OMNI_DEVICE_LINK_TOKEN": "weak"
   },
   "ok": false
@@ -582,7 +535,6 @@
  {
   "name": "device:empty",
   "env": {
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "OMNI_DEVICE_LINK_TOKEN": ""
   },
   "ok": true,
@@ -612,7 +564,6 @@
    "TZ": "America/Vancouver",
    "SMTP_PORT": 587,
    "FRONTEND_PORT": 3000,
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "OMNI_DEVICE_LINK_TOKEN": "",
    "HISTER_URL": "https://hister.syas.ca",
    "PRESSPODS_TTS_PROVIDER": "higgs",
@@ -623,7 +574,6 @@
  {
   "name": "device:ok",
   "env": {
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "OMNI_DEVICE_LINK_TOKEN": "zyxwvutsrqponmlkjihgfedcba987654"
   },
   "ok": true,
@@ -653,7 +603,6 @@
    "TZ": "America/Vancouver",
    "SMTP_PORT": 587,
    "FRONTEND_PORT": 3000,
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "OMNI_DEVICE_LINK_TOKEN": "zyxwvutsrqponmlkjihgfedcba987654",
    "HISTER_URL": "https://hister.syas.ca",
    "PRESSPODS_TTS_PROVIDER": "higgs",
@@ -704,7 +653,6 @@
   "name": "bool:upper",
   "env": {
    "DOCKERIZED": "TRUE",
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "ARR_RECOVERY_ENABLED": "False"
   },
   "ok": true,
@@ -734,7 +682,6 @@
    "TZ": "America/Vancouver",
    "SMTP_PORT": 587,
    "FRONTEND_PORT": 3000,
-   "OMNI_MCP_TOKEN": "0123456789abcdefghijklmnopqrstuv",
    "HISTER_URL": "https://hister.syas.ca",
    "PRESSPODS_TTS_PROVIDER": "higgs",
    "IOS_CONTROL_HOME_URL": "http://omni.boris",
@@ -1876,7 +1823,6 @@
    "NZBGET_URL": "https://nzb",
    "TZ": "Europe/Berlin",
    "LOGS_EMAIL_TO": "logs@x",
-   "OMNI_EVENTS_EXECUTOR_AUTH_URL": "https://exec",
    "HISTER_ACCESS_TOKEN": "ha",
    "PRESSPODS_AUTH_TOKEN": "pat",
    "PRESSPODS_AUDIO_DIR": "/audio",
@@ -1973,7 +1919,6 @@
    "SMTP_PORT": 587,
    "LOGS_EMAIL_TO": "logs@x",
    "FRONTEND_PORT": 3000,
-   "OMNI_EVENTS_EXECUTOR_AUTH_URL": "https://exec",
    "HISTER_URL": "https://hister.syas.ca",
    "HISTER_ACCESS_TOKEN": "ha",
    "PRESSPODS_AUTH_TOKEN": "pat",

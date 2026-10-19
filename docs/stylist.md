@@ -154,7 +154,7 @@ Evidence bytes are content-addressed files under
 Docker), directories mode 0700 and files 0600, written atomically and
 re-hashed on every read. Accepted types: JPEG, PNG, WebP, HEIC/HEIF, PDF,
 text, Markdown and JSON, checked against their magic bytes, at most 3,000,000
-decoded bytes per upload (the `/mcp` request limit is 4 MiB). Identical bytes
+decoded bytes per upload (the MCP request limit is 4 MiB). Identical bytes
 in one namespace return the existing evidence id and its original metadata.
 Bytes leave only through `stylist_evidence_get` (one embedded resource) and
 `stylist_export` archives; nothing is served over HTTP and no public URL
@@ -287,10 +287,9 @@ authenticated MCP. Measurements and labels are shown as recorded.
 
 ## Assistant setup
 
-Every harness reaches the tools through Omni's MCP endpoint. Executor serves
-them to claude.ai, ChatGPT and other clients after a catalog refresh; Claude
-Code and Codex can use Executor or the `/mcp` endpoint with the bearer token
-(see `docs/mcp.md`). Give the assistant this instruction, as a project
+Every harness reaches the tools through Omni's MCP gateway (`/gateway/mcp`,
+see `docs/gateway.md`): Claude Code and Codex with a gateway client token,
+ChatGPT through OAuth. Give the assistant this instruction, as a project
 instruction, custom instruction or `AGENTS.md` line:
 
 > For any clothing, sizing, wardrobe or styling question, first call

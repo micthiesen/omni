@@ -1,10 +1,10 @@
-//! Events beyond the fixed catalog, and owners beyond Executor's.
+//! Events beyond the fixed catalog, and the owner check.
 //!
 //! The gateway offers its integrations' events (`<integration>__<event>`)
-//! through the same outbox, and its subscriptions are owned by gateway
-//! principals (`gateway:client:<id>`, `gateway:grant:<id>`). Both are
+//! through the same outbox, and every subscription is owned by a gateway
+//! principal (`gateway:client:<id>`, `gateway:grant:<id>`). Both are
 //! registered once with [`super::service::McpEventService::extend`]; without
-//! them the service behaves exactly as before.
+//! them only the fixed catalog exists and nothing is delivered.
 
 use futures::future::BoxFuture;
 use serde_json::{Map, Value};

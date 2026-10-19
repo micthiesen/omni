@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub const OUTGOING_EMAIL_FROM: &str = "michael@thiesen.dev";
 
 /// Minimum length of MCP / device-link bearer tokens.
-pub const MIN_MCP_TOKEN_LENGTH: usize = 32;
+pub const MIN_TOKEN_LENGTH: usize = 32;
 const MIN_DISTINCT_TOKEN_CHARS: usize = 12;
 
 /// Pushover applications. Every channel but `General` falls back to `PUSHOVER_TOKEN`.
@@ -279,9 +279,7 @@ config_struct! {
     whisker_credentials: Option<WhiskerCredentials> = "WHISKER_CREDENTIALS",
     /// Finite number (`""` coerces to 0); default 3000.
     frontend_port: f64 = "FRONTEND_PORT",
-    omni_mcp_token: Option<String> = "OMNI_MCP_TOKEN",
     omni_device_link_token: Option<String> = "OMNI_DEVICE_LINK_TOKEN",
-    omni_events_executor_auth_url: Option<String> = "OMNI_EVENTS_EXECUTOR_AUTH_URL",
     /// The MCP gateway's public `https://` origin (no path), for downstream
     /// OAuth and upstream OAuth callbacks; unset keeps the gateway LAN-only.
     omni_gateway_public_url: Option<String> = "OMNI_GATEWAY_PUBLIC_URL",
@@ -383,8 +381,8 @@ pub fn is_sensitive_key(key: &str) -> bool {
 }
 
 /// At least 32 chars, no whitespace, 12+ distinct chars.
-pub fn is_strong_mcp_token(token: &str) -> bool {
-    if omni_core::js::utf16_len(token) < MIN_MCP_TOKEN_LENGTH {
+pub fn is_strong_token(token: &str) -> bool {
+    if omni_core::js::utf16_len(token) < MIN_TOKEN_LENGTH {
         return false;
     }
     if token.chars().any(char::is_whitespace) {
@@ -402,8 +400,6 @@ pub enum ConfigError {
     Invalid { key: &'static str, reason: String },
     #[error("{0} must be at least 32 characters with sufficient character diversity")]
     WeakToken(&'static str),
-    #[error("OMNI_DEVICE_LINK_TOKEN must differ from OMNI_MCP_TOKEN")]
-    TokensEqual,
     #[error("EMAIL_FROM must be empty or {OUTGOING_EMAIL_FROM}, got {0:?}")]
     EmailFrom(String),
 }
@@ -411,7 +407,7 @@ pub enum ConfigError {
 impl Config {
     /// Decodes an explicit environment without reading process globals; fails
     /// boot on the first invalid value (in declaration order), then applies the
-    /// MCP and device-link token rules.
+    /// device-link token rule.
     /// Unknown variables are ignored.
     pub fn from_env(vars: &BTreeMap<String, String>) -> Result<Config, ConfigError> {
         let env = Env(vars);
@@ -555,9 +551,7 @@ impl Config {
                 })
                 .transpose()?,
             frontend_port: env.finite("FRONTEND_PORT")?.unwrap_or(3000.0),
-            omni_mcp_token: env.opt("OMNI_MCP_TOKEN"),
             omni_device_link_token: env.opt("OMNI_DEVICE_LINK_TOKEN"),
-            omni_events_executor_auth_url: env.opt("OMNI_EVENTS_EXECUTOR_AUTH_URL"),
             omni_gateway_public_url: match env.opt("OMNI_GATEWAY_PUBLIC_URL") {
                 None => None,
                 Some(raw) => Some(public_origin("OMNI_GATEWAY_PUBLIC_URL", &raw)?),
@@ -636,11 +630,7 @@ impl Config {
             ffmpeg_path: env.opt("FFMPEG_PATH"),
             yt_dlp_path: env.opt("YT_DLP_PATH"),
         };
-        validate_mcp_token(config.omni_mcp_token.as_deref(), config.dockerized)?;
-        validate_device_link_token(
-            config.omni_device_link_token.as_deref(),
-            config.omni_mcp_token.as_deref(),
-        )?;
+        validate_device_link_token(config.omni_device_link_token.as_deref())?;
         Ok(config)
     }
 
@@ -905,28 +895,13 @@ fn is_uuid(value: &str) -> bool {
     UUID.as_ref().is_some_and(|re| re.is_match(value))
 }
 
-/// Required and strong in production; in
-/// development an absent token disables MCP, but a present one must be strong.
-fn validate_mcp_token(token: Option<&str>, production: bool) -> Result<(), ConfigError> {
-    match token {
-        None if !production => Ok(()),
-        None | Some("") => Err(invalid(
-            "OMNI_MCP_TOKEN",
-            "OMNI_MCP_TOKEN is required in production",
-        )),
-        Some(token) if !is_strong_mcp_token(token) => Err(ConfigError::WeakToken("OMNI_MCP_TOKEN")),
-        Some(_) => Ok(()),
-    }
-}
-
-/// Optional, strong, distinct from the MCP token.
-fn validate_device_link_token(token: Option<&str>, mcp: Option<&str>) -> Result<(), ConfigError> {
+/// Optional; strong when present.
+fn validate_device_link_token(token: Option<&str>) -> Result<(), ConfigError> {
     match token {
         None | Some("") => Ok(()),
-        Some(token) if !is_strong_mcp_token(token) => {
+        Some(token) if !is_strong_token(token) => {
             Err(ConfigError::WeakToken("OMNI_DEVICE_LINK_TOKEN"))
         }
-        Some(token) if Some(token) == mcp => Err(ConfigError::TokensEqual),
         Some(_) => Ok(()),
     }
 }
@@ -1040,12 +1015,10 @@ mod tests {
 
     #[test]
     fn strong_token_rules() {
-        assert!(!is_strong_mcp_token("short"));
-        assert!(!is_strong_mcp_token(&"a".repeat(40)));
-        assert!(is_strong_mcp_token("abcdefghijklmnopqrstuvwxyz0123456789"));
-        assert!(!is_strong_mcp_token(
-            "abcdefghijklmnop qrstuvwxyz0123456789"
-        ));
+        assert!(!is_strong_token("short"));
+        assert!(!is_strong_token(&"a".repeat(40)));
+        assert!(is_strong_token("abcdefghijklmnopqrstuvwxyz0123456789"));
+        assert!(!is_strong_token("abcdefghijklmnop qrstuvwxyz0123456789"));
     }
 
     #[test]

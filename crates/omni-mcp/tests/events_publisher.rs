@@ -1,7 +1,7 @@
 //! The `EventPublisher` port over the outbox and the `task.run_finished`
 //! watcher: catalog validation and size bounds before anything is stored,
-//! per-subscription matching, replay dedup with stable event IDs, delegated
-//! authorization at delivery (withheld until a refresh), and the run scan's
+//! per-subscription matching, replay dedup with stable event IDs, the owner
+//! check at delivery (withheld while the owner is revoked), and the run scan's
 //! window and filters.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
-use common::{EPOCH_MS, clock, test_store};
+use common::{EPOCH_MS, FakeOwners, clock, test_store, with_owners};
 use futures::future::BoxFuture;
 use omni_api::events::{
     CALENDAR_EVENT_CHANGED, CALENDAR_EVENT_STARTING, CalendarChangeKind, CalendarChangeOrigin,
@@ -22,12 +22,11 @@ use omni_api::events::{
 };
 use omni_core::clock::{Clock as _, TestClock};
 use omni_mcp::events::catalog::event_definition;
-use omni_mcp::events::executor_auth::{EventAuthorizer, ExecutorAuthError};
 use omni_mcp::events::persistence::{
     DeliveryStatus, DeliveryWithhold, EventDelivery, EventReceipt,
 };
 use omni_mcp::events::publisher::{McpEventPublisher, validate_publication};
-use omni_mcp::events::service::{EventPrincipal, McpEventService, SubscribeInput};
+use omni_mcp::events::service::{McpEventService, SubscribeInput};
 use omni_mcp::events::task_runs::{LOOKBACK_MS, TaskRunWatcher};
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
 use omni_runtime::ports::{EventPublication, PortError, Ports};
@@ -56,50 +55,34 @@ impl WebhookPort for Webhook {
     }
 }
 
-/// A delegated token is valid while it equals the current one.
-struct Authorizer {
-    clock: Arc<TestClock>,
-    current: Arc<Mutex<String>>,
-}
-
-impl EventAuthorizer for Authorizer {
-    fn authorize<'a>(
-        &'a self,
-        _: &'a str,
-        bearer: &'a str,
-    ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>> {
-        let valid = *self.current.lock().unwrap() == bearer;
-        let expiry = self.clock.now_ms() + 60 * 60_000;
-        Box::pin(async move { Ok(valid.then_some(expiry)) })
-    }
-}
+/// The gateway principal every subscription here belongs to.
+const OWNER: &str = "gateway:client:publisher-test";
 
 struct Harness {
     events: McpEventService,
     publisher: McpEventPublisher,
     sent: Arc<Mutex<Vec<WebhookEvent>>>,
-    current: Arc<Mutex<String>>,
+    owners: Arc<FakeOwners>,
 }
 
 fn harness(store: &Store, clock: &Arc<TestClock>) -> Harness {
     let sent = Arc::new(Mutex::new(Vec::new()));
-    let current = Arc::new(Mutex::new("Bearer first".to_owned()));
-    let events = McpEventService::new(
-        "test-omni-bearer",
-        store.clone(),
-        clock.clone(),
-        Arc::new(Webhook(sent.clone())),
-        Some(Arc::new(Authorizer {
-            clock: clock.clone(),
-            current: current.clone(),
-        })),
-        Ports::default(),
+    let owners = Arc::new(FakeOwners::default());
+    let events = with_owners(
+        McpEventService::new(
+            "test-omni-bearer",
+            store.clone(),
+            clock.clone(),
+            Arc::new(Webhook(sent.clone())),
+            Ports::default(),
+        ),
+        owners.clone(),
     );
     Harness {
         publisher: McpEventPublisher::new(events.clone()),
         events,
         sent,
-        current,
+        owners,
     }
 }
 
@@ -112,7 +95,8 @@ fn secret() -> String {
 
 async fn subscribe(h: &Harness, name: &str, arguments: Value, url: &str) {
     h.events
-        .subscribe(
+        .subscribe_as(
+            OWNER,
             &SubscribeInput {
                 name: name.to_owned(),
                 arguments,
@@ -120,7 +104,6 @@ async fn subscribe(h: &Harness, name: &str, arguments: Value, url: &str) {
                 secret: secret(),
                 ttl_ms: None,
             },
-            None,
         )
         .await
         .unwrap();
@@ -331,11 +314,10 @@ async fn publishes_to_matching_subscriptions_once_per_dedup_key() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn port_events_wait_withheld_for_a_delegated_token_that_validates() {
+async fn port_events_wait_withheld_while_the_owner_is_revoked() {
     let clock = clock();
     let db = test_store(&clock).await;
     let h = harness(&db.store, &clock);
-    let owner = format!("executor:{}", "b".repeat(64));
     let input = SubscribeInput {
         name: PRESSPODS_JOB_FINISHED.to_owned(),
         arguments: json!({"outcome": "failed"}),
@@ -343,20 +325,7 @@ async fn port_events_wait_withheld_for_a_delegated_token_that_validates() {
         secret: secret(),
         ttl_ms: None,
     };
-    let principal = |bearer: &str| EventPrincipal {
-        owner: owner.clone(),
-        authorization: bearer.to_owned(),
-    };
-    let subscribed = h
-        .events
-        .subscribe(&input, Some(&principal("Bearer first")))
-        .await
-        .unwrap();
-    // refreshBefore is a minute before the hour-long token's expiry.
-    assert_eq!(
-        subscribed.refresh_before,
-        omni_core::js::to_iso_string(clock.now_ms() + 59 * 60_000)
-    );
+    h.events.subscribe_as(OWNER, &input).await.unwrap();
     let failed = EventPublication {
         name: PRESSPODS_JOB_FINISHED,
         dedup_key: "failed:job:3".to_owned(),
@@ -371,7 +340,7 @@ async fn port_events_wait_withheld_for_a_delegated_token_that_validates() {
             attempts: Some(3),
         }),
     };
-    *h.current.lock().unwrap() = "Bearer rotated".to_owned();
+    h.owners.revoked.lock().unwrap().insert(OWNER.to_owned());
     assert!(h.publisher.publish(&failed).await.unwrap());
     h.events.drain().await.unwrap();
     let held = deliveries(&db.store).await;
@@ -382,10 +351,8 @@ async fn port_events_wait_withheld_for_a_delegated_token_that_validates() {
     );
     assert!(h.sent.lock().unwrap().is_empty());
 
-    h.events
-        .subscribe(&input, Some(&principal("Bearer rotated")))
-        .await
-        .unwrap();
+    h.owners.revoked.lock().unwrap().clear();
+    tokio::time::advance(Duration::from_secs(15 * 60)).await;
     h.events.drain().await.unwrap();
     assert_eq!(h.sent.lock().unwrap().len(), 1);
     assert_eq!(

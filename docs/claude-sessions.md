@@ -2,7 +2,7 @@
 
 Omni's `claude_*` MCP tools control Claude Code sessions on Michael's MacBook
 through `claude-for-dot`, the JSON session client in the dotfiles repository.
-Any MCP client with `OMNI_MCP_TOKEN`, including Executor, can use them.
+Any MCP client connected to the gateway (`/gateway/mcp`) can use them.
 
 ## Link
 
@@ -13,8 +13,8 @@ This works on the home LAN and over the WireGuard VPN, and needs no inbound port
 SSH, or stable Mac address.
 
 Both endpoints accept only `Authorization: Bearer <OMNI_DEVICE_LINK_TOKEN>`. The
-device token must be strong and different from `OMNI_MCP_TOKEN`; it cannot call
-`/mcp`, and the MCP token cannot poll for jobs. On the Mac the token is stored in
+device token must be strong and separate from every gateway token; it cannot call
+the gateway, and a gateway token cannot poll for jobs. On the Mac the token is stored in
 the login Keychain (`omni-link set-token`).
 
 Omni holds each poll for up to 25 seconds. The Mac counts as online while a poll
@@ -44,8 +44,8 @@ tools work on every session on the Mac, whatever its directory or origin.
 
 Sessions intentionally run with the same full access as `claude-for-dot`
 (`--dangerously-skip-permissions`), so a background session never stalls on a
-permission prompt. Approval happens before the session runs instead: `start`,
-`send`, and `stop` have the Executor policy `require_approval`; listing, reading,
+permission prompt. Approval happens before the session runs instead, in the connected client:
+`start`, `send`, and `stop` have the recommended policy `require_approval`; listing, reading,
 and waiting are `allow`. This is a deliberate design, not a gap to close.
 
 Starts require an `idempotencyKey`, so a retried start returns the existing

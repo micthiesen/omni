@@ -1,13 +1,17 @@
-//! Keys and identities derived from the MCP bearer token (never stored).
+//! The outbox's storage key and what derives from it.
 //!
-//! - storage key: `HMAC-SHA256(token, "omni-mcp-events-storage-v1")`;
+//! The key lives in `mcp-events.key` in the data directory ([`load_event_key`]),
+//! never in the database. Before `/mcp` was removed it was derived from
+//! `OMNI_MCP_TOKEN`; the first boot after that migrates exactly that key into
+//! the file, so stored rows keep their key id and subscription ids.
+//!
+//! - legacy storage key: `HMAC-SHA256(token, "omni-mcp-events-storage-v1")`;
 //! - key id: `sha256hex(base64(key))`;
-//! - direct owner: `sha256hex("omni-mcp-events-owner-v1:" + token)`;
 //! - sealed values: `base64(nonce12 | tag16 | ciphertext)` with AES-256-GCM;
 //! - subscription id: `sub_` + the first 40 hex digits of
 //!   `HMAC-SHA256(key, JSON.stringify([owner, url, name, canonicalArgs]))`.
 //!
-//! Rotating the token therefore invalidates every stored credential.
+//! Replacing the key therefore invalidates every stored credential.
 
 use aes_gcm::aead::{Aead as _, KeyInit as _};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -18,6 +22,48 @@ use serde_json::json;
 use sha2::Sha256;
 
 use super::catalog::{EventArguments, canonical_event_arguments};
+use crate::gateway::secrets::{SecretsError, load_or_create_key_file, random_key};
+
+/// The outbox key file in the data directory (base64url, mode 0600).
+pub const EVENT_KEY_FILE: &str = "mcp-events.key";
+/// The environment variable the key is migrated from once, then never read.
+pub const LEGACY_TOKEN_VAR: &str = "OMNI_MCP_TOKEN";
+
+/// How [`load_event_key`] obtained the key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeySource {
+    File,
+    MigratedFromToken,
+    Generated,
+}
+
+/// The storage key the previous version derived from the MCP token.
+pub fn legacy_token_key(token: &str) -> [u8; 32] {
+    let mut key = [0u8; 32];
+    let derived = hmac_sha256(token.as_bytes(), b"omni-mcp-events-storage-v1");
+    key.copy_from_slice(&derived[..32.min(derived.len())]);
+    key
+}
+
+/// The outbox key: `data_dir/mcp-events.key` when it exists; otherwise the
+/// key derived from `legacy_token` (the old `OMNI_MCP_TOKEN`) when given, else
+/// a random one, persisted to the file either way.
+pub fn load_event_key(
+    data_dir: &std::path::Path,
+    legacy_token: Option<&str>,
+) -> Result<([u8; 32], KeySource), SecretsError> {
+    let path = data_dir.join(EVENT_KEY_FILE);
+    let existed = path.exists();
+    let legacy = legacy_token.filter(|token| !token.is_empty());
+    let initial = || legacy.map_or_else(random_key, legacy_token_key);
+    let key = load_or_create_key_file(&path, &initial)?;
+    let source = match (existed, legacy) {
+        (true, _) => KeySource::File,
+        (false, Some(_)) => KeySource::MigratedFromToken,
+        (false, None) => KeySource::Generated,
+    };
+    Ok((key, source))
+}
 
 fn hmac_sha256(key: &[u8], message: &[u8]) -> Vec<u8> {
     match Hmac::<Sha256>::new_from_slice(key) {
@@ -30,12 +76,11 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> Vec<u8> {
     }
 }
 
-/// The token-derived key material of one process.
+/// The key material of one process.
 #[derive(Clone)]
 pub struct EventCrypto {
     key: [u8; 32],
     key_id: String,
-    owner: String,
 }
 
 impl std::fmt::Debug for EventCrypto {
@@ -47,22 +92,19 @@ impl std::fmt::Debug for EventCrypto {
 }
 
 impl EventCrypto {
-    pub fn new(token: &str) -> Self {
-        let mut key = [0u8; 32];
-        let derived = hmac_sha256(token.as_bytes(), b"omni-mcp-events-storage-v1");
-        key.copy_from_slice(&derived[..32.min(derived.len())]);
+    /// The key derived from `secret` as the previous version derived it from
+    /// the MCP token (tests and fixtures).
+    pub fn new(secret: &str) -> Self {
+        Self::from_key(legacy_token_key(secret))
+    }
+
+    pub fn from_key(key: [u8; 32]) -> Self {
         let key_id = omni_core::digest::sha256_hex(STANDARD.encode(key));
-        let owner = omni_core::digest::sha256_hex(format!("omni-mcp-events-owner-v1:{token}"));
-        Self { key, key_id, owner }
+        Self { key, key_id }
     }
 
     pub fn key_id(&self) -> &str {
         &self.key_id
-    }
-
-    /// The owner of subscriptions made with the MCP token itself.
-    pub fn direct_owner(&self) -> &str {
-        &self.owner
     }
 
     pub fn seal(&self, value: &str) -> String {
@@ -115,15 +157,14 @@ impl EventCrypto {
     }
 }
 
-/// A short, non-secret label that distinguishes delegated clients.
+/// A short, non-secret label that distinguishes clients. Owners from before
+/// the gateway (Executor's delegated `executor:` owners and the `/mcp` token's
+/// digest) are `legacy`.
 pub fn owner_label(owner: &str) -> String {
-    if owner.starts_with("executor:") {
-        owner.chars().take(21).collect()
-    } else if let Some(rest) = owner.strip_prefix(crate::gateway::access::OWNER_PREFIX) {
+    match owner.strip_prefix(crate::gateway::access::OWNER_PREFIX) {
         // `gateway:client:<uuid>` or `gateway:grant:<id>`, shortened.
-        format!("gateway:{}", rest.chars().take(20).collect::<String>())
-    } else {
-        "direct".to_owned()
+        Some(rest) => format!("gateway:{}", rest.chars().take(20).collect::<String>()),
+        None => "legacy".to_owned(),
     }
 }
 
@@ -162,33 +203,86 @@ mod tests {
         );
     }
 
+    /// Computed independently (Python `hmac`/`hashlib`) from the previous
+    /// version's derivation, so production rows keep their key id.
+    const LEGACY_KEY_ID: &str = "8a4b4c4e5436594bae8efe34ad2e6d6af7abd52ffc7601aad6b9cca0d7b71b77";
+    const LEGACY_KEY_B64URL: &str = "es5q7f_1Q7yL03aMy47TZctxr6MLaov-0_rl9zBZwIU";
+
+    fn key_file(dir: &std::path::Path) -> String {
+        std::fs::read_to_string(dir.join(EVENT_KEY_FILE)).unwrap()
+    }
+
+    #[test]
+    fn legacy_token_key_matches_the_previous_derivation() {
+        let key = legacy_token_key("test-omni-bearer");
+        assert_eq!(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key),
+            LEGACY_KEY_B64URL
+        );
+        assert_eq!(EventCrypto::from_key(key).key_id(), LEGACY_KEY_ID);
+        assert_eq!(EventCrypto::new("test-omni-bearer").key_id(), LEGACY_KEY_ID);
+    }
+
+    #[test]
+    fn migrates_the_token_key_into_the_file_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (key, source) = load_event_key(dir.path(), Some("test-omni-bearer")).unwrap();
+        assert_eq!(source, KeySource::MigratedFromToken);
+        assert_eq!(EventCrypto::from_key(key).key_id(), LEGACY_KEY_ID);
+        assert_eq!(key_file(dir.path()), LEGACY_KEY_B64URL);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(dir.path().join(EVENT_KEY_FILE))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        // The token can then leave the environment, or even change.
+        for token in [None, Some("another-token")] {
+            let (again, source) = load_event_key(dir.path(), token).unwrap();
+            assert_eq!(source, KeySource::File);
+            assert_eq!(EventCrypto::from_key(again).key_id(), LEGACY_KEY_ID);
+        }
+        // Values sealed under the token-derived key still open.
+        let sealed = EventCrypto::new("test-omni-bearer").seal("https://hooks.example.com/x");
+        assert_eq!(
+            EventCrypto::from_key(key).open(&sealed).as_deref(),
+            Some("https://hooks.example.com/x")
+        );
+    }
+
+    #[test]
+    fn a_fresh_install_generates_and_keeps_a_random_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (key, source) = load_event_key(dir.path(), None).unwrap();
+        assert_eq!(source, KeySource::Generated);
+        assert_ne!(EventCrypto::from_key(key).key_id(), LEGACY_KEY_ID);
+        let (again, source) = load_event_key(dir.path(), Some("")).unwrap();
+        assert_eq!((again, source), (key, KeySource::File));
+        let other = tempfile::tempdir().unwrap();
+        assert_ne!(load_event_key(other.path(), None).unwrap().0, key);
+    }
+
     #[test]
     fn identities_are_stable_digests() {
         let crypto = EventCrypto::new("test-omni-bearer");
         assert_eq!(crypto.key_id().len(), 64);
-        assert_eq!(crypto.direct_owner().len(), 64);
         let args = EventArguments::from([("folder".to_owned(), "inbox".to_owned())]);
-        let id = crypto.subscription_id(
-            crypto.direct_owner(),
-            "email.received",
-            &args,
-            "https://a.example/x",
-        );
+        let owner = "gateway:client:abc";
+        let id = crypto.subscription_id(owner, "email.received", &args, "https://a.example/x");
         assert!(id.starts_with("sub_"));
         assert_eq!(id.len(), 44);
         assert_eq!(
             id,
-            crypto.subscription_id(
-                crypto.direct_owner(),
-                "email.received",
-                &args,
-                "https://a.example/x"
-            )
+            crypto.subscription_id(owner, "email.received", &args, "https://a.example/x")
         );
+        assert_eq!(owner_label(owner), "gateway:client:abc");
         assert_eq!(
             owner_label(&format!("executor:{}", "a".repeat(64))),
-            format!("executor:{}", "a".repeat(12))
+            "legacy"
         );
-        assert_eq!(owner_label("abc"), "direct");
+        assert_eq!(owner_label("abc"), "legacy");
     }
 }

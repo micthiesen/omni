@@ -4,7 +4,7 @@
 //! set. After changing anything here run `cargo xtask mcp-golden` and review
 //! the snapshot diff.
 
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 const READ: Annotations = Annotations {
@@ -24,7 +24,7 @@ const WRITE: Annotations = Annotations {
 const CONFIG_POLICY: Policy = Policy {
     side_effects: &["Changes which livestreams Omni tracks and notifies about"],
     cost: "None",
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 pub static STREAMER_CONFIGS_LIST: ToolDef<EmptyInput, StreamerConfigsListOutput> = ToolDef::new(
@@ -36,7 +36,7 @@ pub static STREAMER_CONFIGS_LIST: ToolDef<EmptyInput, StreamerConfigsListOutput>
         policy: Policy {
             side_effects: &[],
             cost: "none",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -75,7 +75,7 @@ pub static STREAMER_CONFIG_DELETE: ToolDef<StreamerConfigDeleteInput, StreamerCo
         policy: Policy {
             side_effects: &["Stops tracking and notifying about a livestream"],
             cost: "None",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -93,7 +93,7 @@ pub static STREAMER_CONFIGS_REORDER: ToolDef<
     policy: Policy {
         side_effects: &["Changes the display order of tracked livestreams"],
         cost: "None",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 

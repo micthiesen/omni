@@ -3,7 +3,8 @@
 //! Subsystems publish catalog events through this port without depending on
 //! `omni-mcp`. Every publication goes through [`McpEventService::publish`], so
 //! the receipt and outbox rows commit together under the short state lock,
-//! delivery runs outside it, and delegated tokens are validated at delivery.
+//! delivery runs outside it, and the owning gateway client or grant is checked
+//! at delivery.
 //! Payloads are checked against the catalog's payload schema and size bound
 //! before anything is stored.
 

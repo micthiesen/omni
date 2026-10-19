@@ -18,6 +18,7 @@ use omni_api::common::ApiErrorBody;
 use serde::de::DeserializeOwned;
 use tower::{Layer, Service};
 
+pub mod public_host;
 pub mod sse;
 
 /// Default JSON request body cap (64 KiB).

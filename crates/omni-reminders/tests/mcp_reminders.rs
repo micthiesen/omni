@@ -8,7 +8,7 @@ mod common;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use omni_mcp_kit::{ExecutorPolicy, McpTool, ToolOutput, ToolPhase, registry::standalone_context};
+use omni_mcp_kit::{ApprovalPolicy, McpTool, ToolOutput, ToolPhase, registry::standalone_context};
 use omni_reminders::apple::{AppleApi, AppleBeginResult, AppleRemindersError, CkPath};
 use omni_reminders::config::RemindersConfiguration;
 use omni_reminders::mcp::reminders_tools;
@@ -231,7 +231,7 @@ async fn bounds_search_and_result_pages_and_keeps_writes_approval_scoped() {
         let meta = tool(&tools, name).meta;
         assert_eq!(
             meta.policy.recommended_policy,
-            ExecutorPolicy::RequireApproval,
+            ApprovalPolicy::RequireApproval,
             "{name}"
         );
         assert!(!meta.annotations.read_only_hint, "{name}");

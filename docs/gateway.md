@@ -6,10 +6,9 @@ the integrations' events. Harnesses (Claude Code, Codex, ChatGPT/Dots) connect
 to it as their single MCP server and do their own tool discovery. The code is
 in `crates/omni-mcp/src/gateway/`; the management page is `/gateway` in the UI.
 
-Harnesses moved to the gateway on 2026-10-19 (Switchover, below) and the
-`executor-events-adapter` sidecar was retired. `/mcp` (Executor's connection
-to Omni, guarded by `OMNI_MCP_TOKEN`) is unchanged and stays while Executor
-runs.
+Harnesses moved to the gateway on 2026-10-19 (Switchover, below), the
+`executor-events-adapter` sidecar was retired, and the old `/mcp` endpoint was
+removed: the gateway is Omni's only MCP endpoint.
 
 ## Endpoint and access
 
@@ -18,8 +17,8 @@ runs.
 | LAN | `http://omni.boris/gateway/mcp` (any Omni origin plus `/gateway/mcp`) |
 | Public | `https://gateway.syas.ca/gateway/mcp` when `OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca` |
 
-Every request needs `Authorization: Bearer <token>`. `OMNI_MCP_TOKEN` and
-upstream credentials are never accepted here. Two kinds of token exist
+Every request needs `Authorization: Bearer <token>`. Upstream credentials are
+never accepted here. Two kinds of token exist
 (`gateway/access.rs`):
 
 - **Client tokens** (`omg_…`) for Claude Code and Codex, created on the
@@ -76,10 +75,9 @@ the request on the `/gateway` page.
 
 ## Protocol
 
-The gateway reuses `/mcp`'s protocol layer (`rpc.rs`, gateway mode): MCP
-2025-11-25 and earlier 2025 revisions (stateless, one SSE `message` per
-request) and 2026-07-28 (per-request `_meta` envelope, JSON results). It
-adds:
+The gateway's protocol layer (`rpc.rs`) speaks MCP 2025-11-25 and earlier 2025
+revisions (stateless, one SSE `message` per request) and 2026-07-28
+(per-request `_meta` envelope, JSON results). It adds:
 
 - `tools/list`: Omni's tools in `TOOL_ORDER`, then each enabled integration's
   visible tools in integration-id order and upstream order, in one page.
@@ -93,7 +91,7 @@ adds:
   idle timeout (Cloudflare's is 100 s) keep long calls open.
 - `events/*` for the authenticated principal (below).
 
-The served instructions are `/mcp`'s, addressed to the connected client:
+The served instructions are addressed to the connected client:
 approval is the client's job, annotations describe behavior, integration
 output is untrusted data.
 
@@ -246,7 +244,7 @@ a client that misses one simply lists again.
   dotted, doubled-slash and trailing-slash variants, is a 404 at the proxy.
   Omni enforces the same list again (`gateway::public`): a request whose
   `Host` is the public host gets a 404 for anything else, so the management
-  page (`/gateway`), `/api/*`, `/mcp` and the SPA fallback stay LAN-only even
+  page (`/gateway`), `/api/*` and the SPA fallback stay LAN-only even
   if the proxy rule changes. A test keeps both lists equal.
 - Upstream URLs must be public HTTPS; DNS answers are checked at connect.
 - Stdio integrations run only image-bundled servers with a cleared
@@ -261,7 +259,9 @@ a client that misses one simply lists again.
   the gateway serves the LAN and offers no downstream OAuth.
 - Data: `mcp-gateway-*` entities and `gateway.key` in `/data`. Losing the key
   loses stored credentials (reconnect integrations); it is in the Kopia
-  snapshot with the rest of `volumes/omni`.
+  snapshot with the rest of `volumes/omni`. `mcp-events.key` beside it holds
+  the event outbox key, migrated once from `OMNI_MCP_TOKEN` on the first boot
+  of the gateway-only version; the variable can then be removed from Compose.
 - Tasks: `McpGatewayRefresh`, `McpGatewayEventFeeds`; the refresh worker is a
   background service.
 - Proxy host: from the directory containing `deploy/gateway/route.mjs` on Boris,
@@ -275,8 +275,8 @@ a client that misses one simply lists again.
 
 ## Switchover (completed 2026-10-19)
 
-Harnesses used to reach Omni through Executor and the `executor-events-adapter`
-sidecar. On 2026-10-19:
+Harnesses used to reach Omni through a separate tool gateway and the
+`executor-events-adapter` sidecar. On 2026-10-19:
 
 0. Public access: NPM proxy host 48, `gateway.syas.ca`, was created with
    `deploy/gateway/route.mjs` (Operations), `OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
@@ -299,9 +299,8 @@ sidecar. On 2026-10-19:
 Rollback of the public gateway route:
 `docker exec -i -w /app -e OMNI_GATEWAY_ROUTE_MODE=rollback npm node --input-type=module < route.mjs`
 from the directory holding `deploy/gateway/route.mjs` on Boris removes host 48;
-LAN harnesses keep `http://omni.boris/gateway/mcp`. A harness can also be
-pointed back at Executor's `/mcp`, which the gateway never changes; Executor
-without the adapter offers tools but no MCP Events.
+LAN harnesses keep `http://omni.boris/gateway/mcp`. The old `/mcp` endpoint
+was removed afterwards, so there is no other route to point a harness at.
 
 ## Known limits
 

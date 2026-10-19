@@ -106,11 +106,11 @@ fn blocked(key: &str) -> Value {
     json!({
         "idempotencyKey": key,
         "task": "Omni deploy",
-        "blocker": "The production deploy needs Executor approval.",
-        "steps": ["1. Open the Executor approval page", "Approve the omni deploy request"],
+        "blocker": "The production deploy needs deploy approval.",
+        "steps": ["1. Open the deploy approval page", "Approve the omni deploy request"],
         "fromPhone": true,
         "meanwhile": "Running the remaining tests; checking every 10 minutes",
-        "url": "https://executor.example/approvals/42",
+        "url": "https://deploy.example/approvals/42",
         "urlTitle": "Open approval",
     })
 }
@@ -143,11 +143,11 @@ async fn a_blocker_is_sent_once_with_numbered_steps_and_a_link() {
     assert_eq!(message.title.as_deref(), Some("Blocked: Omni deploy"));
     assert_eq!(
         message.message,
-        "The production deploy needs Executor approval.\n\nFrom your phone:\n1. Open the Executor approval page\n2. Approve the omni deploy request\n\nMeanwhile: Running the remaining tests; checking every 10 minutes"
+        "The production deploy needs deploy approval.\n\nFrom your phone:\n1. Open the deploy approval page\n2. Approve the omni deploy request\n\nMeanwhile: Running the remaining tests; checking every 10 minutes"
     );
     assert_eq!(
         message.url.as_deref(),
-        Some("https://executor.example/approvals/42")
+        Some("https://deploy.example/approvals/42")
     );
     assert_eq!(message.url_title.as_deref(), Some("Open approval"));
     assert_eq!(message.priority, None);

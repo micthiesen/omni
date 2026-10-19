@@ -276,21 +276,17 @@ impl AiTool for FakeTool {
     }
 }
 
-/// The `OMNI_MCP_TOKEN` [`TestApp`] boots with (strong, as config requires).
-pub const TEST_MCP_TOKEN: &str = "test-mcp-token-0123456789-abcdefghijklmnop";
-/// The `OMNI_DEVICE_LINK_TOKEN` [`TestApp`] boots with; never equal to
-/// [`TEST_MCP_TOKEN`], as config validation requires.
+/// The `OMNI_DEVICE_LINK_TOKEN` [`TestApp`] boots with (strong, as config requires).
 pub const TEST_DEVICE_LINK_TOKEN: &str = "test-device-link-token-ZYXWVUTSRQPONMLK-9876543210";
 
 /// A full `AppContext` over a temp store, with recorders and fake models.
 /// The environment `TestApp` boots with: fake Pushover and SMTP credentials so
 /// pushes and mails reach the recorders (`SideEffectMode::Record`, nothing is sent),
-/// and distinct MCP and device-link tokens.
+/// and a device-link token.
 pub fn test_app_env() -> BTreeMap<String, String> {
     [
         ("PUSHOVER_USER", "test-user"),
         ("PUSHOVER_TOKEN", "test-token"),
-        ("OMNI_MCP_TOKEN", TEST_MCP_TOKEN),
         ("OMNI_DEVICE_LINK_TOKEN", TEST_DEVICE_LINK_TOKEN),
         ("SMTP_HOST", "smtp.invalid"),
         ("SMTP_PORT", "587"),

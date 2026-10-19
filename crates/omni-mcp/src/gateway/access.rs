@@ -1,7 +1,7 @@
 //! Downstream access to `/gateway/mcp`.
 //!
-//! Two kinds of bearer token, both separate from `OMNI_MCP_TOKEN` and from
-//! every upstream credential:
+//! Two kinds of bearer token, both separate from every upstream credential
+//! and from `OMNI_DEVICE_LINK_TOKEN`:
 //!
 //! - client tokens (`omg_` + 256 random bits) for Claude Code and Codex,
 //!   created in the UI and stored only as SHA-256;

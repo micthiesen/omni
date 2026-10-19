@@ -6,14 +6,22 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
-use axum::body::Body;
-use axum::http::{HeaderMap, Request, StatusCode};
+use axum::body::{Body, Bytes};
+use axum::http::{HeaderMap, Method, Request, StatusCode};
+use axum::routing::any;
 use futures::future::BoxFuture;
 use omni_api::tasks::TaskInfo;
 use omni_core::clock::TestClock;
+use omni_http::public::PublicHttpClient;
+use omni_http::{HttpClient, HttpConfig};
 use omni_mcp::activity::ActivityRecorder;
-use omni_mcp::endpoint;
+use omni_mcp::events::catalog::EventArguments;
+use omni_mcp::events::dynamic::{DynamicEvents, EventExtensions, OwnerCheck};
 use omni_mcp::events::service::McpEventService;
+use omni_mcp::gateway::access::Principal;
+use omni_mcp::gateway::bundled::BundledRegistry;
+use omni_mcp::gateway::secrets::GatewaySecrets;
+use omni_mcp::gateway::{Gateway, GatewayParts};
 use omni_mcp::rpc::McpProtocol;
 use omni_mcp::tools::TOOL_ORDER;
 use omni_mcp::tools::{RunWithLogs, TaskControl};
@@ -24,10 +32,14 @@ use omni_store::Store;
 use omni_tasks::persistence::TaskRunData;
 use omni_testkit::TestStore;
 use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt;
 
+/// The MCP Events outbox secret the tests use.
 pub const TOKEN: &str = "test-token-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+/// The gateway client every [`mcp_router`] request comes from.
+pub const CLIENT_ID: &str = "test-client";
 pub const EPOCH_MS: i64 = 1_790_000_000_000;
 
 pub fn clock() -> Arc<TestClock> {
@@ -187,7 +199,80 @@ impl TaskControl for FakeTasks {
     }
 }
 
-/// An MCP router serving `own` plus failing placeholders for every other tool.
+/// No integration events (the gateway's are covered by its own tests).
+pub struct NoIntegrationEvents;
+
+impl DynamicEvents for NoIntegrationEvents {
+    fn knows(&self, _: &str) -> bool {
+        false
+    }
+
+    fn parse_arguments(&self, _: &str, _: &Value) -> Option<EventArguments> {
+        None
+    }
+}
+
+/// Gateway owners, active unless revoked here.
+#[derive(Default)]
+pub struct FakeOwners {
+    pub revoked: Mutex<HashSet<String>>,
+}
+
+impl OwnerCheck for FakeOwners {
+    fn is_active<'a>(&'a self, owner: &'a str) -> BoxFuture<'a, bool> {
+        let active = owner.starts_with("gateway:") && !self.revoked.lock().unwrap().contains(owner);
+        Box::pin(async move { active })
+    }
+}
+
+/// `events` with `owners` as its delivery-time owner check.
+pub fn with_owners(events: McpEventService, owners: Arc<FakeOwners>) -> McpEventService {
+    events.extend(EventExtensions {
+        dynamic: Arc::new(NoIntegrationEvents),
+        owners,
+    });
+    events
+}
+
+/// `events` delivering to every gateway owner.
+pub fn with_active_owners(events: McpEventService) -> McpEventService {
+    with_owners(events, Arc::new(FakeOwners::default()))
+}
+
+/// The gateway principal of [`mcp_router`] requests.
+pub fn principal() -> Principal {
+    Principal::Client {
+        id: CLIENT_ID.to_owned(),
+        label: "test".to_owned(),
+    }
+}
+
+/// The subscription owner of [`mcp_router`] requests.
+pub fn owner() -> String {
+    principal().owner()
+}
+
+/// A gateway with no integrations over `store`.
+pub fn test_gateway(store: &Store, clock: &Arc<TestClock>, recorder: ActivityRecorder) -> Gateway {
+    let http = HttpClient::new(HttpConfig::default()).unwrap();
+    Gateway::new(GatewayParts {
+        store: store.clone(),
+        clock: clock.clone(),
+        http: PublicHttpClient::new(&http),
+        secrets: GatewaySecrets::from_key([42; 32]),
+        refresher: None,
+        bundled: BundledRegistry::default(),
+        tracker: TaskTracker::new(),
+        shutdown: CancellationToken::new(),
+        recorder,
+        allow_loopback_http: false,
+        side_effects: omni_http::SideEffectMode::Record,
+    })
+}
+
+/// The `/gateway/mcp` protocol serving `own` plus failing placeholders for
+/// every other tool, for the fixed [`principal`] (authentication is covered
+/// by the gateway tests).
 pub fn mcp_router(
     store: &Store,
     clock: &Arc<TestClock>,
@@ -197,8 +282,18 @@ pub fn mcp_router(
     let mut tools = other_tools(&own);
     tools.extend(own);
     let recorder = ActivityRecorder::new(store.clone(), clock.clone(), TaskTracker::new());
-    let protocol = McpProtocol::new(tools, recorder, events).unwrap();
-    endpoint::router(Some(TOKEN), Some(protocol))
+    let gateway = test_gateway(store, clock, recorder.clone());
+    let protocol = McpProtocol::gateway(tools, recorder, events, gateway).unwrap();
+    Router::new().route(
+        "/gateway/mcp",
+        any(
+            move |method: Method, headers: HeaderMap, body: Bytes| async move {
+                protocol
+                    .serve_gateway(&principal(), &method, &headers, body)
+                    .await
+            },
+        ),
+    )
 }
 
 /// One raw HTTP exchange.
@@ -251,17 +346,16 @@ pub async fn send(router: &Router, request: Request<Body>) -> Exchange {
     }
 }
 
-/// A legacy-era JSON-RPC POST with the MCP token.
+/// A legacy-era JSON-RPC POST.
 pub fn legacy(body: &Value) -> Request<Body> {
     request(body, &[("mcp-protocol-version", "2025-11-25")])
 }
 
-/// A POST with the MCP token and extra headers.
+/// A POST with extra headers.
 pub fn request(body: &Value, extra: &[(&str, &str)]) -> Request<Body> {
     let mut builder = Request::builder()
         .method("POST")
-        .uri("/mcp")
-        .header("authorization", format!("Bearer {TOKEN}"))
+        .uri("/gateway/mcp")
         .header("content-type", "application/json")
         .header("accept", "application/json, text/event-stream");
     for (name, value) in extra {

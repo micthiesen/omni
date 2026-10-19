@@ -15,7 +15,7 @@ use omni_mcp::policy::serialize_policy_inventory;
 use omni_mcp::tools::claude_sessions::{ClaudeDeps, claude_session_tools};
 use omni_mcp::tools::events::event_tools;
 use omni_mcp::tools::system::{ConfiguredFeatures, SystemDeps, system_tools};
-use omni_mcp_kit::{ExecutorPolicy, McpTool};
+use omni_mcp_kit::{ApprovalPolicy, McpTool};
 use omni_runtime::ports::Ports;
 use serde_json::Value;
 
@@ -57,14 +57,14 @@ fn is_complete_and_generated_from_the_registered_tool_definitions() {
 }
 
 #[test]
-fn records_every_annotation_and_a_usable_executor_policy_for_every_tool() {
+fn records_every_annotation_and_a_usable_approval_policy_for_every_tool() {
     for tool in policy_tools() {
         let meta = tool.meta;
         let annotations = serde_json::to_value(meta.annotations).unwrap();
         assert_eq!(annotations.as_object().unwrap().len(), 4, "{}", meta.name);
         assert!(matches!(
             meta.policy.recommended_policy,
-            ExecutorPolicy::Allow | ExecutorPolicy::RequireApproval | ExecutorPolicy::Block
+            ApprovalPolicy::Allow | ApprovalPolicy::RequireApproval | ApprovalPolicy::Block
         ));
         assert!(!meta.policy.cost.is_empty(), "{}", meta.name);
         assert!(meta.description.chars().count() > 20, "{}", meta.name);

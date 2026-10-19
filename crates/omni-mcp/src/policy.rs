@@ -1,4 +1,4 @@
-//! The Executor policy inventory: every registered tool
+//! The approval policy inventory: every registered tool
 //! sorted by `localeCompare` on its name, serialized as `docs/mcp-policy.json`
 //! (`JSON.stringify(inventory, null, 2)` plus a trailing newline).
 

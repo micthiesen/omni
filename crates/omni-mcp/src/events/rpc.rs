@@ -1,19 +1,12 @@
-//! The `events/*` JSON-RPC methods.
+//! `events/*` params and errors, shared by the gateway's event methods.
 //!
-//! Params are validated as strict objects, with stable issue wording, before
-//! the delegated-principal headers are read; service errors map to fixed
-//! JSON-RPC codes: `-32001` for an invalid principal, `-32015`
-//! `CallbackEndpointError` for callback failures, `-32602` otherwise.
+//! Params are validated as strict objects, with stable issue wording; service
+//! errors map to fixed JSON-RPC codes: `-32015` `CallbackEndpointError` for
+//! callback failures, `-32602` otherwise.
 
-use axum::http::HeaderMap;
 use serde_json::{Map, Value, json};
 
-use super::catalog::event_catalog;
-use super::executor_auth::{is_bearer_authorization, is_executor_owner};
-use super::service::{
-    EventPrincipal, EventServiceError, McpEventService, SubscribeInput, SubscriptionRejection,
-    UnsubscribeInput,
-};
+use super::service::{EventServiceError, SubscribeInput, SubscriptionRejection, UnsubscribeInput};
 use crate::json::received_type;
 use crate::rpc::RpcError;
 
@@ -221,40 +214,11 @@ pub(crate) fn unsubscribe_input(params: &Map<String, Value>) -> Result<Unsubscri
     })
 }
 
-fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
-}
-
-/// Both delegated headers or neither.
-fn principal(headers: &HeaderMap) -> Result<Option<EventPrincipal>, RpcError> {
-    let owner = header(headers, "x-omni-events-owner").filter(|v| !v.is_empty());
-    let authorization = header(headers, "x-omni-events-authorization").filter(|v| !v.is_empty());
-    if owner.is_none() && authorization.is_none() {
-        return Ok(None);
-    }
-    match (owner, authorization) {
-        (Some(owner), Some(authorization))
-            if is_executor_owner(owner) && is_bearer_authorization(authorization) =>
-        {
-            Ok(Some(EventPrincipal {
-                owner: owner.to_owned(),
-                authorization: authorization.to_owned(),
-            }))
-        }
-        _ => Err(RpcError::invalid_params("Invalid event principal")),
-    }
-}
-
 pub(crate) fn service_error(error: EventServiceError) -> RpcError {
     match error {
         EventServiceError::Rejected(reason) => {
             let data = json!({ "reason": reason.as_str() });
             match reason {
-                SubscriptionRejection::InvalidPrincipal => RpcError {
-                    code: -32001,
-                    message: error.to_string(),
-                    data: Some(data),
-                },
                 SubscriptionRejection::InvalidCallback
                 | SubscriptionRejection::ChallengeFailed
                 | SubscriptionRejection::Timeout => RpcError {
@@ -270,47 +234,5 @@ pub(crate) fn service_error(error: EventServiceError) -> RpcError {
             }
         }
         other => RpcError::internal(other.to_string()),
-    }
-}
-
-/// Handles one `events/*` request (params without `_meta`).
-pub async fn handle_event_method(
-    events: &McpEventService,
-    method: &str,
-    params: &Map<String, Value>,
-    headers: &HeaderMap,
-) -> Result<Value, RpcError> {
-    match method {
-        "events/list" => {
-            let mut issues = Issues::default();
-            match params.get("cursor") {
-                None | Some(Value::String(_)) => {}
-                other => issues.expected(&["cursor"], "string", other),
-            }
-            issues.strict(params, &["cursor"], &[]);
-            issues.into_result(method)?;
-            let owner = header(headers, "x-omni-events-owner").filter(|o| is_executor_owner(o));
-            events.record_discovery(owner).await;
-            Ok(json!({ "events": event_catalog() }))
-        }
-        "events/subscribe" => {
-            let input = subscribe_input(params)?;
-            let principal = principal(headers)?;
-            let result = events
-                .subscribe(&input, principal.as_ref())
-                .await
-                .map_err(service_error)?;
-            serde_json::to_value(result).map_err(|e| RpcError::internal(e.to_string()))
-        }
-        "events/unsubscribe" => {
-            let input = unsubscribe_input(params)?;
-            let principal = principal(headers)?;
-            events
-                .unsubscribe(&input, principal.as_ref())
-                .await
-                .map_err(service_error)?;
-            Ok(json!({}))
-        }
-        _ => Err(RpcError::method_not_found()),
     }
 }

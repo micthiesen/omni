@@ -1,7 +1,7 @@
 # Architecture
 
 Omni is one Rust binary (`omni`) that runs scheduled tasks, an axum
-HTTP server with the JSON API, MCP endpoint and Leptos frontend, and long-lived
+HTTP server with the JSON API, MCP gateway and Leptos frontend, and long-lived
 background services over one SQLite document store.
 
 ## Crate layout
@@ -16,9 +16,10 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
   `omni-device-link`, `omni-personal`, `omni-stylist`. Each exposes
-  a constructor that returns an `omni_runtime::Subsystem`. `omni-mcp` also
-  hosts the MCP gateway (`/gateway/mcp`, [gateway.md](gateway.md)), which serves
-  every tool together with the configured upstream MCP integrations'.
+  a constructor that returns an `omni_runtime::Subsystem`. `omni-mcp` hosts
+  the MCP gateway (`/gateway/mcp`, [gateway.md](gateway.md)), Omni's only MCP
+  endpoint, which serves every tool together with the configured upstream MCP
+  integrations'.
 - **App:** `omni` builds the `AppContext`, constructs every subsystem,
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
   the CLI.

@@ -205,14 +205,20 @@ pub fn app_router(
         );
     }
     let mut router = omni_server_kit::app_router(parts, dist);
-    // The public gateway host reaches the gateway's public paths only,
-    // whatever the proxy in front forwards.
-    if let Some(host) =
-        omni_mcp::gateway::public::public_host(ctx.config.omni_gateway_public_url.as_deref())
-    {
+    // Public proxy hosts reach only the paths they exist for, whatever the
+    // proxy in front forwards: the gateway's MCP and OAuth paths, and the
+    // PressPods feed, audio and artwork.
+    let public_hosts = [
+        omni_mcp::gateway::public::public_host(ctx.config.omni_gateway_public_url.as_deref()),
+        omni_server_kit::public_host::PublicHost::new(
+            ctx.config.presspods_public_url.as_deref(),
+            omni_presspods::routes::is_public_path,
+        ),
+    ];
+    for host in public_hosts.into_iter().flatten() {
         router = router.layer(axum::middleware::from_fn_with_state(
             host,
-            omni_mcp::gateway::public::only_public_paths,
+            omni_server_kit::public_host::only_allowed_paths,
         ));
     }
     (router, ops)

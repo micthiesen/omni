@@ -16,7 +16,7 @@ use omni_api::mcp_activity::{
     RecommendedPolicy,
 };
 use omni_core::clock::SharedClock;
-use omni_mcp_kit::{ExecutorPolicy, ToolMeta};
+use omni_mcp_kit::{ApprovalPolicy, ToolMeta};
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{Entity, EntityOps, EntityWrite, ModifyOpts, UpsertOpts};
 use omni_store::{Store, StoreError};
@@ -239,9 +239,9 @@ fn bound_at(value: &Value, string_limit: usize, depth: usize) -> Value {
 
 fn policy_of(meta: &ToolMeta) -> RecommendedPolicy {
     match meta.policy.recommended_policy {
-        ExecutorPolicy::Allow => RecommendedPolicy::Allow,
-        ExecutorPolicy::RequireApproval => RecommendedPolicy::RequireApproval,
-        ExecutorPolicy::Block => RecommendedPolicy::Block,
+        ApprovalPolicy::Allow => RecommendedPolicy::Allow,
+        ApprovalPolicy::RequireApproval => RecommendedPolicy::RequireApproval,
+        ApprovalPolicy::Block => RecommendedPolicy::Block,
     }
 }
 

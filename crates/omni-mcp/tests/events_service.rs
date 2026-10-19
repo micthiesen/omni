@@ -1,4 +1,4 @@
-//! The MCP Events service: outbox, delivery, authorization and pruning.
+//! The MCP Events service: outbox, delivery, owner checks and pruning.
 //!
 //! Time advances with `tokio::time::advance` on a paused runtime (the
 //! service's `TestClock` follows it). The archive-move case uses a fake
@@ -18,14 +18,13 @@ use common::{clock, test_store};
 use futures::future::BoxFuture;
 use omni_core::clock::{Clock as _, TestClock};
 use omni_core::email::{EmailOrigin, FetchedEmail};
-use omni_mcp::events::executor_auth::{EventAuthorizer, ExecutorAuthError};
+use omni_mcp::events::catalog::EventArguments;
+use omni_mcp::events::dynamic::{DynamicEvents, EventExtensions, OwnerCheck};
 use omni_mcp::events::persistence::{
     DeliveryFailure, DeliveryStatus, DeliveryWithhold, EventDelivery, EventReceipt, EventRequest,
     EventSubscription,
 };
-use omni_mcp::events::service::{
-    EventPrincipal, McpEventService, PublishInput, SubscribeInput, UnsubscribeInput,
-};
+use omni_mcp::events::service::{McpEventService, PublishInput, SubscribeInput, UnsubscribeInput};
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
 use omni_runtime::ports::{ArchiveEcho, PortError, Ports};
 use omni_store::Store;
@@ -35,7 +34,8 @@ use serde_json::{Value, json};
 use tokio::sync::{Notify, oneshot};
 
 const URL: &str = "https://chatgpt.example.com/events/callback";
-const TOKEN_LIFETIME_MS: i64 = 60 * 60_000;
+/// The gateway principal every subscription here belongs to.
+const OWNER: &str = "gateway:client:events-test";
 
 fn secret() -> String {
     format!(
@@ -87,35 +87,47 @@ impl WebhookPort for FakeWebhook {
     }
 }
 
-type Validity = dyn Fn(&str, &str) -> Result<bool, ()> + Send + Sync;
+/// No integration events (the gateway's are covered by its own tests).
+struct NoIntegrationEvents;
 
-/// Answers validity; a valid token expires an hour after the check.
-struct FakeAuthorizer {
-    clock: Arc<TestClock>,
-    valid: Box<Validity>,
+impl DynamicEvents for NoIntegrationEvents {
+    fn knows(&self, _: &str) -> bool {
+        false
+    }
+
+    fn parse_arguments(&self, _: &str, _: &serde_json::Value) -> Option<EventArguments> {
+        None
+    }
 }
 
-impl EventAuthorizer for FakeAuthorizer {
-    fn authorize<'a>(
-        &'a self,
-        owner: &'a str,
-        authorization: &'a str,
-    ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>> {
-        let now = self.clock.now_ms();
-        let verdict = (self.valid)(owner, authorization);
-        Box::pin(async move {
-            match verdict {
-                Ok(true) => Ok(Some(now + TOKEN_LIFETIME_MS)),
-                Ok(false) => Ok(None),
-                Err(()) => Err(ExecutorAuthError),
-            }
-        })
+/// Gateway owners, active unless revoked here; every check is logged.
+#[derive(Default)]
+struct FakeOwners {
+    revoked: Mutex<HashSet<String>>,
+    checked: Mutex<Vec<String>>,
+}
+
+impl OwnerCheck for FakeOwners {
+    fn is_active<'a>(&'a self, owner: &'a str) -> BoxFuture<'a, bool> {
+        self.checked.lock().unwrap().push(owner.to_owned());
+        let active = owner.starts_with("gateway:") && !self.revoked.lock().unwrap().contains(owner);
+        Box::pin(async move { active })
     }
+}
+
+/// Registers `owners` (all active by default) as the service's owner check.
+fn with_owners(service: McpEventService, owners: Arc<FakeOwners>) -> McpEventService {
+    service.extend(EventExtensions {
+        dynamic: Arc::new(NoIntegrationEvents),
+        owners,
+    });
+    service
 }
 
 struct Harness {
     service: McpEventService,
     sent: Arc<Mutex<Vec<String>>>,
+    owners: Arc<FakeOwners>,
 }
 
 fn service_with(
@@ -123,7 +135,6 @@ fn service_with(
     clock: &Arc<TestClock>,
     token: &str,
     status: u16,
-    valid: Option<Box<Validity>>,
     ports: Ports,
 ) -> Harness {
     let sent = Arc::new(Mutex::new(Vec::new()));
@@ -135,23 +146,26 @@ fn service_with(
             Box::pin(async move { Ok(status) })
         }),
     };
-    let authorizer = valid.map(|valid| {
-        Arc::new(FakeAuthorizer {
-            clock: clock.clone(),
-            valid,
-        }) as Arc<dyn EventAuthorizer>
-    });
+    let owners = Arc::new(FakeOwners::default());
     Harness {
-        service: McpEventService::new(
-            token,
-            store.clone(),
-            clock.clone(),
-            Arc::new(webhook),
-            authorizer,
-            ports,
+        service: with_owners(
+            McpEventService::new(
+                token,
+                store.clone(),
+                clock.clone(),
+                Arc::new(webhook),
+                ports,
+            ),
+            owners.clone(),
         ),
         sent,
+        owners,
     }
+}
+
+/// `service` with every gateway owner active.
+fn owned(service: McpEventService) -> McpEventService {
+    with_owners(service, Arc::new(FakeOwners::default()))
 }
 
 /// Ports with an `ArchiveEcho` that claims no moves (production always sets one).
@@ -164,7 +178,7 @@ fn echo_ports() -> Ports {
 }
 
 fn service(store: &Store, clock: &Arc<TestClock>) -> Harness {
-    service_with(store, clock, "test-omni-bearer", 204, None, echo_ports())
+    service_with(store, clock, "test-omni-bearer", 204, echo_ports())
 }
 
 fn subscribe_input(folder: &str) -> SubscribeInput {
@@ -182,13 +196,6 @@ fn unsubscribe_input() -> UnsubscribeInput {
         name: "email.received".to_owned(),
         arguments: json!({"folder": "inbox"}),
         url: URL.to_owned(),
-    }
-}
-
-fn principal(owner: &str, bearer: &str) -> EventPrincipal {
-    EventPrincipal {
-        owner: owner.to_owned(),
-        authorization: bearer.to_owned(),
     }
 }
 
@@ -224,7 +231,7 @@ async fn stores_encrypted_credentials_and_delivers_each_receipt_once_across_rest
     let first = service(&db.store, &clock);
     let subscription = first
         .service
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     let stored = first
@@ -283,7 +290,7 @@ async fn keeps_first_origin_and_does_not_backfill_a_new_subscriber_on_replay() {
         .unwrap();
     assert!(deliveries(&db.store).await.is_empty());
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -306,7 +313,7 @@ async fn unsubscribe_cancels_queued_delivery_and_is_idempotent() {
     let db = test_store(&clock).await;
     let events = service(&db.store, &clock).service;
     let subscribed = events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -314,11 +321,11 @@ async fn unsubscribe_cancels_queued_delivery_and_is_idempotent() {
         .await
         .unwrap();
     events
-        .unsubscribe(&unsubscribe_input(), None)
+        .unsubscribe_as(OWNER, &unsubscribe_input())
         .await
         .unwrap();
     events
-        .unsubscribe(&unsubscribe_input(), None)
+        .unsubscribe_as(OWNER, &unsubscribe_input())
         .await
         .unwrap();
     assert!(
@@ -337,184 +344,68 @@ async fn unsubscribe_cancels_queued_delivery_and_is_idempotent() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn asks_delegated_subscribers_to_refresh_by_their_token_expiry() {
+async fn asks_subscribers_to_refresh_by_their_subscriptions_expiry() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let owner = format!("executor:{}", "c".repeat(64));
-    let delegated = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(|_, _| Ok(true))),
-        echo_ports(),
-    )
-    .service;
+    let events = service(&db.store, &clock).service;
     let now = clock.now_ms();
-    let who = principal(&owner, "Bearer delegated-fixture");
-    let hourly = delegated
-        .subscribe(&subscribe_input("inbox"), Some(&who))
+    let daily = events
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
-    assert_eq!(
-        iso_ms(&hourly.refresh_before),
-        now + TOKEN_LIFETIME_MS - 60_000
-    );
-    assert_eq!(
-        delegated
-            .store()
-            .subscription(&hourly.id)
-            .await
-            .unwrap()
-            .unwrap()
-            .expires_at,
-        now + 24 * 60 * 60_000
-    );
-    let brief = delegated
-        .subscribe(
+    assert_eq!(iso_ms(&daily.refresh_before), now + 24 * 60 * 60_000);
+    let stored = events
+        .store()
+        .subscription(&daily.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.expires_at, now + 24 * 60 * 60_000);
+    assert_eq!(stored.encrypted_authorization, None);
+    let brief = events
+        .subscribe_as(
+            OWNER,
             &SubscribeInput {
                 ttl_ms: Some(10 * 60_000),
                 ..subscribe_input("archive")
             },
-            Some(&who),
         )
         .await
         .unwrap();
     assert_eq!(iso_ms(&brief.refresh_before), now + 10 * 60_000);
-    let direct = service(&db.store, &clock)
-        .service
-        .subscribe(&subscribe_input("inbox"), None)
-        .await
-        .unwrap();
-    assert_eq!(iso_ms(&direct.refresh_before), now + 24 * 60 * 60_000);
-}
-
-struct SettableExpiry {
-    expiry: Mutex<Option<i64>>,
-}
-
-impl EventAuthorizer for SettableExpiry {
-    fn authorize<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-    ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>> {
-        let expiry = *self.expiry.lock().unwrap();
-        Box::pin(async move { Ok(expiry) })
-    }
 }
 
 #[tokio::test(start_paused = true)]
-async fn keeps_refresh_before_within_a_nearly_expired_tokens_lifetime() {
+async fn withholds_a_revoked_owners_delivery_until_it_is_active_again() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let now = clock.now_ms();
-    let authorizer = Arc::new(SettableExpiry {
-        expiry: Mutex::new(Some(now + 30_000)),
-    });
-    let events = McpEventService::new(
-        "test-omni-bearer",
-        db.store.clone(),
-        clock.clone(),
-        Arc::new(FakeWebhook {
-            verify: Box::new(|| Box::pin(async { Ok(()) })),
-            deliver: Box::new(|_| Box::pin(async { Ok(204) })),
-        }),
-        Some(authorizer.clone()),
-        echo_ports(),
-    );
-    let who = principal(
-        &format!("executor:{}", "d".repeat(64)),
-        "Bearer delegated-fixture",
-    );
-    let soon = events
-        .subscribe(&subscribe_input("inbox"), Some(&who))
-        .await
-        .unwrap();
-    assert_eq!(iso_ms(&soon.refresh_before), now);
-
-    let expiry = now + 2 * TOKEN_LIFETIME_MS;
-    *authorizer.expiry.lock().unwrap() = Some(expiry);
-    let rotated = events
-        .subscribe(&subscribe_input("inbox"), Some(&who))
-        .await
-        .unwrap();
-    assert_eq!(iso_ms(&rotated.refresh_before), expiry - 60_000);
-
-    let status = events.status().await.unwrap();
-    assert_eq!(
-        status["subscriptions"][0]["refreshBefore"],
-        json!(omni_core::js::to_iso_string(expiry - 60_000))
-    );
-    assert_eq!(
-        status["subscriptions"][0]["expiresAt"],
-        json!(omni_core::js::to_iso_string(now + 24 * 60 * 60_000))
-    );
-
-    *authorizer.expiry.lock().unwrap() = None;
-    assert!(
-        events
-            .subscribe(&subscribe_input("inbox"), Some(&who))
-            .await
-            .is_err()
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn withholds_delegated_delivery_until_the_stored_token_validates() {
-    let clock = clock();
-    let db = test_store(&clock).await;
-    let valid = Arc::new(Mutex::new("Bearer delegated-fixture".to_owned()));
-    let checked = Arc::new(Mutex::new(Vec::<String>::new()));
-    let (valid_check, checked_log) = (valid.clone(), checked.clone());
-    let owner = format!("executor:{}", "a".repeat(64));
-    let harness = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(move |_, bearer| {
-            checked_log.lock().unwrap().push(bearer.to_owned());
-            Ok(bearer == *valid_check.lock().unwrap())
-        })),
-        echo_ports(),
-    );
+    let harness = service(&db.store, &clock);
     let events = &harness.service;
-    let subscribed = events
-        .subscribe(
-            &subscribe_input("inbox"),
-            Some(&principal(&owner, "Bearer delegated-fixture")),
-        )
+    events
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
-    let stored = events
-        .store()
-        .subscription(&subscribed.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(
-        !stored
-            .encrypted_authorization
-            .unwrap()
-            .contains("delegated-fixture")
-    );
     for id in ["<one@example.test>", "<two@example.test>", "<three@x.test>"] {
         events.record_email(&inbox(id)).await.unwrap();
     }
-    *valid.lock().unwrap() = "Bearer refreshed-fixture".to_owned();
-    checked.lock().unwrap().clear();
+    harness
+        .owners
+        .revoked
+        .lock()
+        .unwrap()
+        .insert(OWNER.to_owned());
+    harness.owners.checked.lock().unwrap().clear();
     assert_eq!(events.drain().await.unwrap(), 3);
+    // One check per subscription per pass.
     assert_eq!(
-        *checked.lock().unwrap(),
-        vec!["Bearer delegated-fixture".to_owned()]
+        *harness.owners.checked.lock().unwrap(),
+        vec![OWNER.to_owned()]
     );
     assert_eq!(events.drain().await.unwrap(), 0);
     tokio::time::advance(Duration::from_secs(14 * 60)).await;
     assert_eq!(events.drain().await.unwrap(), 0);
     tokio::time::advance(Duration::from_secs(2 * 60)).await;
     assert_eq!(events.drain().await.unwrap(), 3);
-    assert_eq!(checked.lock().unwrap().len(), 2);
     assert!(harness.sent.lock().unwrap().is_empty());
     let held = deliveries(&db.store).await;
     assert_eq!(held.len(), 3);
@@ -524,19 +415,9 @@ async fn withholds_delegated_delivery_until_the_stored_token_validates() {
         assert_eq!(row.attempts, 0);
     }
 
-    events
-        .subscribe(
-            &subscribe_input("inbox"),
-            Some(&principal(&owner, "Bearer refreshed-fixture")),
-        )
-        .await
-        .unwrap();
-    checked.lock().unwrap().clear();
+    harness.owners.revoked.lock().unwrap().clear();
+    tokio::time::advance(Duration::from_secs(16 * 60)).await;
     assert_eq!(events.drain().await.unwrap(), 3);
-    assert_eq!(
-        *checked.lock().unwrap(),
-        vec!["Bearer refreshed-fixture".to_owned()]
-    );
     assert_eq!(harness.sent.lock().unwrap().len(), 3);
     for row in deliveries(&db.store).await {
         assert_eq!(row.status, DeliveryStatus::Delivered);
@@ -548,23 +429,10 @@ async fn withholds_delegated_delivery_until_the_stored_token_validates() {
 async fn fails_withheld_events_only_when_their_subscription_ends() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let active = Arc::new(Mutex::new(true));
-    let flag = active.clone();
-    let owner = format!("executor:{}", "a".repeat(64));
-    let harness = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(move |_, _| Ok(*flag.lock().unwrap()))),
-        echo_ports(),
-    );
+    let harness = service(&db.store, &clock);
     harness
         .service
-        .subscribe(
-            &subscribe_input("inbox"),
-            Some(&principal(&owner, "Bearer delegated-fixture")),
-        )
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     harness
@@ -572,7 +440,12 @@ async fn fails_withheld_events_only_when_their_subscription_ends() {
         .record_email(&inbox("<one@example.test>"))
         .await
         .unwrap();
-    *active.lock().unwrap() = false;
+    harness
+        .owners
+        .revoked
+        .lock()
+        .unwrap()
+        .insert(OWNER.to_owned());
     harness.service.drain().await.unwrap();
     tokio::time::advance(Duration::from_secs(25 * 60 * 60)).await;
     harness.service.drain().await.unwrap();
@@ -584,82 +457,35 @@ async fn fails_withheld_events_only_when_their_subscription_ends() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn holds_a_subscription_briefly_when_executor_cannot_authorize() {
+async fn never_delivers_to_an_owner_that_is_not_a_gateway_principal() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let owner = format!("executor:{}", "a".repeat(64));
-    let who = principal(&owner, "Bearer delegated-fixture");
-    let down = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(|_, _| Err(()))),
-        echo_ports(),
-    );
-    assert!(
-        down.service
-            .subscribe(&subscribe_input("inbox"), Some(&who))
-            .await
-            .is_err()
-    );
-
-    let available = Arc::new(Mutex::new(true));
-    let flag = available.clone();
-    let flaky = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(move |_, _| {
-            if *flag.lock().unwrap() {
-                Ok(true)
-            } else {
-                Err(())
-            }
-        })),
-        echo_ports(),
-    );
-    flaky
+    let harness = service(&db.store, &clock);
+    let legacy = format!("executor:{}", "a".repeat(64));
+    harness
         .service
-        .subscribe(&subscribe_input("inbox"), Some(&who))
+        .subscribe_as(&legacy, &subscribe_input("inbox"))
         .await
         .unwrap();
-    flaky
+    harness
         .service
-        .subscribe(&subscribe_input("archive"), None)
+        .record_email(&inbox("<one@example.test>"))
         .await
         .unwrap();
-    flaky
-        .service
-        .record_email(&inbox("<inbox@example.test>"))
-        .await
-        .unwrap();
-    flaky
-        .service
-        .record_email(&email("<archive@example.test>", "Archive"))
-        .await
-        .unwrap();
-    *available.lock().unwrap() = false;
-    assert_eq!(flaky.service.drain().await.unwrap(), 2);
-    assert_eq!(flaky.sent.lock().unwrap().len(), 1);
-    let rows = deliveries(&db.store).await;
-    let folder = |row: &EventDelivery| row.data_json()["folder"].as_str().unwrap().to_owned();
-    let inbox_row = rows.iter().find(|r| folder(r) == "inbox").unwrap();
-    assert_eq!(inbox_row.status, DeliveryStatus::Pending);
+    harness.service.drain().await.unwrap();
+    assert!(harness.sent.lock().unwrap().is_empty());
+    let failed = &deliveries(&db.store).await[0];
+    assert_eq!(failed.status, DeliveryStatus::Failed);
     assert_eq!(
-        inbox_row.withheld,
-        Some(DeliveryWithhold::AuthorizationUnavailable)
+        failed.failure,
+        Some(DeliveryFailure::CredentialsUnavailable)
     );
-    assert_eq!(inbox_row.attempts, 0);
+    assert!(harness.owners.checked.lock().unwrap().is_empty());
     assert_eq!(
-        rows.iter().find(|r| folder(r) == "archive").unwrap().status,
-        DeliveryStatus::Delivered
+        harness.service.drop_legacy_subscriptions().await.unwrap(),
+        1
     );
-    *available.lock().unwrap() = true;
-    tokio::time::advance(Duration::from_secs(61)).await;
-    flaky.service.drain().await.unwrap();
-    assert_eq!(flaky.sent.lock().unwrap().len(), 2);
+    assert!(subscriptions(&db.store).await.is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -671,7 +497,7 @@ async fn serves_the_status_tool_from_the_service_without_secrets() {
     assert_eq!(disabled["subscriptions"], json!([]));
     let events = service(&db.store, &clock).service;
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -720,48 +546,39 @@ async fn serves_the_status_tool_from_the_service_without_secrets() {
 async fn records_bounded_event_requests_without_credentials_or_paths() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let owner = format!("executor:{}", "b".repeat(64));
-    let who = principal(&owner, "Bearer delegated-fixture");
-    let events = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        Some(Box::new(|_, _| Ok(true))),
-        echo_ports(),
-    )
-    .service;
+    let owner = format!("gateway:client:{}", "b".repeat(36));
+    let events = service(&db.store, &clock).service;
     let second = || tokio::time::advance(Duration::from_secs(1));
-    events.record_discovery(Some(&owner)).await;
+    events.record_discovery_as(&owner).await;
     second().await;
     events
-        .subscribe(&subscribe_input("inbox"), Some(&who))
+        .subscribe_as(&owner, &subscribe_input("inbox"))
         .await
         .unwrap();
     second().await;
     events
-        .subscribe(&subscribe_input("inbox"), Some(&who))
+        .subscribe_as(&owner, &subscribe_input("inbox"))
         .await
         .unwrap();
     second().await;
     let rejected = events
-        .subscribe(
+        .subscribe_as(
+            &owner,
             &SubscribeInput {
                 url: "http://plain.example.com/x".to_owned(),
                 ..subscribe_input("archive")
             },
-            Some(&who),
         )
         .await;
     assert!(rejected.is_err());
     second().await;
     events
-        .unsubscribe(&unsubscribe_input(), Some(&who))
+        .unsubscribe_as(&owner, &unsubscribe_input())
         .await
         .unwrap();
     second().await;
     events
-        .unsubscribe(&unsubscribe_input(), Some(&who))
+        .unsubscribe_as(&owner, &unsubscribe_input())
         .await
         .unwrap();
 
@@ -790,39 +607,37 @@ async fn records_bounded_event_requests_without_credentials_or_paths() {
         ]
     );
     let accepted = &status["requests"][4];
-    assert_eq!(accepted["owner"], format!("executor:{}", "b".repeat(12)));
+    assert_eq!(
+        accepted["owner"],
+        format!("gateway:client:{}", "b".repeat(13))
+    );
     assert_eq!(accepted["name"], "email.received");
     assert_eq!(accepted["arguments"], json!({"folder": "inbox"}));
     assert_eq!(accepted["callbackHost"], "chatgpt.example.com");
     let text = Value::Object(status).to_string();
-    for hidden in [
-        secret().as_str(),
-        "/events/callback",
-        "delegated-fixture",
-        owner.as_str(),
-    ] {
+    for hidden in [secret().as_str(), "/events/callback", owner.as_str()] {
         assert!(!text.contains(hidden), "{hidden}");
     }
     for _ in 0..35 {
-        events.record_discovery(None).await;
+        events.record_discovery_as(&owner).await;
     }
     assert_eq!(events.store().requests().await.unwrap().len(), 30);
 }
 
 #[tokio::test(start_paused = true)]
-async fn keeps_token_rotated_rows_terminal_without_decrypting_with_the_new_key() {
+async fn keeps_secret_rotated_rows_terminal_without_decrypting_with_the_new_key() {
     let clock = clock();
     let db = test_store(&clock).await;
     let original = service(&db.store, &clock).service;
     original
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     original
         .record_email(&inbox("<one@example.test>"))
         .await
         .unwrap();
-    let rotated = service_with(&db.store, &clock, "rotated-token", 204, None, echo_ports());
+    let rotated = service_with(&db.store, &clock, "rotated-token", 204, echo_ports());
     rotated.service.drain().await.unwrap();
     assert!(rotated.sent.lock().unwrap().is_empty());
     assert_eq!(
@@ -838,7 +653,7 @@ async fn keeps_previous_queued_deliveries_cancelled_after_resubscribe() {
     let harness = service(&db.store, &clock);
     let events = &harness.service;
     let first = events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -853,11 +668,11 @@ async fn keeps_previous_queued_deliveries_cancelled_after_resubscribe() {
         .unwrap()
         .generation;
     events
-        .unsubscribe(&unsubscribe_input(), None)
+        .unsubscribe_as(OWNER, &unsubscribe_input())
         .await
         .unwrap();
     let second = events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     assert_eq!(second.id, first.id);
@@ -898,17 +713,9 @@ impl ArchiveEcho for ClaimedMoves {
 async fn refuses_to_publish_mail_without_the_archive_echo_port() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let events = service_with(
-        &db.store,
-        &clock,
-        "test-omni-bearer",
-        204,
-        None,
-        Ports::default(),
-    )
-    .service;
+    let events = service_with(&db.store, &clock, "test-omni-bearer", 204, Ports::default()).service;
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     let error = events
@@ -929,13 +736,13 @@ async fn keeps_original_inbox_receipts_and_suppresses_claimed_move_feedback() {
     let moves = Arc::new(ClaimedMoves::default());
     let ports = Ports::default();
     ports.set_archive_echo(moves.clone()).unwrap();
-    let events = service_with(&db.store, &clock, "test-omni-bearer", 204, None, ports).service;
+    let events = service_with(&db.store, &clock, "test-omni-bearer", 204, ports).service;
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
-        .subscribe(&subscribe_input("archive"), None)
+        .subscribe_as(OWNER, &subscribe_input("archive"))
         .await
         .unwrap();
     let message_id = "<archived@example.test>";
@@ -965,17 +772,10 @@ async fn retries_429_and_5xx_but_terminates_4xx_and_exhausted_claims() {
     ] {
         let clock = clock();
         let db = test_store(&clock).await;
-        let events = service_with(
-            &db.store,
-            &clock,
-            "test-omni-bearer",
-            status,
-            None,
-            echo_ports(),
-        )
-        .service;
+        let events =
+            service_with(&db.store, &clock, "test-omni-bearer", status, echo_ports()).service;
         events
-            .subscribe(&subscribe_input("inbox"), None)
+            .subscribe_as(OWNER, &subscribe_input("inbox"))
             .await
             .unwrap();
         events
@@ -996,7 +796,7 @@ async fn retries_429_and_5xx_but_terminates_4xx_and_exhausted_claims() {
     let harness = service(&db.store, &clock);
     harness
         .service
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     harness
@@ -1034,7 +834,7 @@ async fn publishes_while_a_slow_webhook_is_still_in_flight() {
     let started = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
     let (started_hook, release_hook) = (started.clone(), release.clone());
-    let events = McpEventService::new(
+    let events = owned(McpEventService::new(
         "test-omni-bearer",
         db.store.clone(),
         clock.clone(),
@@ -1049,11 +849,10 @@ async fn publishes_while_a_slow_webhook_is_still_in_flight() {
                 })
             }),
         }),
-        None,
         echo_ports(),
-    );
+    ));
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -1091,7 +890,7 @@ async fn delivers_as_soon_as_an_event_is_published() {
     let db = test_store(&clock).await;
     let (sender, receiver) = oneshot::channel::<String>();
     let sender = Arc::new(Mutex::new(Some(sender)));
-    let events = McpEventService::new(
+    let events = owned(McpEventService::new(
         "test-omni-bearer",
         db.store.clone(),
         clock.clone(),
@@ -1104,9 +903,8 @@ async fn delivers_as_soon_as_an_event_is_published() {
                 Box::pin(async { Ok(204) })
             }),
         }),
-        None,
         echo_ports(),
-    );
+    ));
     let worker = {
         let events = events.clone();
         tokio::spawn(async move {
@@ -1116,7 +914,7 @@ async fn delivers_as_soon_as_an_event_is_published() {
         })
     };
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     events
@@ -1156,12 +954,12 @@ async fn prunes_finished_deliveries_old_receipts_and_ended_subscriptions() {
     let harness = service(&db.store, &clock);
     let events = &harness.service;
     events
-        .subscribe(
+        .subscribe_as(
+            OWNER,
             &SubscribeInput {
                 ttl_ms: Some(60_000),
                 ..subscribe_input("inbox")
             },
-            None,
         )
         .await
         .unwrap();
@@ -1188,7 +986,7 @@ async fn delivers_rows_stored_before_events_were_generic() {
     let harness = service(&db.store, &clock);
     let events = &harness.service;
     let id = events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap()
         .id;
@@ -1214,7 +1012,7 @@ async fn delivers_rows_stored_before_events_were_generic() {
             ("id", JsValue::String("legacy-request".into())),
             ("at", JsValue::Int(1)),
             ("method", JsValue::String("events/subscribe".into())),
-            ("owner", JsValue::String("direct".into())),
+            ("owner", JsValue::String("legacy".into())),
             ("folder", JsValue::String("archive".into())),
             ("outcome", JsValue::String("accepted".into())),
         ]
@@ -1239,7 +1037,7 @@ async fn delivers_rows_stored_before_events_were_generic() {
     // Refreshing the legacy row keeps its identity.
     assert_eq!(
         events
-            .subscribe(&subscribe_input("inbox"), None)
+            .subscribe_as(OWNER, &subscribe_input("inbox"))
             .await
             .unwrap()
             .id,
@@ -1266,18 +1064,18 @@ async fn matches_claude_turn_events_to_subscribed_projects() {
         ttl_ms: None,
     };
     let failure = events
-        .subscribe(&claude(json!({"project": "../etc"}), URL), None)
+        .subscribe_as(OWNER, &claude(json!({"project": "../etc"}), URL))
         .await;
     assert_eq!(
         failure.unwrap_err().to_string(),
         "Event subscription rejected: invalid_arguments"
     );
     events
-        .subscribe(&claude(json!({"project": "omni"}), URL), None)
+        .subscribe_as(OWNER, &claude(json!({"project": "omni"}), URL))
         .await
         .unwrap();
     events
-        .subscribe(&claude(json!({}), &format!("{URL}/all")), None)
+        .subscribe_as(OWNER, &claude(json!({}), &format!("{URL}/all")))
         .await
         .unwrap();
     assert!(
@@ -1312,7 +1110,7 @@ async fn publishes_while_a_subscribers_challenge_is_still_in_flight() {
     let release = Arc::new(Notify::new());
     let challenges = Arc::new(Mutex::new(0));
     let (started_hook, release_hook) = (started.clone(), release.clone());
-    let events = McpEventService::new(
+    let events = owned(McpEventService::new(
         "test-omni-bearer",
         db.store.clone(),
         clock.clone(),
@@ -1334,23 +1132,22 @@ async fn publishes_while_a_subscribers_challenge_is_still_in_flight() {
             }),
             deliver: Box::new(|_| Box::pin(async { Ok(204) })),
         }),
-        None,
         echo_ports(),
-    );
+    ));
     events
-        .subscribe(&subscribe_input("inbox"), None)
+        .subscribe_as(OWNER, &subscribe_input("inbox"))
         .await
         .unwrap();
     let slow = {
         let events = events.clone();
         tokio::spawn(async move {
             events
-                .subscribe(
+                .subscribe_as(
+                    OWNER,
                     &SubscribeInput {
                         url: format!("{URL}/slow"),
                         ..subscribe_input("archive")
                     },
-                    None,
                 )
                 .await
         })

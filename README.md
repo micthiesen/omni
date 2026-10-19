@@ -48,16 +48,16 @@ long-poll relay.
 streamer avatars and widgets; Pushover is the fallback when the app is not set
 up. Failures, degraded runs and recoveries are reported once per incident.
 
-**MCP.** `/mcp` serves bounded, typed tools for everything above, plus MCP
+**MCP.** `/gateway/mcp` serves bounded, typed tools for everything above, plus MCP
 Events (`email.received`, `livestream.status_changed`, `calendar.event_changed`
 and others) through one outbox. Consequential tools are marked
-`require_approval` in [the generated policy](docs/mcp-policy.json), which the
-Executor gateway enforces.
+`require_approval` in [the generated policy](docs/mcp-policy.json); the
+connected client (Claude Code, Codex, ChatGPT) owns approval.
 
 ## How it is built
 
 One Rust workspace and one `omni` binary: the scheduler, every task, an axum
-server with the JSON API, `/mcp` and a Leptos single-page frontend on one port,
+server with the JSON API, `/gateway/mcp` and a Leptos single-page frontend on one port,
 over a SQLite document store. Subsystems talk only through port traits, every
 external write honors a record-only side-effect mode, and tests never reach the
 network. See [the architecture overview](docs/architecture.md).
@@ -92,8 +92,7 @@ services:
 ```
 
 Only `PUSHOVER_USER` and `PUSHOVER_TOKEN` are required; every feature turns on
-when its configuration is present and stays off otherwise. Production also
-requires `OMNI_MCP_TOKEN`. [`.env.example`](.env.example) lists the variables
+when its configuration is present and stays off otherwise. [`.env.example`](.env.example) lists the variables
 and their defaults, and `crates/omni-config` validates them at boot.
 
 The `omni` binary has a few other modes:

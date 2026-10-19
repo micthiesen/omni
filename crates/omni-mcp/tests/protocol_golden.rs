@@ -1,15 +1,18 @@
-//! Replays every captured raw HTTP exchange (`tests/golden/protocol.json`, a
-//! committed offline capture) against the endpoint and compares
-//! status, content type, the security headers and every JSON-RPC message.
+//! Replays every recorded raw HTTP exchange (`tests/golden/protocol.json`, a
+//! committed offline recording) against `/gateway/mcp` and compares status,
+//! content type, the security headers and every JSON-RPC message.
 //!
-//! The services match the capture: the same MCP token (so subscription ids,
-//! owner digests and key ids must be bit-identical), an Executor authorizer
-//! accepting one delegated owner, a webhook that verifies and accepts, and a
-//! task registry that lists nothing and queues `golden-run`.
+//! The exchanges were first captured from the TypeScript server's `/mcp`
+//! endpoint; when `/mcp` was removed they were re-recorded against the
+//! gateway, dropping the Executor delegated-owner exchanges and the GET that
+//! now opens the gateway's notification stream. The services are inert: a
+//! webhook that verifies and accepts, every gateway owner active, and a task
+//! registry that lists nothing and queues `golden-run`.
 //!
 //! Normalized before comparing: ISO timestamps (`refreshBefore` depends on
-//! the wall clock) and the detail after "Invalid arguments for tool <name>:"
-//! (the captured issue wording versus the JSON Schema validator's).
+//! the wall clock), subscription ids (they derive from the client's random
+//! id) and the detail after "Invalid arguments for tool <name>:" (the
+//! recorded issue wording versus the JSON Schema validator's).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -22,18 +25,19 @@ use axum::http::Request;
 use common::*;
 use futures::future::BoxFuture;
 use omni_mcp::activity::ActivityRecorder;
-use omni_mcp::events::executor_auth::{EventAuthorizer, ExecutorAuthError};
 use omni_mcp::events::service::McpEventService;
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
+use omni_mcp::gateway::access::DownstreamAccess;
+use omni_mcp::gateway::secrets::GatewaySecrets;
 use omni_mcp::rpc::McpProtocol;
 use omni_mcp::tools::system::{ConfiguredFeatures, SystemDeps, system_tools};
 use omni_mcp_kit::McpTool;
 use omni_runtime::ports::Ports;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 const GOLDEN_TOKEN: &str = "golden-capture-token-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const OWNER_HEX: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 struct AcceptAll;
 
@@ -51,22 +55,6 @@ impl WebhookPort for AcceptAll {
     }
 }
 
-struct OneOwner(Arc<omni_core::clock::TestClock>);
-
-impl EventAuthorizer for OneOwner {
-    fn authorize<'a>(
-        &'a self,
-        owner: &'a str,
-        authorization: &'a str,
-    ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>> {
-        use omni_core::clock::Clock as _;
-        let valid =
-            owner == format!("executor:{OWNER_HEX}") && authorization == "Bearer delegated-fixture";
-        let now = self.0.now_ms();
-        Box::pin(async move { Ok(valid.then_some(now + 3_600_000)) })
-    }
-}
-
 fn is_iso(text: &str) -> bool {
     text.len() == 24
         && text.ends_with('Z')
@@ -74,9 +62,15 @@ fn is_iso(text: &str) -> bool {
         && text.as_bytes()[4] == b'-'
 }
 
+fn is_subscription_id(text: &str) -> bool {
+    text.strip_prefix("sub_")
+        .is_some_and(|hex| hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 fn normalize(value: &Value) -> Value {
     match value {
         Value::String(text) if is_iso(text) => Value::String("<iso>".to_owned()),
+        Value::String(text) if is_subscription_id(text) => Value::String("<sub>".to_owned()),
         Value::String(text)
             if text.starts_with("Input validation error: Invalid arguments for tool ") =>
         {
@@ -100,18 +94,17 @@ fn essence(content_type: Option<&str>) -> Option<String> {
 }
 
 #[tokio::test(start_paused = true)]
-async fn endpoint_reproduces_every_captured_exchange() {
+async fn gateway_reproduces_every_recorded_exchange() {
     let golden: Value = serde_json::from_str(include_str!("golden/protocol.json")).unwrap();
     let clock = clock();
     let store = test_store(&clock).await;
-    let events = McpEventService::new(
+    let events = with_active_owners(McpEventService::new(
         GOLDEN_TOKEN,
         store.store.clone(),
         clock.clone(),
         Arc::new(AcceptAll),
-        Some(Arc::new(OneOwner(clock.clone()))),
         Ports::default(),
-    );
+    ));
     let tasks = FakeTasks {
         run_id: Some("golden-run"),
         ..FakeTasks::default()
@@ -125,9 +118,24 @@ async fn endpoint_reproduces_every_captured_exchange() {
     .unwrap();
     let mut tools = other_tools(&own);
     tools.extend(own);
-    let recorder = ActivityRecorder::new(store.store.clone(), clock.clone(), TaskTracker::new());
-    let protocol = McpProtocol::new(tools, recorder, Some(events)).unwrap();
-    let router = omni_mcp::endpoint::router(Some(GOLDEN_TOKEN), Some(protocol));
+    let tracker = TaskTracker::new();
+    let recorder = ActivityRecorder::new(store.store.clone(), clock.clone(), tracker.clone());
+    let gateway = test_gateway(&store.store, &clock, recorder.clone());
+    let protocol = McpProtocol::gateway(tools, recorder, Some(events), gateway.clone()).unwrap();
+    let access = DownstreamAccess::new(
+        store.store.clone(),
+        clock.clone(),
+        GatewaySecrets::from_key([42; 32]),
+        tracker,
+    );
+    let (_, token) = access.create_client("golden").await.unwrap();
+    let router = omni_mcp::gateway::endpoint::router(
+        protocol,
+        access,
+        gateway,
+        None,
+        CancellationToken::new(),
+    );
 
     let mut compared = 0;
     for exchange in golden["exchanges"].as_array().unwrap() {
@@ -135,13 +143,13 @@ async fn endpoint_reproduces_every_captured_exchange() {
         let req = &exchange["request"];
         let mut builder = Request::builder()
             .method(req["method"].as_str().unwrap())
-            .uri("/mcp");
-        let token = if label == "raw unauthorized" {
+            .uri("/gateway/mcp");
+        let bearer = if label == "raw unauthorized" {
             "wrong"
         } else {
-            GOLDEN_TOKEN
+            token.as_str()
         };
-        builder = builder.header("authorization", format!("Bearer {token}"));
+        builder = builder.header("authorization", format!("Bearer {bearer}"));
         for (name, value) in req["headers"].as_object().unwrap() {
             builder = builder.header(name.as_str(), value.as_str().unwrap());
         }
@@ -180,4 +188,8 @@ async fn endpoint_reproduces_every_captured_exchange() {
         compared += 1;
     }
     assert_eq!(compared, golden["exchanges"].as_array().unwrap().len());
+    // Nothing in the recording names the retired delegated-owner mechanism.
+    let text = golden.to_string();
+    assert!(!text.contains("x-omni-events-owner"));
+    assert!(!text.contains("Executor"));
 }

@@ -98,7 +98,6 @@ impl Harness {
             db.store.clone(),
             clock.clone(),
             Arc::new(Accept),
-            None,
             Ports::default(),
         );
         let watcher =

@@ -1,25 +1,21 @@
 # MCP Events
 
-Omni implements MCP Events at its authenticated `/mcp` endpoint and at the MCP
-gateway (`/gateway/mcp`, [gateway.md](gateway.md)). Both serve the legacy
+Omni implements MCP Events at the MCP gateway (`/gateway/mcp`,
+[gateway.md](gateway.md)), its only MCP endpoint. It serves the legacy
 `2025-11-25` era and the modern `2026-07-28` era
-(`crates/omni-mcp/src/rpc.rs`) and share the catalog, outbox, signing and
+(`crates/omni-mcp/src/rpc.rs`) and uses the catalog, outbox, signing and
 retry path below. Harnesses (ChatGPT, Codex, Claude Code) subscribe through the
-gateway. `/mcp` keeps serving Executor and still accepts delegated
-subscriptions (an Executor owner and OAuth token forwarded in the
-delegated-owner headers).
+gateway. MCP Events are always enabled. Every subscription is owned by a
+gateway principal, `gateway:client:<id>` or `gateway:grant:<id>`.
 
 ## History: the Executor events adapter
 
-Until 2026-10-19 a separate sidecar, `executor-events-adapter`, sat in front of
-Executor at `https://mcp.syas.ca/mcp`. Executor 1.6.10 spoke only MCP 1.x and
-rejected `server/discover`, so the adapter answered modern discovery itself,
-translated modern requests to Executor's legacy host, forwarded `events/*` to
-Omni's `/mcp` with the caller's Executor OAuth token, and relayed artifacts.boo
-workspaces' own events. It was retired on 2026-10-19 when the harnesses moved
-to the gateway, which serves Omni's events and follows integration events
-in-process. Its crate, image and deploy files were removed then; they remain
-in the repository history before that date.
+Until 2026-10-19 a separate sidecar, `executor-events-adapter`, relayed MCP
+Events between an external tool gateway and Omni. It was retired when the
+harnesses moved to Omni's gateway, which serves Omni's events and follows
+integration events in-process. The old `/mcp` endpoint and its delegated-owner
+subscriptions were removed afterwards, and Omni no longer talks to that
+gateway. The code remains in the repository history.
 
 References:
 
@@ -45,7 +41,8 @@ Subsystems cannot depend on `omni-mcp`, so they publish through the
 `EventPublisher` port in `crates/omni-runtime/src/ports.rs`, implemented by
 `crates/omni-mcp/src/events/publisher.rs` over the outbox and set in
 `crates/omni/src/wiring.rs`. The port is unset when MCP Events are
-disabled (`Ports::publish_event` then returns `Ok(false)`). An
+absent, as in tests that wire no events service (`Ports::publish_event` then
+returns `Ok(false)`). An
 `EventPublication` names a catalog event, a dedup key, the source time and the
 payload:
 
@@ -57,9 +54,9 @@ payload:
   `"<name>:<dedupKey>"`, so a replay of the same source observation is dropped
   and keeps its event ID.
 - Publishing is `McpEventService::publish`: receipt and outbox rows commit in
-  one transaction under the short state lock; webhooks and Executor checks run
-  outside it, delegated tokens are validated at delivery, and `withheld` and
-  `refreshBefore` behave as for every other event.
+  one transaction under the short state lock; webhooks and the owner-active
+  check run outside it, and `withheld` and `refreshBefore` behave as for every
+  other event.
 - `active_arguments(name)` returns the canonical arguments of every current
   subscription, so a source can poll only while subscribed or fan out per
   argument set.
@@ -194,7 +191,7 @@ deleted, by any client.
   rows after `published_seq` on the sync state to the port and then advances
   it, so a crash replays the same keys. A transient port failure keeps the
   cursor for the next sync; a rejected payload is skipped. Without a
-  subscriber (or with MCP Events disabled) the cursor advances without
+  subscriber the cursor advances without
   publishing, so subscribing never delivers history; rows older than a day
   are never published. The first sync of a collection is a silent baseline,
   and ETag churn without a semantic change records no change at all.
@@ -252,7 +249,7 @@ delivery worker, so a subscriber normally hears about new mail (or any other
 published event) seconds after the source observes it. For email this happens before the IMAP cursor commits.
 Boot recovery and a scheduled 30-second sweep retry pending work without
 changing event IDs. Outbox state changes hold one short lock; webhook calls and
-Executor authorization checks run outside it, so a slow callback never delays
+owner checks run outside it, so a slow callback never delays
 email dispatch.
 
 Finished deliveries are kept for seven days, receipts for 30 days (beyond the
@@ -266,30 +263,23 @@ event name and callback URL. Refresh uses the same identity. Unsubscribe is
 idempotent and scoped to that owner. Expired or revoked subscriptions do not
 receive mail.
 
-For delegated subscriptions at `/mcp`, Omni encrypts forwarded OAuth credentials at rest and checks them
-again through the fixed internal `OMNI_EVENTS_EXECUTOR_AUTH_URL` before delivery.
-No user-supplied authorization URL is accepted. The storage encryption key is
-derived from `OMNI_MCP_TOKEN` for this purpose. Rotating that token invalidates
-old event credentials; resubscribe after rotation.
+The owner is always a gateway principal. Delivery requires the owning gateway
+client or grant to still be active. While it is revoked, all of that
+subscription's pending events stay `withheld` and are rechecked periodically;
+other subscriptions keep delivering. Withheld events fail only when their
+subscription expires, is removed or is replaced by a new generation.
+`refreshBefore` is simply the subscription's expiry. The subscription lifetime
+is 24 hours by default and at most seven days.
 
-Executor 1.6.10 locks Better Auth 1.6.22, which issues one-hour MCP access
-tokens and whose session check returns `null` once a token expires. Omni never
-delivers without a stored token that validates at delivery time, checked once per
-subscription per delivery pass. When it does not validate, all of that
-subscription's pending events stay `withheld` and are rechecked after 15 minutes;
-when Executor cannot answer, after one minute. Other subscriptions keep
-delivering. A subscription refresh that stores a validating token releases
-withheld events immediately. Withheld events fail only when their subscription
-expires, is removed or is replaced by a new generation.
-
-So that a valid token is normally present, a delegated subscription's
-`refreshBefore` is the earlier of its granted lifetime and one minute before the
-expiry of the token it was created or refreshed with, never earlier than the
-request and never later than that expiry. Each refresh revalidates the client's
-current token. The stored subscription lifetime (24 hours by
-default, at most seven days) is unchanged, so an event that arrives after the
-token expires and before a late refresh stays withheld rather than failing or
-being delivered.
+The outbox's sealing and subscription-id key lives in `mcp-events.key` (mode
+0600, in the data directory, never logged). The first boot without that file
+migrates the key the previous version derived from `OMNI_MCP_TOKEN`, read once
+from the raw environment, so stored subscriptions stay `active` with unchanged
+ids; with no token it generates a random key. After that first boot
+`OMNI_MCP_TOKEN` can be removed from Compose. A boot step drops stored subscriptions
+whose owner is not a gateway principal (owners from the removed delegated and
+direct-token modes); their pending deliveries then fail as
+`subscription_inactive`.
 
 Callback signing uses the Standard Webhooks HMAC format over the stable delivery
 ID, fresh Unix signing timestamp, and exact JSON body bytes. Secrets must decode
@@ -317,7 +307,7 @@ HTTP status, transport error, failure or `withheld` reason. Owners appear as a 1
 never returns secrets, bearer tokens, callback paths or message content.
 `server/discover` and `tools/list` do not appear here; an `events/list` row is
 the first evidence of discovery. Requests
-rejected by parameter validation or an invalid delegated-owner header fail before
+rejected by parameter validation fail before
 logging, so a missing `events/subscribe` row does not prove ChatGPT never called.
 
 ## Connected verification

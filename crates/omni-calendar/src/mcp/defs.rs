@@ -4,7 +4,7 @@
 //! here run `cargo xtask mcp-golden` and review the snapshot diff.
 
 use omni_mcp_kit::schema::nullable;
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ const READ: Annotations = Annotations {
 const READ_POLICY: Policy = Policy {
     side_effects: &[],
     cost: "None; at most a few CalDAV reads",
-    recommended: ExecutorPolicy::Allow,
+    recommended: ApprovalPolicy::Allow,
 };
 
 pub static CALENDAR_STATUS: ToolDef<StatusInput, StatusOutput> = ToolDef::new(ToolInfo {
@@ -99,7 +99,7 @@ pub static CALENDAR_TRACKED_EVENTS_LIST: ToolDef<TrackedListInput, TrackedListOu
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -116,7 +116,7 @@ pub static CALENDAR_EVENT_CREATE: ToolDef<CreateInput, WriteOutput> = ToolDef::n
     policy: Policy {
         side_effects: &["Creates an event in the primary iCloud calendar"],
         cost: "No paid API; a few CalDAV requests",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -136,7 +136,7 @@ pub static CALENDAR_EVENT_UPDATE: ToolDef<UpdateInput, WriteOutput> = ToolDef::n
             "With attendeeNotifications \"send\", iCloud emails the attendees",
         ],
         cost: "No paid API; a few CalDAV requests",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 
@@ -156,7 +156,7 @@ pub static CALENDAR_EVENT_DELETE: ToolDef<DeleteInput, WriteOutput> = ToolDef::n
             "With attendeeNotifications \"send\", iCloud emails the attendees",
         ],
         cost: "No paid API; a few CalDAV requests",
-        recommended: ExecutorPolicy::RequireApproval,
+        recommended: ApprovalPolicy::RequireApproval,
     },
 });
 

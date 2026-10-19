@@ -5,7 +5,7 @@
 //! and review the snapshot diff.
 
 use omni_mcp_kit::schema::{Lit, Literal, date_time, nullable, positive};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static EMAIL_SEARCH: ToolDef<EmailSearchInput, EmailSearchOutput> = ToolDef::new(ToolInfo {
@@ -21,7 +21,7 @@ pub static EMAIL_SEARCH: ToolDef<EmailSearchInput, EmailSearchOutput> = ToolDef:
     policy: Policy {
         side_effects: &["Reads matching messages from the configured personal mailbox"],
         cost: "No paid API; bounded IMAP reads",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -38,7 +38,7 @@ pub static EMAIL_GET: ToolDef<EmailGetInput, EmailGetOutput> = ToolDef::new(Tool
     policy: Policy {
         side_effects: &["Reads one message from the configured personal mailbox"],
         cost: "No paid API; one bounded IMAP lookup",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -55,7 +55,7 @@ pub static EMAIL_HEALTH: ToolDef<EmailHealthInput, EmailHealthOutput> = ToolDef:
     policy: Policy {
         side_effects: &[],
         cost: "None",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -73,7 +73,7 @@ pub static EMAIL_ACTIVITY_LIST: ToolDef<EmailActivityListInput, EmailActivityLis
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -91,7 +91,7 @@ pub static EMAIL_ACTIVITY_GET: ToolDef<EmailActivityGetInput, EmailActivityGetOu
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -112,7 +112,7 @@ pub static EMAIL_REPROCESS: ToolDef<EmailReprocessInput, EmailReprocessOutput> =
                 "Reruns extraction and may submit a parcel, mutate CalDAV, or send a notification",
             ],
             cost: "May incur configured LLM and third-party workflow costs",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );
@@ -131,7 +131,7 @@ pub static EMAIL_RULES_LIST: ToolDef<EmailRulesListInput, EmailRulesListOutput> 
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -150,7 +150,7 @@ pub static EMAIL_RULES_UPSERT: ToolDef<EmailRulesUpsertInput, EmailRulesUpsertOu
         policy: Policy {
             side_effects: &["Changes persistent sender filtering for future email workflows"],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -168,7 +168,7 @@ pub static EMAIL_RULES_DELETE: ToolDef<EmailRulesDeleteInput, EmailRulesDeleteOu
         policy: Policy {
             side_effects: &["Deletes a persistent sender rule and changes future email filtering"],
             cost: "None",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -186,7 +186,7 @@ pub static EMAIL_FEEDBACK_LIST: ToolDef<EmailFeedbackListInput, EmailFeedbackLis
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -206,7 +206,7 @@ pub static EMAIL_FEEDBACK_SET: ToolDef<EmailFeedbackSetInput, EmailFeedbackSetOu
                 "Changes persistent correction data injected into future triage prompts",
             ],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -224,7 +224,7 @@ pub static EMAIL_RETRY_LIST: ToolDef<EmailRetryListInput, EmailRetryListOutput> 
         policy: Policy {
             side_effects: &[],
             cost: "None",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     },
 );
@@ -243,7 +243,7 @@ pub static EMAIL_RETRY_CLEAR: ToolDef<EmailRetryClearInput, EmailRetryClearOutpu
         policy: Policy {
             side_effects: &["Deletes a pending persistent retry"],
             cost: "None",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     },
 );

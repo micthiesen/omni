@@ -15,7 +15,6 @@ use gateway_support::{FakeUpstream, Fixture, Options, subscribe_params};
 use omni_api::gateway::{AuthKind, IntegrationPatch};
 use omni_core::clock::Clock as _;
 use omni_mcp::events::persistence::{EventDelivery, EventSubscription};
-use omni_mcp::events::service::{EventServiceError, SubscribeInput, SubscriptionRejection};
 use omni_mcp::gateway::events::poll_feeds;
 use omni_mcp::gateway::model::FeedRow;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
@@ -429,32 +428,6 @@ async fn an_event_without_an_id_is_counted_as_a_gap() {
     assert_eq!(feed.gaps, 1);
     assert_eq!(feed.cursor.as_deref(), Some("1"));
     assert!(delivered(&fixture).await.is_empty());
-    fixture.stop().await;
-}
-
-#[tokio::test]
-async fn integration_events_are_not_offered_to_mcp_callers() {
-    let (fixture, _upstream, _token) = events_fixture().await;
-    let params = subscribe_params(EVENT, json!({}));
-    let input = SubscribeInput {
-        name: EVENT.to_owned(),
-        arguments: json!({}),
-        url: params["delivery"]["url"].as_str().unwrap().to_owned(),
-        secret: params["delivery"]["secret"].as_str().unwrap().to_owned(),
-        ttl_ms: None,
-    };
-    for owner in ["direct", "executor:principal"] {
-        let refused = fixture.events.subscribe_as(owner, &input).await;
-        assert!(
-            matches!(
-                refused,
-                Err(EventServiceError::Rejected(
-                    SubscriptionRejection::InvalidEvent
-                ))
-            ),
-            "{owner}: {refused:?}"
-        );
-    }
     fixture.stop().await;
 }
 

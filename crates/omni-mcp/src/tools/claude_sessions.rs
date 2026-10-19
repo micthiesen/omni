@@ -2,9 +2,10 @@
 //!
 //! MCP results describe a generic "Claude Code host": they never name the
 //! machine or expose its home directory ([`scrub_host_details`]). Sessions run
-//! with full access by design; approval happens through the Executor policy
-//! of `start`, `send` and `stop`, never inside the session, so a background
-//! session never stalls on a permission prompt. Do not add a permission mode.
+//! with full access by design; approval happens in the connected client,
+//! guided by the recommended policy of `start`, `send` and `stop`, never inside
+//! the session, so a background session never stalls on a permission prompt.
+//! Do not add a permission mode.
 
 pub mod defs;
 

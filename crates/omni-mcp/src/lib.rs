@@ -1,15 +1,15 @@
-//! MCP server, MCP Events and MCP activity.
+//! MCP gateway, MCP Events and MCP activity.
 //!
-//! - [`endpoint`] / [`rpc`]: the authenticated `ALL /mcp` endpoint serving
-//!   every package's tools in both protocol eras, plus `events/*`;
-//! - [`events`]: the shared durable outbox, webhook delivery, Executor
-//!   delegated authorization and the Claude session watcher;
+//! - [`gateway`]: `/gateway/mcp`, Omni's only MCP endpoint, serving every
+//!   package's tools with the configured upstream integrations'
+//!   (`docs/gateway.md`);
+//! - [`rpc`]: the protocol layer it serves in both protocol eras, plus `events/*`;
+//! - [`events`]: the shared durable outbox, webhook delivery and the Claude
+//!   session and task run watchers;
 //! - [`activity`] / [`activity_routes`]: MCP call recording and the
 //!   `/api/mcp/activity` and `/api/claude/*` routes;
 //! - [`tools`]: the `system`, `events` and `claude-sessions` tool groups;
-//! - [`policy`]: the `docs/mcp-policy.json` inventory from registered tools;
-//! - [`gateway`]: `/gateway/mcp`, the MCP gateway serving Omni's tools with
-//!   the configured upstream integrations' (`docs/gateway.md`).
+//! - [`policy`]: the `docs/mcp-policy.json` inventory from registered tools.
 //!
 //! # Wiring
 //!
@@ -23,12 +23,11 @@
 //!    [`McpPackage::tools`], and call [`McpPackage::subsystem`]; it serves
 //!    them in [`tools::TOOL_ORDER`] and fails when the set differs from that
 //!    list. The returned subsystem carries the routes, tasks, entities,
-//!    boot step and delivery worker; its `mcp_tools` is empty because the
-//!    endpoint already serves every tool.
+//!    boot steps and delivery worker; its `mcp_tools` is empty because the
+//!    gateway already serves every tool.
 
 pub mod activity;
 pub mod activity_routes;
-pub mod endpoint;
 pub mod events;
 pub mod gateway;
 pub mod host;
@@ -49,7 +48,6 @@ use omni_tasks::CronSchedule;
 
 use crate::activity::{ActivityRecorder, McpCallData};
 use crate::events::claude_sessions::{ClaudeSessionWatch, ClaudeSessionWatcher};
-use crate::events::executor_auth::{EventAuthorizer, ExecutorEventAuthorizer};
 use crate::events::persistence::{EventDelivery, EventReceipt, EventRequest, EventSubscription};
 use crate::events::publisher::McpEventPublisher;
 use crate::events::service::McpEventService;
@@ -74,8 +72,6 @@ use crate::tools::claude_sessions::ClaudeDeps;
 use crate::tools::system::{ConfiguredFeatures, SystemDeps};
 
 const LOG: &str = "MCP";
-/// Executor's in-cluster MCP session endpoint, used when Dockerized without an override.
-pub const DEFAULT_EXECUTOR_AUTH_URL: &str = "http://executor:4788/api/auth/mcp/get-session";
 
 /// Every entity this package persists (for `migrate_all` and the compat audit).
 pub fn entities() -> Vec<EntityDescriptor> {
@@ -97,8 +93,6 @@ pub enum McpSetupError {
     ToolMeta(#[from] ToolMetaError),
     #[error(transparent)]
     Protocol(#[from] ProtocolSetupError),
-    #[error(transparent)]
-    ExecutorAuthUrl(#[from] crate::events::executor_auth::InvalidSessionUrl),
     #[error("invalid schedule {0}")]
     Schedule(String),
     #[error(
@@ -178,8 +172,7 @@ fn approval_notifier(ctx: &AppContext) -> crate::gateway::oauth::server::Authori
 /// The MCP package for one process.
 pub struct McpPackage {
     ctx: AppContext,
-    token: Option<String>,
-    events: Option<McpEventService>,
+    events: McpEventService,
     watcher: Option<ClaudeSessionWatcher>,
     host: Option<Arc<dyn ClaudeHost>>,
     recorder: ActivityRecorder,
@@ -192,44 +185,39 @@ pub struct McpPackage {
 }
 
 impl McpPackage {
-    /// Fails boot when `OMNI_EVENTS_EXECUTOR_AUTH_URL` is not a
-    /// credential-free HTTP(S) URL, and when a configured device link has not
-    /// set the `ClaudeHost` port yet.
+    /// Fails boot when the gateway or MCP Events key file cannot be read or
+    /// created, and when a configured device link has not set the
+    /// `ClaudeHost` port yet. The events key is migrated once from the raw
+    /// `OMNI_MCP_TOKEN` environment variable when its file does not exist yet
+    /// (`events::crypto::load_event_key`); the variable is not configuration.
     pub fn new(ctx: &AppContext) -> Result<Self, McpSetupError> {
         let config = &ctx.config;
         let host: Option<Arc<dyn ClaudeHost>> = ctx.ports.claude_host();
-        let device_link_configured = non_empty(config.omni_device_link_token.as_ref())
-            .is_some_and(|token| non_empty(config.omni_mcp_token.as_ref()) != Some(token));
-        if device_link_configured && host.is_none() {
+        if non_empty(config.omni_device_link_token.as_ref()).is_some() && host.is_none() {
             return Err(McpSetupError::MissingClaudeHost);
         }
-        let token = non_empty(config.omni_mcp_token.as_ref()).map(str::to_owned);
-        let auth_url = non_empty(config.omni_events_executor_auth_url.as_ref())
-            .map(str::to_owned)
-            .or_else(|| {
-                config
-                    .dockerized
-                    .then(|| DEFAULT_EXECUTOR_AUTH_URL.to_owned())
-            });
-        let authorizer: Option<Arc<dyn EventAuthorizer>> = match (&token, auth_url.as_deref()) {
-            (Some(_), Some(url)) => Some(Arc::new(
-                ExecutorEventAuthorizer::new(url, ctx.http.clone(), ctx.clock.clone())?
-                    .with_time_zone(time_zone(config)),
-            )),
-            _ => None,
-        };
-        let events = token.as_deref().map(|token| {
-            let transport = LiveWebhookTransport::new(ctx.public_http.clone(), ctx.side_effects);
-            McpEventService::new(
-                token,
-                ctx.store.clone(),
-                ctx.clock.clone(),
-                Arc::new(WebhookClient::new(Arc::new(transport), ctx.clock.clone())),
-                authorizer,
-                ctx.ports.clone(),
-            )
-        });
         let secrets = GatewaySecrets::load_or_create(&key_path(&ctx.paths.data_dir))?;
+        let legacy_token = std::env::var(events::crypto::LEGACY_TOKEN_VAR).ok();
+        let (event_key, source) =
+            events::crypto::load_event_key(&ctx.paths.data_dir, legacy_token.as_deref())?;
+        match source {
+            events::crypto::KeySource::MigratedFromToken => tracing::info!(
+                target: LOG,
+                "MCP Events key migrated from OMNI_MCP_TOKEN into mcp-events.key; the variable can be removed"
+            ),
+            events::crypto::KeySource::Generated => {
+                tracing::info!(target: LOG, "MCP Events key created in mcp-events.key");
+            }
+            events::crypto::KeySource::File => {}
+        }
+        let transport = LiveWebhookTransport::new(ctx.public_http.clone(), ctx.side_effects);
+        let events = McpEventService::from_key(
+            event_key,
+            ctx.store.clone(),
+            ctx.clock.clone(),
+            Arc::new(WebhookClient::new(Arc::new(transport), ctx.clock.clone())),
+            ctx.ports.clone(),
+        );
         let oauth = OAuthClient::new(ctx.public_http.clone());
         let recorder =
             ActivityRecorder::new(ctx.store.clone(), ctx.clock.clone(), ctx.tracker.clone());
@@ -252,9 +240,7 @@ impl McpPackage {
             secrets.clone(),
             ctx.tracker.clone(),
         );
-        if let Some(events) = &events {
-            gateway::events::extend_events(events, &gateway, &access);
-        }
+        gateway::events::extend_events(&events, &gateway, &access);
         let public_origin = non_empty(config.omni_gateway_public_url.as_ref()).map(str::to_owned);
         let authorization = match &public_origin {
             Some(origin) => {
@@ -272,20 +258,18 @@ impl McpPackage {
             }
             None => None,
         };
-        let watcher = match (&events, &host) {
-            (Some(events), Some(host)) => Some(ClaudeSessionWatcher::new(
+        let watcher = host.as_ref().map(|host| {
+            ClaudeSessionWatcher::new(
                 events.clone(),
                 host.clone(),
                 ctx.store.clone(),
                 ctx.clock.clone(),
-            )),
-            _ => None,
-        };
+            )
+        });
         Ok(Self {
             recorder,
             features: ConfiguredFeatures::from_config(config),
             ctx: ctx.clone(),
-            token,
             events,
             watcher,
             host,
@@ -303,8 +287,8 @@ impl McpPackage {
         self
     }
 
-    pub fn events(&self) -> Option<&McpEventService> {
-        self.events.as_ref()
+    pub fn events(&self) -> &McpEventService {
+        &self.events
     }
 
     pub fn gateway(&self) -> &Gateway {
@@ -323,14 +307,14 @@ impl McpPackage {
         self.watcher.as_ref()
     }
 
-    /// The `EventPublisher` port over this outbox, when MCP Events are enabled.
-    pub fn event_publisher(&self) -> Option<McpEventPublisher> {
-        self.events.clone().map(McpEventPublisher::new)
+    /// The `EventPublisher` port over this outbox.
+    pub fn event_publisher(&self) -> McpEventPublisher {
+        McpEventPublisher::new(self.events.clone())
     }
 
     /// The `McpEvents` email handler (register it before every other handler).
-    pub fn email_handler(&self) -> Option<Arc<dyn EmailHandler>> {
-        self.events.as_ref().map(McpEventService::email_handler)
+    pub fn email_handler(&self) -> Arc<dyn EmailHandler> {
+        self.events.email_handler()
     }
 
     /// This package's tools: `system`, `events`, `claude-sessions` groups.
@@ -341,7 +325,7 @@ impl McpPackage {
             features: self.features,
             clock: self.ctx.clock.clone(),
         })?;
-        tools.extend(tools::events::event_tools(self.events.clone())?);
+        tools.extend(tools::events::event_tools(Some(self.events.clone()))?);
         tools.extend(tools::claude_sessions::claude_session_tools(&ClaudeDeps {
             host: self.host.clone(),
             watcher: self
@@ -355,43 +339,31 @@ impl McpPackage {
     /// The subsystem serving `all_tools` (every package's, this one's included).
     pub fn subsystem(self, all_tools: Vec<McpTool>) -> Result<Subsystem, McpSetupError> {
         let ctx = &self.ctx;
-        let gateway_protocol = McpProtocol::gateway(
-            all_tools.clone(),
+        let protocol = McpProtocol::gateway(
+            all_tools,
             self.recorder.clone(),
-            self.events.clone(),
+            Some(self.events.clone()),
             self.gateway.clone(),
         )?;
-        let protocol = match &self.token {
-            Some(_) => Some(McpProtocol::new(
-                all_tools,
-                self.recorder.clone(),
-                self.events.clone(),
-            )?),
-            None => None,
-        };
-        let mut router = endpoint::router(self.token.as_deref(), protocol)
-            .merge(activity_routes::router(
-                ctx.store.clone(),
-                ctx.clock.clone(),
-                self.host.clone(),
-            ))
-            .merge(gateway::endpoint::router(
-                gateway_protocol,
-                self.access.clone(),
-                self.gateway.clone(),
-                self.authorization
-                    .as_ref()
-                    .map(AuthorizationServer::resource_metadata_url),
-                ctx.shutdown.clone(),
-            ))
-            .merge(gateway::routes::router(AdminState {
-                gateway: self.gateway.clone(),
-                access: self.access.clone(),
-                events: self.events.clone(),
-                oauth: self.oauth.clone(),
-                authorization: self.authorization.clone(),
-                public_url: self.public_origin.clone(),
-            }));
+        let mut router =
+            activity_routes::router(ctx.store.clone(), ctx.clock.clone(), self.host.clone())
+                .merge(gateway::endpoint::router(
+                    protocol,
+                    self.access.clone(),
+                    self.gateway.clone(),
+                    self.authorization
+                        .as_ref()
+                        .map(AuthorizationServer::resource_metadata_url),
+                    ctx.shutdown.clone(),
+                ))
+                .merge(gateway::routes::router(AdminState {
+                    gateway: self.gateway.clone(),
+                    access: self.access.clone(),
+                    events: Some(self.events.clone()),
+                    oauth: self.oauth.clone(),
+                    authorization: self.authorization.clone(),
+                    public_url: self.public_origin.clone(),
+                }));
         if let Some(server) = &self.authorization {
             router = router.merge(server.router());
         }
@@ -420,50 +392,68 @@ impl McpPackage {
                 .boxed()
             }),
         });
-        if let Some(events) = &self.events {
-            subsystem.boot_steps.push(BootStep {
-                phase: BootPhase::Migrate,
-                name: "requireArchiveEcho",
-                run: Box::new(|ctx: AppContext| {
-                    async move {
-                        if ctx.ports.archive_echo().is_some() {
-                            Ok(())
-                        } else {
-                            Err(BootError::new(
-                                "requireArchiveEcho",
-                                "MCP email events need the ArchiveEcho port \
-                                 (omni_imap::transport::StoreArchiveEcho); refusing to start \
-                                 rather than publish an event for every archive move",
-                            ))
-                        }
+        let legacy = self.events.clone();
+        subsystem.boot_steps.push(BootStep {
+            phase: BootPhase::Migrate,
+            name: "dropLegacyEventSubscriptions",
+            run: Box::new(move |_ctx: AppContext| {
+                async move {
+                    let dropped = legacy.drop_legacy_subscriptions().await.map_err(|e| {
+                        BootError::new("dropLegacyEventSubscriptions", e.to_string())
+                    })?;
+                    if dropped > 0 {
+                        tracing::info!(
+                            target: LOG,
+                            "Dropped {dropped} MCP event subscription(s) from before the gateway"
+                        );
                     }
-                    .boxed()
-                }),
-            });
-            subsystem.tasks.push(Arc::new(McpEventDeliveryTask::new(
-                events.clone(),
-                schedule(MCP_EVENT_DELIVERY_SCHEDULE)?,
-            )));
-            subsystem.tasks.push(Arc::new(TaskRunEventsTask::new(
-                TaskRunWatcher::new(events.clone(), ctx.store.clone(), ctx.clock.clone()),
-                schedule(TASK_RUN_EVENTS_SCHEDULE)?,
-            )));
-            let worker = events.clone();
-            subsystem.services.push(BackgroundService {
-                name: "McpEventDelivery worker",
-                start: Box::new(move |ctx: AppContext| {
-                    let events = worker.clone();
-                    async move {
-                        if events.drain().await.is_err() {
-                            tracing::warn!(target: LOG, "MCP event recovery deferred to scheduled retry");
-                        }
-                        events.delivery_worker(ctx.shutdown.clone()).await;
+                    Ok(())
+                }
+                .boxed()
+            }),
+        });
+        subsystem.boot_steps.push(BootStep {
+            phase: BootPhase::Migrate,
+            name: "requireArchiveEcho",
+            run: Box::new(|ctx: AppContext| {
+                async move {
+                    if ctx.ports.archive_echo().is_some() {
+                        Ok(())
+                    } else {
+                        Err(BootError::new(
+                            "requireArchiveEcho",
+                            "MCP email events need the ArchiveEcho port \
+                             (omni_imap::transport::StoreArchiveEcho); refusing to start \
+                             rather than publish an event for every archive move",
+                        ))
                     }
-                    .boxed()
-                }),
-                retry: None,
-            });
-        }
+                }
+                .boxed()
+            }),
+        });
+        subsystem.tasks.push(Arc::new(McpEventDeliveryTask::new(
+            self.events.clone(),
+            schedule(MCP_EVENT_DELIVERY_SCHEDULE)?,
+        )));
+        subsystem.tasks.push(Arc::new(TaskRunEventsTask::new(
+            TaskRunWatcher::new(self.events.clone(), ctx.store.clone(), ctx.clock.clone()),
+            schedule(TASK_RUN_EVENTS_SCHEDULE)?,
+        )));
+        let worker = self.events.clone();
+        subsystem.services.push(BackgroundService {
+            name: "McpEventDelivery worker",
+            start: Box::new(move |ctx: AppContext| {
+                let events = worker.clone();
+                async move {
+                    if events.drain().await.is_err() {
+                        tracing::warn!(target: LOG, "MCP event recovery deferred to scheduled retry");
+                    }
+                    events.delivery_worker(ctx.shutdown.clone()).await;
+                }
+                .boxed()
+            }),
+            retry: None,
+        });
         if let Some(watcher) = &self.watcher {
             subsystem.tasks.push(Arc::new(ClaudeSessionEventsTask::new(
                 watcher.clone(),
@@ -499,13 +489,11 @@ impl McpPackage {
             self.authorization.clone(),
             schedule(GATEWAY_REFRESH_SCHEDULE)?,
         )));
-        if let Some(events) = &self.events {
-            subsystem.tasks.push(Arc::new(GatewayEventFeedsTask::new(
-                self.gateway.clone(),
-                events.clone(),
-                schedule(GATEWAY_EVENT_FEEDS_SCHEDULE)?,
-            )));
-        }
+        subsystem.tasks.push(Arc::new(GatewayEventFeedsTask::new(
+            self.gateway.clone(),
+            self.events.clone(),
+            schedule(GATEWAY_EVENT_FEEDS_SCHEDULE)?,
+        )));
         Ok(subsystem)
     }
 }

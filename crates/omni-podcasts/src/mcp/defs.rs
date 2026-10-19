@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use omni_mcp_kit::schema::{Lit, Literal, one_of, positive};
-use omni_mcp_kit::{Annotations, ExecutorPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
+use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
 pub static PODCAST_ACCOUNT_LIST: ToolDef<PodcastAccountListInput, PodcastAccountListOutput> =
@@ -24,7 +24,7 @@ pub static PODCAST_ACCOUNT_LIST: ToolDef<PodcastAccountListInput, PodcastAccount
         policy: Policy {
             side_effects: &["Reads the configured podcast account through its rate-limited client"],
             cost: "No expected monetary cost; consumes bounded private account API traffic",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -44,7 +44,7 @@ pub static PODCAST_ACCOUNT_SEARCH: ToolDef<PodcastAccountSearchInput, PodcastAcc
                 "Searches the configured podcast account through its rate-limited client",
             ],
             cost: "No expected monetary cost; consumes bounded private account API traffic",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
@@ -64,7 +64,7 @@ pub static PODCAST_ACCOUNT_UPDATE: ToolDef<PodcastAccountUpdateInput, PodcastAcc
                 "Changes queue, Inbox, or subscription state on an external podcast account",
             ],
             cost: "No expected monetary cost; consumes private account API traffic",
-            recommended: ExecutorPolicy::RequireApproval,
+            recommended: ApprovalPolicy::RequireApproval,
         },
     });
 
@@ -84,7 +84,7 @@ pub static PODCAST_RECOMMENDATIONS_LIST: ToolDef<
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -104,7 +104,7 @@ pub static PODCAST_RECOMMENDATION_GET: ToolDef<
     policy: Policy {
         side_effects: &[],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -124,7 +124,7 @@ pub static PODCAST_RECOMMENDATION_FEEDBACK: ToolDef<
     policy: Policy {
         side_effects: &["Updates local podcast feedback used by future taste analysis"],
         cost: "No external traffic or monetary cost",
-        recommended: ExecutorPolicy::Allow,
+        recommended: ApprovalPolicy::Allow,
     },
 });
 
@@ -142,7 +142,7 @@ pub static PODCAST_TASTE_READ: ToolDef<PodcastTasteReadInput, PodcastTasteReadOu
         policy: Policy {
             side_effects: &[],
             cost: "No external traffic or monetary cost",
-            recommended: ExecutorPolicy::Allow,
+            recommended: ApprovalPolicy::Allow,
         },
     });
 
