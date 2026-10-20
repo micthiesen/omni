@@ -24,7 +24,9 @@ use omni_mcp::events::persistence::{
     DeliveryFailure, DeliveryStatus, DeliveryWithhold, EventDelivery, EventReceipt, EventRequest,
     EventSubscription,
 };
-use omni_mcp::events::service::{McpEventService, PublishInput, SubscribeInput, UnsubscribeInput};
+use omni_mcp::events::service::{
+    Lapse, McpEventService, PublishInput, SubscribeInput, UnsubscribeInput,
+};
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
 use omni_runtime::ports::{ArchiveEcho, PortError, Ports};
 use omni_store::Store;
@@ -1161,4 +1163,94 @@ async fn publishes_while_a_subscribers_challenge_is_still_in_flight() {
     release.notify_one();
     slow.await.unwrap().unwrap();
     assert_eq!(subscriptions(&db.store).await.len(), 2);
+}
+
+fn brief(folder: &str) -> SubscribeInput {
+    SubscribeInput {
+        ttl_ms: Some(10 * 60_000),
+        ..subscribe_input(folder)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn reports_a_subscription_that_lapses_unrefreshed_once_per_lapse() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let events = service(&db.store, &clock).service;
+    events.subscribe_as(OWNER, &brief("inbox")).await.unwrap();
+    tokio::time::advance(Duration::from_secs(9 * 60)).await;
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+    // A refresh before expiry moves it.
+    events.subscribe_as(OWNER, &brief("inbox")).await.unwrap();
+    let refreshed_expiry = clock.now_ms() + 10 * 60_000;
+    tokio::time::advance(Duration::from_secs(9 * 60)).await;
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+
+    tokio::time::advance(Duration::from_secs(2 * 60)).await;
+    let lapses = events.reserve_lapses().await.unwrap();
+    assert_eq!(
+        lapses,
+        vec![Lapse {
+            name: "email.received".to_owned(),
+            arguments: EventArguments::from([("folder".to_owned(), "inbox".to_owned())]),
+            owner: "gateway:client:events-test".to_owned(),
+            callback_host: Some("chatgpt.example.com".to_owned()),
+            expired_at: refreshed_expiry,
+        }]
+    );
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+
+    // Subscribing again after the lapse starts a fresh row that can lapse again.
+    events.subscribe_as(OWNER, &brief("inbox")).await.unwrap();
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+    tokio::time::advance(Duration::from_secs(11 * 60)).await;
+    assert_eq!(events.reserve_lapses().await.unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn never_reports_an_unsubscribed_revoked_or_long_expired_subscription() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let harness = service(&db.store, &clock);
+    let events = &harness.service;
+    events.subscribe_as(OWNER, &brief("inbox")).await.unwrap();
+    events.subscribe_as(OWNER, &brief("archive")).await.unwrap();
+    events
+        .unsubscribe_as(OWNER, &unsubscribe_input())
+        .await
+        .unwrap();
+    harness
+        .owners
+        .revoked
+        .lock()
+        .unwrap()
+        .insert(OWNER.to_owned());
+    tokio::time::advance(Duration::from_secs(11 * 60)).await;
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+
+    // Lapses older than a day are history, not news.
+    harness.owners.revoked.lock().unwrap().clear();
+    tokio::time::advance(Duration::from_secs(24 * 60 * 60)).await;
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_client_that_moved_its_callback_is_not_reported_for_the_old_one() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let events = service(&db.store, &clock).service;
+    events.subscribe_as(OWNER, &brief("inbox")).await.unwrap();
+    tokio::time::advance(Duration::from_secs(5 * 60)).await;
+    let moved = SubscribeInput {
+        url: "https://chatgpt.example.com/events/v2".to_owned(),
+        ..brief("inbox")
+    };
+    events.subscribe_as(OWNER, &moved).await.unwrap();
+    tokio::time::advance(Duration::from_secs(6 * 60)).await;
+    assert!(events.reserve_lapses().await.unwrap().is_empty());
+    // When the replacement lapses too, only it is reported.
+    tokio::time::advance(Duration::from_secs(5 * 60)).await;
+    let lapses = events.reserve_lapses().await.unwrap();
+    assert_eq!(lapses.len(), 1);
+    assert_eq!(lapses[0].expired_at, clock.now_ms() - 60_000);
 }

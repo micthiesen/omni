@@ -54,6 +54,31 @@ const SUBSCRIPTION_RETENTION_MS: i64 = 7 * 24 * 60 * MINUTE_MS;
 const MAX_BACKOFF_MS: i64 = 6 * 60 * MINUTE_MS;
 /// How long a delivery waits for a missing integration event definition.
 const DEFINITION_RECHECK_MS: i64 = 5 * MINUTE_MS;
+/// A subscription that expired longer ago than this is no longer reported;
+/// a sweep outage longer than this drops the lapse.
+const LAPSE_ALERT_WINDOW_MS: i64 = 24 * 60 * MINUTE_MS;
+
+/// Whether `row` ended by expiry (an unsubscribe deletes the row) and the
+/// owner has not been told yet.
+fn lapse_unreported(row: &EventSubscription, key_id: &str, now: i64) -> bool {
+    row.lapse_alerted_at.is_none()
+        && row.key_id == key_id
+        && is_gateway_owner(&row.owner)
+        && row.expires_at <= now
+        && row.expires_at > now - LAPSE_ALERT_WINDOW_MS
+}
+
+/// A subscription that expired without a refresh, reserved for one owner
+/// notification.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lapse {
+    pub name: String,
+    pub arguments: EventArguments,
+    /// [`owner_label`] of the owning client or grant.
+    pub owner: String,
+    pub callback_host: Option<String>,
+    pub expired_at: i64,
+}
 
 fn withheld_recheck_ms(reason: DeliveryWithhold) -> i64 {
     match reason {
@@ -420,6 +445,7 @@ impl McpEventService {
                 Some(previous) if recently_verified && same_secret => previous.verified_at,
                 _ => verified_at,
             },
+            lapse_alerted_at: None,
             extra: Extra::default(),
         };
         self.inner.store.upsert_subscription(row).await?;
@@ -1005,6 +1031,75 @@ impl McpEventService {
             ..row
         };
         self.inner.store.upsert_delivery(updated).await
+    }
+
+    /// Reserves one notification for each subscription that expired without
+    /// a refresh while its owner still has access and holds no other live
+    /// subscription to that event, and returns them. Each
+    /// lapse is reserved durably before it is returned, so it is reported at
+    /// most once; a later refresh writes a fresh row that can lapse again.
+    pub async fn reserve_lapses(&self) -> Result<Vec<Lapse>, StoreError> {
+        let Some(extensions) = self.inner.extensions.get() else {
+            return Ok(Vec::new());
+        };
+        let now = self.now();
+        let crypto = self.crypto();
+        let key_id = crypto.key_id();
+        let rows = self.inner.store.subscriptions().await?;
+        // An owner that still holds the event (a changed callback URL or
+        // arguments is a new row) moved on rather than stopped.
+        let live: HashSet<(&str, &str)> = rows
+            .iter()
+            .filter(|row| row.key_id == key_id && row.expires_at > now)
+            .map(|row| (row.owner.as_str(), row.name.as_str()))
+            .collect();
+        let (superseded, candidates): (Vec<EventSubscription>, Vec<EventSubscription>) = rows
+            .iter()
+            .filter(|row| lapse_unreported(row, key_id, now))
+            .cloned()
+            .partition(|row| live.contains(&(row.owner.as_str(), row.name.as_str())));
+        let mut active = HashMap::new();
+        for row in &candidates {
+            if !active.contains_key(&row.owner) {
+                let verdict = extensions.owners.is_active(&row.owner).await;
+                active.insert(row.owner.clone(), verdict);
+            }
+        }
+        let _state = self.inner.state_lock.lock().await;
+        let mut lapses = Vec::new();
+        let superseded_ids: HashSet<String> = superseded.iter().map(|row| row.id.clone()).collect();
+        for candidate in superseded.into_iter().chain(candidates) {
+            let replaced = superseded_ids.contains(&candidate.id);
+            if !replaced && active.get(&candidate.owner) != Some(&true) {
+                continue;
+            }
+            // A refresh or unsubscribe since the scan wins.
+            let Some(row) = self.inner.store.subscription(&candidate.id).await? else {
+                continue;
+            };
+            if row.expires_at != candidate.expires_at || !lapse_unreported(&row, key_id, now) {
+                continue;
+            }
+            let reported = !replaced;
+            let lapse = Lapse {
+                name: row.name.clone(),
+                arguments: row.effective_arguments(),
+                owner: owner_label(&row.owner),
+                callback_host: callback_host(crypto.open(&row.encrypted_url).as_deref()),
+                expired_at: row.expires_at,
+            };
+            self.inner
+                .store
+                .upsert_subscription(EventSubscription {
+                    lapse_alerted_at: Some(now),
+                    ..row
+                })
+                .await?;
+            if reported {
+                lapses.push(lapse);
+            }
+        }
+        Ok(lapses)
     }
 
     /// Bounds the outbox: finished deliveries, old receipts, long-ended subscriptions.

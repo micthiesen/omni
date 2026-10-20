@@ -284,6 +284,16 @@ subscription expires, is removed or is replaced by a new generation.
 `refreshBefore` is simply the subscription's expiry. The subscription lifetime
 is 24 hours by default and at most seven days.
 
+A subscription that expires without a refresh while its owner is still active
+notifies the owner on the General channel (app first, then Pushover) from the
+`McpEventDelivery` sweep: one push per client and callback host per sweep,
+naming each lapsed event and its arguments. Each lapse is reserved on its row
+(`lapseAlertedAt`) before the push and never resent; a later subscribe writes a
+fresh row that can lapse again. Unsubscribing deletes the row, so it never
+alerts. Not reported: revoked owners, a lapse while the owner holds another
+live subscription to the same event (a changed callback URL or arguments), and
+lapses the sweep first sees more than a day after expiry.
+
 The outbox's sealing and subscription-id key lives in `mcp-events.key` (mode
 0600, in the data directory, never logged). The first boot without that file
 migrates the key the previous version derived from `OMNI_MCP_TOKEN`, read once

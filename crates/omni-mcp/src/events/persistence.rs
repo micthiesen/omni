@@ -78,6 +78,10 @@ pub struct EventSubscription {
     pub refresh_before: Option<i64>,
     pub expires_at: i64,
     pub verified_at: i64,
+    /// When the owner was told this subscription lapsed unrefreshed; a
+    /// refresh writes a fresh row without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lapse_alerted_at: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }

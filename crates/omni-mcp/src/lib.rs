@@ -433,6 +433,8 @@ impl McpPackage {
         });
         subsystem.tasks.push(Arc::new(McpEventDeliveryTask::new(
             self.events.clone(),
+            ctx.pushover.clone(),
+            ctx.tracker.clone(),
             schedule(MCP_EVENT_DELIVERY_SCHEDULE)?,
         )));
         subsystem.tasks.push(Arc::new(TaskRunEventsTask::new(

@@ -70,6 +70,7 @@ fn subscription(id: &str, owner: &str) -> EventSubscription {
         refresh_before: None,
         expires_at: 4_102_444_800_000,
         verified_at: 0,
+        lapse_alerted_at: None,
         extra: Extra::default(),
     }
 }

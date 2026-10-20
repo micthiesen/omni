@@ -505,7 +505,8 @@ repeats the source work. Never hold the outbox lock across webhook or
 authorization I/O. Events are always enabled and every subscription is owned by
 a gateway principal (`gateway:client:<id>` or `gateway:grant:<id>`); delivery
 requires the owning client or grant to still be active, and holds the events as
-`withheld` while it is revoked. `refreshBefore` is the subscription's expiry.
+`withheld` while it is revoked. `refreshBefore` is the subscription's expiry;
+an active owner's subscription that lapses unrefreshed notifies once.
 The outbox key lives in `mcp-events.key` (data directory, 0600), migrated once
 from the old `OMNI_MCP_TOKEN` derivation so existing subscriptions keep their
 ids; never change it. See `docs/mcp-events.md`.
