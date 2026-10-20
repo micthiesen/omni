@@ -6,6 +6,11 @@ all-features = false
 version = 2
 yanked = "deny"
 ignore = [
+  # webpki-roots 0.26.11 is the last 0.26 release and only re-exports the
+  # webpki-roots 1.x roots, which are locked at the patched 1.0.10. It reaches
+  # only sherpa-onnx-sys's build-time downloader (ureq 2.12.1); remove this
+  # entry once sherpa-onnx moves off ureq 2.
+  { id = "RUSTSEC-2026-0381", reason = "shim over the patched webpki-roots 1.0.10, build-time only" },
   # paste is archived. It reaches only the wasm frontend, through leptos,
   # reactive_graph, reactive_stores, tachys and either_of, as a proc macro with
   # no runtime code. The pinned leptos 0.8.20 still requires it; remove this
