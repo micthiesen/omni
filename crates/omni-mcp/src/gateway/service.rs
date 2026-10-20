@@ -673,12 +673,12 @@ impl Gateway {
             Ok(Ok(Value::Object(result))) => {
                 self.remember_resources(&integration, &result);
                 let failed = result.get("isError").and_then(Value::as_bool) == Some(true);
-                call.finish(if failed {
-                    CallOutcome::Error(tool_error_text(&result))
+                if failed {
+                    call.finish(CallOutcome::Error(tool_error_text(&result)))
+                        .await;
                 } else {
-                    CallOutcome::Ok(None)
-                })
-                .await;
+                    call.sized(&result).finish(CallOutcome::Ok(None)).await;
+                }
                 Ok(result)
             }
             Ok(Ok(other)) => {

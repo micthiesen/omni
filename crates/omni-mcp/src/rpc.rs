@@ -670,11 +670,16 @@ impl McpProtocol {
         match outcome {
             Ok(ToolOutput::Structured(structured)) => {
                 let structured = self.project(entry, structured);
-                call.finish(CallOutcome::Ok(Some(structured.clone()))).await;
                 let text = omni_core::js::json_stringify(&Value::Object(structured.clone()));
                 let mut result = Map::new();
                 result.insert("content".into(), json!([{ "type": "text", "text": text }]));
-                result.insert("structuredContent".into(), Value::Object(structured));
+                result.insert(
+                    "structuredContent".into(),
+                    Value::Object(structured.clone()),
+                );
+                call.sized(&result)
+                    .finish(CallOutcome::Ok(Some(structured)))
+                    .await;
                 Ok(result)
             }
             Ok(ToolOutput::Custom {
@@ -682,10 +687,15 @@ impl McpProtocol {
                 content,
             }) => {
                 let structured = self.project(entry, structured);
-                call.finish(CallOutcome::Ok(Some(structured.clone()))).await;
                 let mut result = Map::new();
                 result.insert("content".into(), json!(content));
-                result.insert("structuredContent".into(), Value::Object(structured));
+                result.insert(
+                    "structuredContent".into(),
+                    Value::Object(structured.clone()),
+                );
+                call.sized(&result)
+                    .finish(CallOutcome::Ok(Some(structured)))
+                    .await;
                 Ok(result)
             }
             // An input-phase failure is a schema refinement checked before

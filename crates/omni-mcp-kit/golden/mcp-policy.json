@@ -1477,6 +1477,36 @@
       "recommendedPolicy": "require_approval"
     },
     {
+      "name": "shell",
+      "title": "Run an Omni Shell Script",
+      "description": "Run a bash script in a sandboxed virtual shell over Omni's data, then return only what the script prints. Every read-only Omni tool is a command that prints its JSON result (`email_search --from amazon --limit 5`, `parcels_get --tracking-number 1Z...`, or one JSON object argument); `tools` lists them and `<tool> --help` shows its flags. Reads that need no arguments are also files: `/omni/<tool>.json`. Filter with jq, grep, sed, awk, sort, uniq, head and wc so the output stays small; /tmp is scratch space. `cat /README.md` explains the layout. Nothing here changes Omni or sends anything. Pass the same `session` to keep /tmp, the working directory and variables between calls for 30 minutes.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Runs Omni's read-only tools, which may read the configured mailbox, calendar and other connected accounts"
+      ],
+      "cost": "No paid API; the read-only tools a script runs",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "shell_usage",
+      "title": "Measure Shell Use",
+      "description": "Summarize how the `shell` tool has been used compared with direct tool calls: runs, failures, durations, the tool data scripts read against the output they returned, which tools scripts used, recent failures, the result sizes of direct read-only tool calls, and the size of the served tool list against the shell tool's own definition. Use it to judge whether the shell saves context.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "streamer_config_create",
       "title": "Track a Streamer",
       "description": "Start tracking a streamer under a display name with one or more sources: YouTube handles (\"@name\") or channel ids, Twitch logins and Kick slugs. Several usernames per platform are allowed; each source can belong to only one streamer. Tier primary (default) notifies go-live/offline/title changes; background mutes them, records only all-time viewer highs and polls less often. liveNotifications false mutes a primary streamer. Takes effect on the next live check without a restart.",

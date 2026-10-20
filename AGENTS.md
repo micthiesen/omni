@@ -164,7 +164,8 @@ change; reuse authorization already given in the conversation.
 - `omni-mcp`: the MCP gateway, Omni's only MCP endpoint (`/gateway/mcp`:
   Omni's tools, upstream integrations, downstream tokens and OAuth server,
   integration event feeds; `docs/gateway.md`), the MCP Events outbox, MCP
-  activity, system/events/Claude session tools and the policy inventory.
+  activity, system/events/Claude session tools, the bashkit `shell` over the
+  read-only tools (`docs/shell.md`) and the policy inventory.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
 - `omni-personal`: pets, LAN printer, Hister, Codex/Claude reset alerts
   (`reset_alerts`), and agent push notifications to the owner
@@ -460,6 +461,13 @@ alone is insufficient. See `docs/server-reminders.md` and its upstream notice.
 
 Keep MCP tools bounded adapters over existing services and preserve strong
 bearer-token validation.
+
+`shell` (`docs/shell.md`) exposes only read-only, non-stylist tools as
+commands and `/omni` files, runs in bashkit with no host process, file or
+network feature compiled in, and records every run as `shell-run` for
+`shell_usage`. Commands are chosen by `readOnlyHint`, so a tool marked
+read-only becomes scriptable: keep that hint true only for tools without
+side effects.
 
 Claude Code session tools reach the Mac only through its outbound `omni-link`
 long-poll, authenticated by `OMNI_DEVICE_LINK_TOKEN`, which must never equal or

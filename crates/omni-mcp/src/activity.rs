@@ -55,6 +55,13 @@ pub struct McpCallData {
     /// Recorded only for Claude session tools.
     #[serde(default = "undefined")]
     pub output: JsValue,
+    /// Bytes of the result's text content, what a client passes to its model
+    /// (absent before sizes were recorded, and for failed calls).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_bytes: Option<i64>,
+    /// Bytes of the result's `structuredContent` as JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_bytes: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -273,7 +280,40 @@ pub struct RecordedCall {
     call_id: String,
     tool: String,
     started_at: i64,
+    size: Option<ResultSize>,
     finished: bool,
+}
+
+/// The size of a successful `tools/call` result, in UTF-8 bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResultSize {
+    /// Every text content block.
+    pub content: i64,
+    /// `structuredContent` serialized as JSON.
+    pub structured: i64,
+}
+
+impl ResultSize {
+    pub fn of(result: &Map<String, Value>) -> Self {
+        let len = |n: usize| i64::try_from(n).unwrap_or(i64::MAX);
+        let content = result
+            .get("content")
+            .and_then(Value::as_array)
+            .map_or(0, |blocks| {
+                blocks
+                    .iter()
+                    .filter_map(|block| block.get("text").and_then(Value::as_str))
+                    .map(|text| len(text.len()))
+                    .sum()
+            });
+        let structured = result
+            .get("structuredContent")
+            .map_or(0, |value| len(omni_core::js::json_stringify(value).len()));
+        Self {
+            content,
+            structured,
+        }
+    }
 }
 
 impl ActivityRecorder {
@@ -307,6 +347,8 @@ impl ActivityRecorder {
                 string_limit_for(&meta.name),
             )),
             output: JsValue::Null,
+            result_bytes: None,
+            structured_bytes: None,
             extra: Extra::default(),
         };
         if let Err(error) = self
@@ -322,11 +364,19 @@ impl ActivityRecorder {
             call_id,
             tool: meta.name.clone(),
             started_at,
+            size: None,
             finished: false,
         }
     }
 
-    async fn finish(&self, call_id: String, tool: String, started_at: i64, outcome: CallOutcome) {
+    async fn finish(
+        &self,
+        call_id: String,
+        tool: String,
+        started_at: i64,
+        outcome: CallOutcome,
+        size: Option<ResultSize>,
+    ) {
         let finished_at = self.inner.clock.now_ms();
         let (status, error, output) = match outcome {
             CallOutcome::Ok(output) => (McpCallStatus::Ok, None, output),
@@ -359,6 +409,13 @@ impl ActivityRecorder {
             }),
         );
         patch.insert("output".into(), output);
+        if let (Some(size), McpCallStatus::Ok) = (size, status) {
+            patch.insert("resultBytes".into(), JsValue::Int(size.content.into()));
+            patch.insert(
+                "structuredBytes".into(),
+                JsValue::Int(size.structured.into()),
+            );
+        }
         let key = call_id;
         if let Err(error) = self
             .inner
@@ -393,12 +450,18 @@ fn status_js(status: McpCallStatus) -> JsValue {
 }
 
 impl RecordedCall {
+    /// Records the result's size with a successful finish.
+    pub fn sized(mut self, result: &Map<String, Value>) -> Self {
+        self.size = Some(ResultSize::of(result));
+        self
+    }
+
     pub async fn finish(mut self, outcome: CallOutcome) {
         self.finished = true;
         let call_id = std::mem::take(&mut self.call_id);
         let tool = std::mem::take(&mut self.tool);
         self.recorder
-            .finish(call_id, tool, self.started_at, outcome)
+            .finish(call_id, tool, self.started_at, outcome, self.size)
             .await;
     }
 }
@@ -433,7 +496,7 @@ impl Drop for RecordedCall {
         let tracker = recorder.inner.tracker.clone();
         omni_core::spawn::spawn_tracked(&tracker, "mcp-call-interrupted", async move {
             recorder
-                .finish(call_id, tool, started_at, CallOutcome::Interrupted)
+                .finish(call_id, tool, started_at, CallOutcome::Interrupted, None)
                 .await;
         });
     }

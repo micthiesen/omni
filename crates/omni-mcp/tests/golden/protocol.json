@@ -31591,6 +31591,450 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                {
+                  "name": "shell",
+                  "title": "Run an Omni Shell Script",
+                  "description": "Run a bash script in a sandboxed virtual shell over Omni's data, then return only what the script prints. Every read-only Omni tool is a command that prints its JSON result (`email_search --from amazon --limit 5`, `parcels_get --tracking-number 1Z...`, or one JSON object argument); `tools` lists them and `<tool> --help` shows its flags. Reads that need no arguments are also files: `/omni/<tool>.json`. Filter with jq, grep, sed, awk, sort, uniq, head and wc so the output stays small; /tmp is scratch space. `cat /README.md` explains the layout. Nothing here changes Omni or sends anything. Pass the same `session` to keep /tmp, the working directory and variables between calls for 30 minutes.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "script": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "The bash script to run."
+                      },
+                      "session": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                        "description": "A name to keep /tmp, the working directory and variables between\ncalls; sessions end after 30 idle minutes. Omit for a fresh shell."
+                      }
+                    },
+                    "required": [
+                      "script"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "exitCode": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "The script's exit status; nonzero when its last command failed or a\nlimit stopped it."
+                      },
+                      "stdout": {
+                        "type": "string"
+                      },
+                      "stderr": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean",
+                        "description": "Whether stdout or stderr was cut to fit the response."
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "runId": {
+                        "type": "string",
+                        "description": "The `shell_usage` record of this run."
+                      }
+                    },
+                    "required": [
+                      "exitCode",
+                      "stdout",
+                      "stderr",
+                      "truncated",
+                      "durationMs",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell_usage",
+                  "title": "Measure Shell Use",
+                  "description": "Summarize how the `shell` tool has been used compared with direct tool calls: runs, failures, durations, the tool data scripts read against the output they returned, which tools scripts used, recent failures, the result sizes of direct read-only tool calls, and the size of the served tool list against the shell tool's own definition. Use it to judge whether the shell saves context.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "days": {
+                        "default": 14,
+                        "description": "How many days back to summarize.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "since": {
+                        "type": "string"
+                      },
+                      "shell": {
+                        "type": "object",
+                        "properties": {
+                          "runs": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "sessions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "succeeded": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "interrupted": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs whose request went away before they finished."
+                          },
+                          "limited": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs stopped by the timeout or another sandbox limit."
+                          },
+                          "truncated": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianDurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "p90DurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "toolCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of tool results the scripts read, as the compact JSON a direct\ncall returns."
+                          },
+                          "returnedBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes the runs returned (stdout plus stderr after truncation)."
+                          },
+                          "reduction": {
+                            "description": "`1 - returned / tool`, when any tool data was read.",
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "calls",
+                                "bytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "recentFailures": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "type": "string"
+                                },
+                                "runId": {
+                                  "type": "string"
+                                },
+                                "exitCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "script": {
+                                  "type": "string",
+                                  "description": "The start of the script."
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "runId",
+                                "exitCode",
+                                "error",
+                                "script"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "runs",
+                          "sessions",
+                          "succeeded",
+                          "failed",
+                          "interrupted",
+                          "limited",
+                          "truncated",
+                          "medianDurationMs",
+                          "p90DurationMs",
+                          "toolCalls",
+                          "toolBytes",
+                          "returnedBytes",
+                          "reduction",
+                          "byTool",
+                          "recentFailures"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "direct": {
+                        "type": "object",
+                        "properties": {
+                          "calls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Recorded calls of every tool except `shell` and `shell_usage` in the\nwindow (activity keeps the newest 2,000 calls)."
+                          },
+                          "measured": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Calls that recorded their result size (calls before the measurement\nexisted did not)."
+                          },
+                          "resultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianResultBytes": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "shellCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellResultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "readOnly": {
+                                  "type": "boolean"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "resultBytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "medianResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "readOnly",
+                                "calls",
+                                "resultBytes",
+                                "medianResultBytes",
+                                "maxResultBytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "calls",
+                          "measured",
+                          "resultBytes",
+                          "medianResultBytes",
+                          "shellCalls",
+                          "shellResultBytes",
+                          "byTool"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "schemas": {
+                        "type": "object",
+                        "properties": {
+                          "servedTools": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolsListBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of every served Omni tool's `tools/list` entry, integrations\nexcluded."
+                          },
+                          "shellToolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellCommands": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "servedTools",
+                          "toolsListBytes",
+                          "shellToolBytes",
+                          "shellCommands"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "since",
+                      "shell",
+                      "direct",
+                      "schemas"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               ]
             },
@@ -64356,6 +64800,450 @@
                     "required": [
                       "id",
                       "sessionId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell",
+                  "title": "Run an Omni Shell Script",
+                  "description": "Run a bash script in a sandboxed virtual shell over Omni's data, then return only what the script prints. Every read-only Omni tool is a command that prints its JSON result (`email_search --from amazon --limit 5`, `parcels_get --tracking-number 1Z...`, or one JSON object argument); `tools` lists them and `<tool> --help` shows its flags. Reads that need no arguments are also files: `/omni/<tool>.json`. Filter with jq, grep, sed, awk, sort, uniq, head and wc so the output stays small; /tmp is scratch space. `cat /README.md` explains the layout. Nothing here changes Omni or sends anything. Pass the same `session` to keep /tmp, the working directory and variables between calls for 30 minutes.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "script": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "The bash script to run."
+                      },
+                      "session": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                        "description": "A name to keep /tmp, the working directory and variables between\ncalls; sessions end after 30 idle minutes. Omit for a fresh shell."
+                      }
+                    },
+                    "required": [
+                      "script"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "exitCode": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "The script's exit status; nonzero when its last command failed or a\nlimit stopped it."
+                      },
+                      "stdout": {
+                        "type": "string"
+                      },
+                      "stderr": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean",
+                        "description": "Whether stdout or stderr was cut to fit the response."
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "runId": {
+                        "type": "string",
+                        "description": "The `shell_usage` record of this run."
+                      }
+                    },
+                    "required": [
+                      "exitCode",
+                      "stdout",
+                      "stderr",
+                      "truncated",
+                      "durationMs",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell_usage",
+                  "title": "Measure Shell Use",
+                  "description": "Summarize how the `shell` tool has been used compared with direct tool calls: runs, failures, durations, the tool data scripts read against the output they returned, which tools scripts used, recent failures, the result sizes of direct read-only tool calls, and the size of the served tool list against the shell tool's own definition. Use it to judge whether the shell saves context.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "days": {
+                        "default": 14,
+                        "description": "How many days back to summarize.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "since": {
+                        "type": "string"
+                      },
+                      "shell": {
+                        "type": "object",
+                        "properties": {
+                          "runs": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "sessions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "succeeded": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "interrupted": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs whose request went away before they finished."
+                          },
+                          "limited": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs stopped by the timeout or another sandbox limit."
+                          },
+                          "truncated": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianDurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "p90DurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "toolCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of tool results the scripts read, as the compact JSON a direct\ncall returns."
+                          },
+                          "returnedBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes the runs returned (stdout plus stderr after truncation)."
+                          },
+                          "reduction": {
+                            "description": "`1 - returned / tool`, when any tool data was read.",
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "calls",
+                                "bytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "recentFailures": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "type": "string"
+                                },
+                                "runId": {
+                                  "type": "string"
+                                },
+                                "exitCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "script": {
+                                  "type": "string",
+                                  "description": "The start of the script."
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "runId",
+                                "exitCode",
+                                "error",
+                                "script"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "runs",
+                          "sessions",
+                          "succeeded",
+                          "failed",
+                          "interrupted",
+                          "limited",
+                          "truncated",
+                          "medianDurationMs",
+                          "p90DurationMs",
+                          "toolCalls",
+                          "toolBytes",
+                          "returnedBytes",
+                          "reduction",
+                          "byTool",
+                          "recentFailures"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "direct": {
+                        "type": "object",
+                        "properties": {
+                          "calls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Recorded calls of every tool except `shell` and `shell_usage` in the\nwindow (activity keeps the newest 2,000 calls)."
+                          },
+                          "measured": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Calls that recorded their result size (calls before the measurement\nexisted did not)."
+                          },
+                          "resultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianResultBytes": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "shellCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellResultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "readOnly": {
+                                  "type": "boolean"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "resultBytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "medianResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "readOnly",
+                                "calls",
+                                "resultBytes",
+                                "medianResultBytes",
+                                "maxResultBytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "calls",
+                          "measured",
+                          "resultBytes",
+                          "medianResultBytes",
+                          "shellCalls",
+                          "shellResultBytes",
+                          "byTool"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "schemas": {
+                        "type": "object",
+                        "properties": {
+                          "servedTools": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolsListBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of every served Omni tool's `tools/list` entry, integrations\nexcluded."
+                          },
+                          "shellToolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellCommands": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "servedTools",
+                          "toolsListBytes",
+                          "shellToolBytes",
+                          "shellCommands"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "since",
+                      "shell",
+                      "direct",
+                      "schemas"
                     ],
                     "additionalProperties": false
                   }
@@ -97318,6 +98206,450 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                {
+                  "name": "shell",
+                  "title": "Run an Omni Shell Script",
+                  "description": "Run a bash script in a sandboxed virtual shell over Omni's data, then return only what the script prints. Every read-only Omni tool is a command that prints its JSON result (`email_search --from amazon --limit 5`, `parcels_get --tracking-number 1Z...`, or one JSON object argument); `tools` lists them and `<tool> --help` shows its flags. Reads that need no arguments are also files: `/omni/<tool>.json`. Filter with jq, grep, sed, awk, sort, uniq, head and wc so the output stays small; /tmp is scratch space. `cat /README.md` explains the layout. Nothing here changes Omni or sends anything. Pass the same `session` to keep /tmp, the working directory and variables between calls for 30 minutes.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "script": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "The bash script to run."
+                      },
+                      "session": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                        "description": "A name to keep /tmp, the working directory and variables between\ncalls; sessions end after 30 idle minutes. Omit for a fresh shell."
+                      }
+                    },
+                    "required": [
+                      "script"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "exitCode": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "The script's exit status; nonzero when its last command failed or a\nlimit stopped it."
+                      },
+                      "stdout": {
+                        "type": "string"
+                      },
+                      "stderr": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean",
+                        "description": "Whether stdout or stderr was cut to fit the response."
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "runId": {
+                        "type": "string",
+                        "description": "The `shell_usage` record of this run."
+                      }
+                    },
+                    "required": [
+                      "exitCode",
+                      "stdout",
+                      "stderr",
+                      "truncated",
+                      "durationMs",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell_usage",
+                  "title": "Measure Shell Use",
+                  "description": "Summarize how the `shell` tool has been used compared with direct tool calls: runs, failures, durations, the tool data scripts read against the output they returned, which tools scripts used, recent failures, the result sizes of direct read-only tool calls, and the size of the served tool list against the shell tool's own definition. Use it to judge whether the shell saves context.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "days": {
+                        "default": 14,
+                        "description": "How many days back to summarize.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "since": {
+                        "type": "string"
+                      },
+                      "shell": {
+                        "type": "object",
+                        "properties": {
+                          "runs": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "sessions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "succeeded": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "interrupted": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs whose request went away before they finished."
+                          },
+                          "limited": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs stopped by the timeout or another sandbox limit."
+                          },
+                          "truncated": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianDurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "p90DurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "toolCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of tool results the scripts read, as the compact JSON a direct\ncall returns."
+                          },
+                          "returnedBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes the runs returned (stdout plus stderr after truncation)."
+                          },
+                          "reduction": {
+                            "description": "`1 - returned / tool`, when any tool data was read.",
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "calls",
+                                "bytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "recentFailures": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "type": "string"
+                                },
+                                "runId": {
+                                  "type": "string"
+                                },
+                                "exitCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "script": {
+                                  "type": "string",
+                                  "description": "The start of the script."
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "runId",
+                                "exitCode",
+                                "error",
+                                "script"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "runs",
+                          "sessions",
+                          "succeeded",
+                          "failed",
+                          "interrupted",
+                          "limited",
+                          "truncated",
+                          "medianDurationMs",
+                          "p90DurationMs",
+                          "toolCalls",
+                          "toolBytes",
+                          "returnedBytes",
+                          "reduction",
+                          "byTool",
+                          "recentFailures"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "direct": {
+                        "type": "object",
+                        "properties": {
+                          "calls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Recorded calls of every tool except `shell` and `shell_usage` in the\nwindow (activity keeps the newest 2,000 calls)."
+                          },
+                          "measured": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Calls that recorded their result size (calls before the measurement\nexisted did not)."
+                          },
+                          "resultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianResultBytes": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "shellCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellResultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "readOnly": {
+                                  "type": "boolean"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "resultBytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "medianResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "readOnly",
+                                "calls",
+                                "resultBytes",
+                                "medianResultBytes",
+                                "maxResultBytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "calls",
+                          "measured",
+                          "resultBytes",
+                          "medianResultBytes",
+                          "shellCalls",
+                          "shellResultBytes",
+                          "byTool"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "schemas": {
+                        "type": "object",
+                        "properties": {
+                          "servedTools": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolsListBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of every served Omni tool's `tools/list` entry, integrations\nexcluded."
+                          },
+                          "shellToolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellCommands": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "servedTools",
+                          "toolsListBytes",
+                          "shellToolBytes",
+                          "shellCommands"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "since",
+                      "shell",
+                      "direct",
+                      "schemas"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               ]
             },
@@ -129535,6 +130867,450 @@
                     "required": [
                       "id",
                       "sessionId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell",
+                  "title": "Run an Omni Shell Script",
+                  "description": "Run a bash script in a sandboxed virtual shell over Omni's data, then return only what the script prints. Every read-only Omni tool is a command that prints its JSON result (`email_search --from amazon --limit 5`, `parcels_get --tracking-number 1Z...`, or one JSON object argument); `tools` lists them and `<tool> --help` shows its flags. Reads that need no arguments are also files: `/omni/<tool>.json`. Filter with jq, grep, sed, awk, sort, uniq, head and wc so the output stays small; /tmp is scratch space. `cat /README.md` explains the layout. Nothing here changes Omni or sends anything. Pass the same `session` to keep /tmp, the working directory and variables between calls for 30 minutes.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "script": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "The bash script to run."
+                      },
+                      "session": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                        "description": "A name to keep /tmp, the working directory and variables between\ncalls; sessions end after 30 idle minutes. Omit for a fresh shell."
+                      }
+                    },
+                    "required": [
+                      "script"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "exitCode": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "The script's exit status; nonzero when its last command failed or a\nlimit stopped it."
+                      },
+                      "stdout": {
+                        "type": "string"
+                      },
+                      "stderr": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean",
+                        "description": "Whether stdout or stderr was cut to fit the response."
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "runId": {
+                        "type": "string",
+                        "description": "The `shell_usage` record of this run."
+                      }
+                    },
+                    "required": [
+                      "exitCode",
+                      "stdout",
+                      "stderr",
+                      "truncated",
+                      "durationMs",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "shell_usage",
+                  "title": "Measure Shell Use",
+                  "description": "Summarize how the `shell` tool has been used compared with direct tool calls: runs, failures, durations, the tool data scripts read against the output they returned, which tools scripts used, recent failures, the result sizes of direct read-only tool calls, and the size of the served tool list against the shell tool's own definition. Use it to judge whether the shell saves context.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "days": {
+                        "default": 14,
+                        "description": "How many days back to summarize.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "since": {
+                        "type": "string"
+                      },
+                      "shell": {
+                        "type": "object",
+                        "properties": {
+                          "runs": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "sessions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "succeeded": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "interrupted": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs whose request went away before they finished."
+                          },
+                          "limited": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Runs stopped by the timeout or another sandbox limit."
+                          },
+                          "truncated": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianDurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "p90DurationMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "toolCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of tool results the scripts read, as the compact JSON a direct\ncall returns."
+                          },
+                          "returnedBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes the runs returned (stdout plus stderr after truncation)."
+                          },
+                          "reduction": {
+                            "description": "`1 - returned / tool`, when any tool data was read.",
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "calls",
+                                "bytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "recentFailures": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "type": "string"
+                                },
+                                "runId": {
+                                  "type": "string"
+                                },
+                                "exitCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "script": {
+                                  "type": "string",
+                                  "description": "The start of the script."
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "runId",
+                                "exitCode",
+                                "error",
+                                "script"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "runs",
+                          "sessions",
+                          "succeeded",
+                          "failed",
+                          "interrupted",
+                          "limited",
+                          "truncated",
+                          "medianDurationMs",
+                          "p90DurationMs",
+                          "toolCalls",
+                          "toolBytes",
+                          "returnedBytes",
+                          "reduction",
+                          "byTool",
+                          "recentFailures"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "direct": {
+                        "type": "object",
+                        "properties": {
+                          "calls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Recorded calls of every tool except `shell` and `shell_usage` in the\nwindow (activity keeps the newest 2,000 calls)."
+                          },
+                          "measured": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Calls that recorded their result size (calls before the measurement\nexisted did not)."
+                          },
+                          "resultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "medianResultBytes": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "shellCalls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellResultBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "byTool": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "readOnly": {
+                                  "type": "boolean"
+                                },
+                                "calls": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "resultBytes": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "medianResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxResultBytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "tool",
+                                "readOnly",
+                                "calls",
+                                "resultBytes",
+                                "medianResultBytes",
+                                "maxResultBytes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "calls",
+                          "measured",
+                          "resultBytes",
+                          "medianResultBytes",
+                          "shellCalls",
+                          "shellResultBytes",
+                          "byTool"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "schemas": {
+                        "type": "object",
+                        "properties": {
+                          "servedTools": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "toolsListBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Bytes of every served Omni tool's `tools/list` entry, integrations\nexcluded."
+                          },
+                          "shellToolBytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "shellCommands": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "servedTools",
+                          "toolsListBytes",
+                          "shellToolBytes",
+                          "shellCommands"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "since",
+                      "shell",
+                      "direct",
+                      "schemas"
                     ],
                     "additionalProperties": false
                   }

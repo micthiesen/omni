@@ -20,9 +20,9 @@
 //! 2. Register [`McpPackage::email_handler`] first on the email dispatcher,
 //!    and set the `EventPublisher` port from [`McpPackage::event_publisher`].
 //! 3. Collect every other subsystem's `mcp_tools`, append
-//!    [`McpPackage::tools`], and call [`McpPackage::subsystem`]; it serves
-//!    them in [`tools::TOOL_ORDER`] and fails when the set differs from that
-//!    list. The returned subsystem carries the routes, tasks, entities,
+//!    [`McpPackage::tools`], and call [`McpPackage::subsystem`]; it adds the
+//!    `shell` tools over them ([`tools::shell`]), serves them in
+//!    [`tools::TOOL_ORDER`] and fails when the set differs from that list. The returned subsystem carries the routes, tasks, entities,
 //!    boot steps and delivery worker; its `mcp_tools` is empty because the
 //!    gateway already serves every tool.
 
@@ -82,6 +82,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<EventDelivery>(),
         EntityDescriptor::of::<EventRequest>(),
         EntityDescriptor::of::<ClaudeSessionWatch>(),
+        EntityDescriptor::of::<tools::shell::ShellRunData>(),
     ];
     entities.extend(gateway::model::entities());
     entities
@@ -336,9 +337,19 @@ impl McpPackage {
         Ok(tools)
     }
 
-    /// The subsystem serving `all_tools` (every package's, this one's included).
-    pub fn subsystem(self, all_tools: Vec<McpTool>) -> Result<Subsystem, McpSetupError> {
+    /// The subsystem serving `all_tools` (every package's, this one's
+    /// included) plus `shell` and `shell_usage` over them.
+    pub fn subsystem(self, mut all_tools: Vec<McpTool>) -> Result<Subsystem, McpSetupError> {
         let ctx = &self.ctx;
+        let shell = tools::shell::shell_tools(
+            &all_tools,
+            tools::shell::ShellDeps {
+                store: ctx.store.clone(),
+                clock: ctx.clock.clone(),
+                tracker: ctx.tracker.clone(),
+            },
+        )?;
+        all_tools.extend(shell);
         let protocol = McpProtocol::gateway(
             all_tools,
             self.recorder.clone(),

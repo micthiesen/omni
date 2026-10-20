@@ -68,7 +68,7 @@ impl ToolHandler for Unwired {
 
 /// Every package's tool definitions, in serving order ([`TOOL_ORDER`]).
 pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
-    let packages: [&[&'static dyn ToolDefinition]; 17] = [
+    let packages: [&[&'static dyn ToolDefinition]; 18] = [
         &omni_reminders::mcp::defs::TOOLS,
         &omni_mcp::tools::system::defs::TOOLS,
         &omni_email::mcp_tools::defs::TOOLS,
@@ -86,6 +86,7 @@ pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
         &omni_personal::mcp::owner_notify::defs::TOOLS,
         &omni_stylist::mcp::defs::TOOLS,
         &omni_mcp::tools::claude_sessions::defs::TOOLS,
+        &omni_mcp::tools::shell::defs::TOOLS,
     ];
     let mut by_name: HashMap<&str, &'static dyn ToolDefinition> = HashMap::new();
     for def in packages.into_iter().flatten() {
@@ -131,6 +132,19 @@ pub fn other_tools(own: &[McpTool]) -> Vec<McpTool> {
         .into_iter()
         .filter(|def| !names.contains(def.name()))
         .map(|def| raw_tool(def, Arc::new(Unwired(def.name().to_owned()))).unwrap())
+        .collect()
+}
+
+/// What `McpPackage::subsystem` takes besides `own`: [`other_tools`]
+/// without `shell` and `shell_usage`, which the subsystem adds itself.
+pub fn package_tools(own: &[McpTool]) -> Vec<McpTool> {
+    let shell: HashSet<&str> = omni_mcp::tools::shell::defs::TOOLS
+        .iter()
+        .map(|def| def.name())
+        .collect();
+    other_tools(own)
+        .into_iter()
+        .filter(|tool| !shell.contains(tool.meta.name.as_str()))
         .collect()
 }
 

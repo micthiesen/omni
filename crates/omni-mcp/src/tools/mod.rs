@@ -2,6 +2,7 @@
 
 pub mod claude_sessions;
 pub mod events;
+pub mod shell;
 pub mod system;
 
 use futures::future::BoxFuture;
@@ -16,7 +17,7 @@ use crate::json::order_by_schema;
 
 /// Every tool's name in `tools/list` order. The served set must equal this
 /// list; each tool's contract lives in its package's `defs` module.
-pub const TOOL_ORDER: [&str; 119] = [
+pub const TOOL_ORDER: [&str; 121] = [
     "list_reminder_lists",
     "get_reminder_list",
     "update_reminder_list",
@@ -136,6 +137,8 @@ pub const TOOL_ORDER: [&str; 119] = [
     "claude_session_start",
     "claude_session_send",
     "claude_session_stop",
+    "shell",
+    "shell_usage",
 ];
 
 /// A run with its log lines and dropped-line count.

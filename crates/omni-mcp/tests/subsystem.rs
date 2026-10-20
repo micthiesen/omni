@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::{other_tools, send};
+use common::{package_tools, send};
 use futures::future::BoxFuture;
 use omni_config::Config;
 use omni_core::email::EmailOrigin;
@@ -84,7 +84,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
     assert_eq!(own.len(), 15);
     assert_eq!(package.email_handler().name(), "McpEvents");
     let (_, token) = package.access().create_client("test").await.unwrap();
-    let mut all = other_tools(&own);
+    let mut all = package_tools(&own);
     all.extend(own);
     let mut subsystem = package.subsystem(all).unwrap();
     let names: Vec<&str> = subsystem.tasks.iter().map(|t| t.name()).collect();
@@ -97,7 +97,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
             "McpGatewayEventFeeds"
         ]
     );
-    assert_eq!(subsystem.entities.len(), 16);
+    assert_eq!(subsystem.entities.len(), 17);
     assert_eq!(subsystem.services.len(), 2);
     assert!(subsystem.mcp_tools.is_empty());
     let steps: Vec<_> = subsystem
@@ -121,7 +121,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
     app.ctx.ports.set_archive_echo(Arc::new(NoMoves)).unwrap();
     let rebuilt = McpPackage::new(&ctx).unwrap();
     let own = rebuilt.tools().unwrap();
-    let mut all = other_tools(&own);
+    let mut all = package_tools(&own);
     all.extend(own);
     let mut rebuilt = rebuilt.subsystem(all).unwrap();
     (rebuilt.boot_steps.remove(2).run)(ctx.clone())
@@ -203,7 +203,7 @@ async fn boot_drops_subscriptions_not_owned_by_a_gateway_principal() {
     assert_eq!(stored(ctx.clone()).await.len(), 3);
     let package = McpPackage::new(&ctx).unwrap();
     let own = package.tools().unwrap();
-    let mut all = other_tools(&own);
+    let mut all = package_tools(&own);
     all.extend(own);
     let mut subsystem = package.subsystem(all).unwrap();
     assert_eq!(stored(ctx.clone()).await.len(), 3);

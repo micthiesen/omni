@@ -39,6 +39,8 @@ allow = [
   "MIT-0",
   # Public-domain-equivalent BSD (quoted_printable, via lettre).
   "0BSD",
+  # The permissive BSD-style libbzip2 license (libbz2-rs-sys, via bashkit's bzip2 builtin).
+  "bzip2-1.0.6",
 ]
 confidence-threshold = 0.9
 
