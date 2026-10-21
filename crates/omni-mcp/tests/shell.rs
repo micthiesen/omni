@@ -227,7 +227,10 @@ async fn omni_is_read_only_and_tmp_is_scratch() {
     assert_eq!(stdout(&out), "omni=1\n2\n/tmp\n");
 }
 
-#[tokio::test(start_paused = true)]
+// Real time: the store runs on its own thread, so while a call waits on it a
+// paused runtime looks idle and auto-advances the test clock to the next
+// timer, sometimes past `SESSION_IDLE_MS`, which evicts the session.
+#[tokio::test]
 async fn a_session_keeps_files_and_variables_and_a_fresh_shell_does_not() {
     let clock = clock();
     let h = harness(&clock).await;
