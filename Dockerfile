@@ -148,7 +148,7 @@ RUN find /dist -type f \
 
 # Stdio MCP servers the gateway can run (gateway/bundled.rs), installed from the
 # committed lockfile: exact versions, integrity hashes, no install scripts.
-FROM node:24.19.0-slim AS mcp-stdio
+FROM node:24.22.1-slim AS mcp-stdio
 WORKDIR /opt/mcp-stdio
 COPY deploy/mcp-stdio/package.json deploy/mcp-stdio/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
@@ -157,7 +157,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 # --- Runtime ---
 # Node runs yt-dlp's JavaScript (`--js-runtimes node`) and the bundled stdio
 # MCP servers.
-FROM node:24.19.0-slim AS runtime
+FROM node:24.22.1-slim AS runtime
 
 # ffmpeg: PressPods audio pipeline (arnndn denoise, loudnorm, intro concat) and
 #   livestream audio capture

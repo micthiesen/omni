@@ -194,7 +194,7 @@ when a later one differs.
 - `web -> web-dist`: `trunk build --release`, then Brotli and gzip copies;
 - `mcp-stdio`: `npm ci --ignore-scripts` of `deploy/mcp-stdio/package-lock.json`,
   the stdio MCP servers the gateway bundles (copied to `/app/mcp-stdio`);
-- `runtime` on `node:24.19.0-slim` (Node stays for `yt-dlp --js-runtimes node`
+- `runtime` on `node:24.22.1-slim` (Node stays for `yt-dlp --js-runtimes node`
   and the bundled stdio MCP servers),
   with ffmpeg, CUPS/brlaser, ghostscript, poppler and tini. Layers run from least
   to most frequently changed so a code change pushes only the last layers.
