@@ -46,6 +46,14 @@ unrelated changes, commit the scoped result, pull with rebase if the remote move
 and push. A push deploys production automatically. Do not ask for another
 confirmation already supplied by this rule or the current request.
 
+ChatGPT keeps its own copy of the gateway's tools and events and never
+re-reads it after a deploy. When a pushed change adds, removes or changes MCP
+tools or events (a `tools-list.json` or event catalog diff, or an integration's
+tool set), wait for the deploy to go live and run
+`python3 -I scripts/chatgpt/refresh-connector.py --expect <new names> --wait 20`
+from the Mac (it uses the Codex ChatGPT login). Report its diff, and tell
+Michael to start a new ChatGPT conversation; existing ones keep their old tools.
+
 Production runs as the `omni` container on `boris` (`10.10.1.100`) from
 `/home/michael/compose`. Persistent data is under
 `/home/michael/compose/volumes/omni`. The LAN UI is

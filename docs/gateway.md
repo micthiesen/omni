@@ -273,6 +273,14 @@ a client that misses one simply lists again.
   Public DNS for `*.syas.ca` already points at the proxy and the `*.syas.ca`
   certificate covers the name.
 
+- ChatGPT: a custom connection stores the tool list and event catalog when it
+  is created and changes them only on "Refresh tools" (Plugins, the
+  connection, Manage); it ignores `tools/list_changed`, and existing
+  conversations keep their old tools. `scripts/chatgpt/refresh-connector.py`
+  presses that button through ChatGPT's internal web API with the Codex
+  ChatGPT login and prints what changed; run it after a deploy that changes
+  tools or events.
+
 ## Switchover (completed 2026-10-19)
 
 Harnesses used to reach Omni through a separate tool gateway and the
