@@ -164,13 +164,17 @@ FROM node:24.19.0-slim AS runtime
 # CUPS + brlaser + ghostscript + pdfinfo: bounded, model-aware PDF conversion for
 #   Brother printing. The compatible HL-L2360D profile is physically verified on
 #   this HL-L2370DW, including duplex.
-# ca-certificates: rustls verifies TLS against the system trust store.
+# ca-certificates: rustls verifies TLS against the system trust store. The
+#   version floor is the first bookworm release that distrusts the eMudhra
+#   intermediates whose keys leaked in October 2026.
 # tini: PID 1 that forwards signals and reaps orphaned subprocesses.
 # The apt cache mounts keep package lists and archives out of the image.
+# `apt-get upgrade` applies Debian security fixes newer than the base image.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     cups \
@@ -179,6 +183,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     poppler-utils \
     printer-driver-brlaser \
     tini \
+  && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
   && mkdir -p /usr/share/omni-printing /tmp/brlaser-ppd \
   && ppdc -d /tmp/brlaser-ppd /usr/share/cups/drv/brlaser.drv \
   && cp /tmp/brlaser-ppd/brl2360d.ppd /usr/share/omni-printing/brother-hll2370dw.ppd \
