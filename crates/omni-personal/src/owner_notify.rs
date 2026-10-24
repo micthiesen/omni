@@ -25,9 +25,9 @@ const LOG: &str = "OwnerNotify";
 /// Reservations (and so key dedup) last 30 days.
 pub const RESERVATION_TTL_MS: i64 = 30 * DAY_MS;
 /// At most this many notifications per rolling hour.
-pub const HOURLY_LIMIT: usize = 4;
+pub const HOURLY_LIMIT: usize = 10;
 /// At most this many notifications per rolling 24 hours.
-pub const DAILY_LIMIT: usize = 12;
+pub const DAILY_LIMIT: usize = 40;
 /// Pushover's message limit, in characters.
 pub const MAX_MESSAGE_CHARS: usize = 1024;
 /// Pushover's supplementary URL limit, in characters.
@@ -541,15 +541,18 @@ mod tests {
     fn the_limit_opens_when_enough_reservations_age_out() {
         let now = 10 * DAY_MS;
         assert_eq!(next_allowed(&[], now), None);
-        let three = [now - 10, now - 20, now - 30];
-        assert_eq!(next_allowed(&three, now), None);
-        let four = [now - 10, now - 20, now - 30, now - 40];
-        assert_eq!(next_allowed(&four, now), Some(now - 40 + HOUR_MS));
-        let day: Vec<i64> = (1..=12).map(|i| now - i * 2 * HOUR_MS + HOUR_MS).collect();
-        // Twelve in the day, at most one in the last hour.
+        let hourly = HOURLY_LIMIT as i64;
+        let under: Vec<i64> = (1..hourly).map(|i| now - i * 10).collect();
+        assert_eq!(next_allowed(&under, now), None);
+        let at: Vec<i64> = (1..=hourly).map(|i| now - i * 10).collect();
+        assert_eq!(next_allowed(&at, now), Some(now - hourly * 10 + HOUR_MS));
+        // A full day spread so that no hour reaches the hourly limit.
+        let daily = DAILY_LIMIT as i64;
+        let spacing = DAY_MS / (daily + 1);
+        let day: Vec<i64> = (1..=daily).map(|i| now - i * spacing).collect();
         assert_eq!(
             next_allowed(&day, now),
-            Some(now - 12 * 2 * HOUR_MS + HOUR_MS + DAY_MS)
+            Some(now - daily * spacing + DAY_MS)
         );
     }
 

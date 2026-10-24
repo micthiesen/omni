@@ -20,7 +20,7 @@ const POLICY: Policy = Policy {
     side_effects: &[
         "Sends one push notification to Michael's phone (Omni app, or Pushover when the app is not set up)",
     ],
-    cost: "No monetary cost; one push. Shares a limit of 4 per hour and 12 per day",
+    cost: "No monetary cost; one push. Shares a limit of 10 per hour and 40 per day",
     recommended: ApprovalPolicy::Allow,
 };
 
@@ -28,7 +28,7 @@ pub static NOTIFY_OWNER_BLOCKED: ToolDef<NotifyOwnerBlockedInput, NotifyOwnerOut
     ToolInfo {
         name: "notify_owner_blocked",
         title: "Notify Michael of a Blocker",
-        description: "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 4 per hour and 12 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
+        description: "Send Michael a push notification when your work is blocked on something only he can do and you cannot reasonably continue without it: an approval, a sign-in or two-factor prompt, a credential he must enter himself, a payment, a physical action, or a product decision with no safe default. Use it rarely. First finish all independent work and try every fix you can make yourself; a question you can answer with a sensible default is not a blocker. He is usually away from his computer when this matters, so prefer asks he can clear from a phone and say plainly whether a computer is needed. Give the exact steps, link the place to act when there is one, send one notification per blocker, then poll for the result instead of notifying again. Never use it for progress updates, FYI, or routine completion, and never include secrets, tokens or codes. Shares a limit of 10 per hour and 40 per day with notify_owner_requested; repeating a call with the same idempotencyKey returns the first result without sending again.",
         annotations: ANNOTATIONS,
         policy: POLICY,
     },
@@ -38,7 +38,7 @@ pub static NOTIFY_OWNER_REQUESTED: ToolDef<NotifyOwnerRequestedInput, NotifyOwne
     ToolDef::new(ToolInfo {
         name: "notify_owner_requested",
         title: "Notify Michael as Requested",
-        description: "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 4 per hour and 12 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
+        description: "Send Michael a push notification because he explicitly asked to be told about something, such as \"ping me when it's done\" or \"let me know if the deploy fails\". Put his request, quoted or closely paraphrased, in request. Do not use it for unrequested progress, FYI or completion notices; if you are stuck on something only he can do, use notify_owner_blocked instead. Keep it short: the outcome, and anything he needs to know or do next. Never include secrets. Shares a limit of 10 per hour and 40 per day with notify_owner_blocked; repeating a call with the same idempotencyKey returns the first result without sending again.",
         annotations: ANNOTATIONS,
         policy: POLICY,
     });

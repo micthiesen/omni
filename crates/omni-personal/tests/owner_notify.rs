@@ -12,7 +12,7 @@ use omni_http::{HttpClient, HttpConfig, SideEffectMode};
 use omni_mcp_kit::registry::standalone_context;
 use omni_mcp_kit::{McpTool, ToolOutput, ToolPhase};
 use omni_personal::mcp::owner_notify::tools;
-use omni_personal::owner_notify::{OwnerNotification, OwnerNotifier};
+use omni_personal::owner_notify::{DAILY_LIMIT, HOURLY_LIMIT, OwnerNotification, OwnerNotifier};
 use omni_store::EntityOps;
 use omni_testkit::{TEST_EPOCH_MS, TestStore, test_clock};
 use serde_json::{Value, json};
@@ -134,8 +134,8 @@ async fn a_blocker_is_sent_once_with_numbered_steps_and_a_link() {
     assert_eq!(first["status"], "recorded");
     assert_eq!(first["replayed"], false);
     assert_eq!(first["kind"], "blocked");
-    assert_eq!(first["remainingThisHour"], 3);
-    assert_eq!(first["remainingToday"], 11);
+    assert_eq!(first["remainingThisHour"], HOURLY_LIMIT - 1);
+    assert_eq!(first["remainingToday"], DAILY_LIMIT - 1);
 
     let pushes = h.pushover.recorded();
     assert_eq!(pushes.len(), 1);
@@ -220,7 +220,7 @@ async fn an_uncertain_push_is_reported_and_never_retried() {
     assert_eq!(route.seen.lock().unwrap().len(), 1, "never resent");
     assert!(h.pushover.recorded().is_empty(), "no fallback either");
     // The uncertain reservation still counts against the limit.
-    assert_eq!(again["remainingThisHour"], 3);
+    assert_eq!(again["remainingThisHour"], HOURLY_LIMIT - 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -252,8 +252,10 @@ async fn reusing_a_key_for_different_content_is_refused() {
 
 #[tokio::test(start_paused = true)]
 async fn the_hourly_and_daily_limits_are_shared_across_both_tools() {
+    const _: () =
+        assert!(HOURLY_LIMIT.is_multiple_of(2) && DAILY_LIMIT.is_multiple_of(HOURLY_LIMIT));
     let h = harness(Some("general"), None).await;
-    for i in 0..2 {
+    for i in 0..HOURLY_LIMIT / 2 {
         h.call(
             "notify_owner_blocked",
             blocked(&format!("limit-blocked-{i:05}")),
@@ -268,13 +270,13 @@ async fn the_hourly_and_daily_limits_are_shared_across_both_tools() {
         .unwrap();
     }
     let (phase, message) = h
-        .call("notify_owner_requested", requested("limit-request-00009"))
+        .call("notify_owner_requested", requested("limit-request-99999"))
         .await
         .unwrap_err();
     assert_eq!(phase, ToolPhase::Execute);
     assert!(message.contains("limit reached"), "{message}");
     assert!(message.contains("2026-01-01T01:00:00.000Z"), "{message}");
-    assert_eq!(h.pushover.recorded().len(), 4);
+    assert_eq!(h.pushover.recorded().len(), HOURLY_LIMIT);
     // A replay of an earlier key still answers while limited.
     let replay = h
         .call("notify_owner_blocked", blocked("limit-blocked-00000"))
@@ -283,10 +285,11 @@ async fn the_hourly_and_daily_limits_are_shared_across_both_tools() {
     assert_eq!(replay["replayed"], true);
     assert_eq!(replay["remainingThisHour"], 0);
 
-    // Hour by hour, the day fills at twelve.
-    for hour in 1..=2 {
+    // Hour by hour, the day fills at the daily limit.
+    let full_hours = (DAILY_LIMIT / HOURLY_LIMIT) as i64;
+    for hour in 1..full_hours {
         h.clock.set(TEST_EPOCH_MS + hour * HOUR_MS);
-        for i in 0..4 {
+        for i in 0..HOURLY_LIMIT {
             h.call(
                 "notify_owner_requested",
                 requested(&format!("limit-h{hour}-{i:011}")),
@@ -295,14 +298,14 @@ async fn the_hourly_and_daily_limits_are_shared_across_both_tools() {
             .unwrap();
         }
     }
-    h.clock.set(TEST_EPOCH_MS + 3 * HOUR_MS);
+    h.clock.set(TEST_EPOCH_MS + full_hours * HOUR_MS);
     let (_, message) = h
         .call("notify_owner_requested", requested("limit-day-00000001"))
         .await
         .unwrap_err();
     assert!(message.contains("limit reached"), "{message}");
     assert!(message.contains("2026-01-02T00:00:00.000Z"), "{message}");
-    assert_eq!(h.pushover.recorded().len(), 12);
+    assert_eq!(h.pushover.recorded().len(), DAILY_LIMIT);
 
     h.clock.set(TEST_EPOCH_MS + 24 * HOUR_MS);
     let out = h

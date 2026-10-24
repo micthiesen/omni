@@ -398,7 +398,7 @@ before the push and holds only a digest of the content, never the text. A
 repeated key returns the first outcome without resending; reusing a key for
 different content is refused; an uncertain push is reported as `uncertain` and
 never resent; a definite rejection releases the key. Both tools share a durable
-limit of 4 per rolling hour and 12 per rolling day. Their recommended policy is
+limit of 10 per rolling hour and 40 per rolling day. Their recommended policy is
 `allow`, unlike other external communication, because an approval prompt would
 defeat reaching Michael while he is away; the limit and the narrow schemas
 bound misuse instead.
