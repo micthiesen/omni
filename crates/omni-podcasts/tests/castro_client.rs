@@ -502,6 +502,78 @@ async fn returns_only_is_new_episodes_and_clears_them_without_dequeueing() {
     assert_eq!(last[0].action_type, CastroActionType::ClearEpisodeNew);
 }
 
+#[tokio::test]
+async fn an_inbox_episode_castro_no_longer_serves_does_not_fail_the_inbox() {
+    let api = Arc::new(FakeCastro {
+        subscriptions: vec![subscription()],
+        podcast_state: Some(CastroPodcastState {
+            public_id: PODCAST_ID.into(),
+            episode_states: vec![
+                state(EPISODE_ID, true, None, 0.0),
+                state("removed-episode", true, None, 0.0),
+            ],
+        }),
+        episodes: HashMap::from([(
+            EPISODE_ID.to_owned(),
+            episode(EPISODE_ID, "rss-guid", "Kept Episode"),
+        )]),
+        episode_statuses: HashMap::from([("removed-episode".to_owned(), 404)]),
+        ..FakeCastro::standard()
+    });
+    let inbox = client(api).fetch_inbox().await.unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].client_episode_id, EPISODE_ID);
+}
+
+#[tokio::test]
+async fn other_inbox_episode_failures_still_fail_the_inbox() {
+    let api = Arc::new(FakeCastro {
+        subscriptions: vec![subscription()],
+        podcast_state: Some(CastroPodcastState {
+            public_id: PODCAST_ID.into(),
+            episode_states: vec![state("broken-episode", true, None, 0.0)],
+        }),
+        episode_statuses: HashMap::from([("broken-episode".to_owned(), 500)]),
+        ..FakeCastro::standard()
+    });
+    assert!(client(api).fetch_inbox().await.is_err());
+}
+
+#[tokio::test]
+async fn a_removed_queue_episode_is_hidden_and_does_not_block_dequeueing_others() {
+    let api = Arc::new(FakeCastro {
+        queue_items: vec![
+            CastroQueueItem {
+                episode_id: "removed-episode".into(),
+                podcast_id: PODCAST_ID.into(),
+                fractional_position: "a0".into(),
+            },
+            CastroQueueItem {
+                episode_id: EPISODE_ID.into(),
+                podcast_id: PODCAST_ID.into(),
+                fractional_position: "a1".into(),
+            },
+        ],
+        episodes: HashMap::from([(
+            EPISODE_ID.to_owned(),
+            episode(EPISODE_ID, "rss-guid", "Kept Episode"),
+        )]),
+        episode_statuses: HashMap::from([("removed-episode".to_owned(), 404)]),
+        ..FakeCastro::standard()
+    });
+    let client = client(api.clone());
+    let queue = client.fetch_queue().await.unwrap();
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].episode_guid.as_deref(), Some("rss-guid"));
+    assert_eq!(
+        client.dequeue_episode("rss-guid").await,
+        PodcastWriteResult::Removed
+    );
+    let last = api.posted().pop().unwrap();
+    assert_eq!(last[0].episode_id, EPISODE_ID);
+    assert_eq!(last[0].action_type, CastroActionType::EpisodeDequeued);
+}
+
 const EP_PLAYED: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const EP_PARTIAL: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const EP_OLD: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";

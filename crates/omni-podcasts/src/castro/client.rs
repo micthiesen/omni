@@ -126,6 +126,26 @@ impl CastroClient {
             .await?)
     }
 
+    /// The episode, or `None` when Castro no longer serves it (HTTP 404). A
+    /// removed episode can linger in the inbox or queue state; one such id
+    /// must not fail the whole listing.
+    async fn fetch_live_episode(
+        &self,
+        public_id: &str,
+    ) -> Result<Option<CastroEpisode>, ClientError> {
+        match self.fetch_episode(public_id).await {
+            Ok(episode) => Ok(Some(episode)),
+            Err(ClientError::Request(CastroRequestError {
+                cause: CastroFailure::Status { status: 404, .. },
+                ..
+            })) => {
+                tracing::debug!(target: LOG, "Skipping removed Castro episode {public_id}");
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     async fn search_podcast_metadata(
         &self,
         query: &str,
@@ -269,22 +289,11 @@ impl CastroClient {
                 .into_iter()
                 .map(|(podcast, state, listened_at)| {
                     Box::pin(async move {
-                        let episode = match self.fetch_episode(&state.episode_id).await {
-                            Ok(episode) => episode,
-                            // Castro no longer serves an episode it removed; drop
-                            // that play instead of losing the whole history.
-                            Err(ClientError::Request(CastroRequestError {
-                                cause: CastroFailure::Status { status: 404, .. },
-                                ..
-                            })) => {
-                                tracing::debug!(
-                                    target: LOG,
-                                    "Skipping removed Castro episode {}",
-                                    state.episode_id
-                                );
-                                return Ok::<_, ClientError>(None);
-                            }
-                            Err(error) => return Err(error),
+                        // Drop a play of a removed episode instead of losing the
+                        // whole history.
+                        let Some(episode) = self.fetch_live_episode(&state.episode_id).await?
+                        else {
+                            return Ok::<_, ClientError>(None);
                         };
                         let completion = if state.is_played {
                             Some(1.0)
@@ -319,28 +328,29 @@ impl CastroClient {
     async fn queue_impl(&self) -> Result<Vec<QueuedEpisode>, ClientError> {
         let mut items = self.api.fetch_queue().await?.queue_items;
         items.sort_by(|a, b| a.fractional_position.cmp(&b.fractional_position));
-        ordered(
+        let queued: Vec<Option<QueuedEpisode>> = ordered(
             items
                 .iter()
                 .map(|item| {
                     Box::pin(async move {
                         let (podcast, episode) = futures::try_join!(
                             self.fetch_podcast(&item.podcast_id),
-                            self.fetch_episode(&item.episode_id)
+                            self.fetch_live_episode(&item.episode_id)
                         )?;
-                        Ok::<_, ClientError>(QueuedEpisode {
+                        Ok::<_, ClientError>(episode.map(|episode| QueuedEpisode {
                             show_title: podcast.title.clone(),
                             episode_title: episode.title.clone(),
                             episode_guid: Some(guid_or_public_id(&episode)),
                             feed_url: None,
                             description: Some(episode.description.clone()),
                             added_at: None,
-                        })
+                        }))
                     }) as BoxFuture<'_, _>
                 })
                 .collect(),
         )
-        .await
+        .await?;
+        Ok(queued.into_iter().flatten().collect())
     }
 
     async fn inbox_impl(&self) -> Result<Vec<InboxEpisode>, ClientError> {
@@ -370,27 +380,28 @@ impl CastroClient {
                     .map(move |s| (podcast_id.clone(), s.episode_id.clone()))
             })
             .collect();
-        ordered(
+        let inbox: Vec<Option<InboxEpisode>> = ordered(
             new_episodes
                 .iter()
                 .map(|(podcast_id, episode_id)| {
                     Box::pin(async move {
                         let (podcast, episode) = futures::try_join!(
                             self.fetch_podcast(podcast_id),
-                            self.fetch_episode(episode_id)
+                            self.fetch_live_episode(episode_id)
                         )?;
-                        Ok::<_, ClientError>(InboxEpisode {
+                        Ok::<_, ClientError>(episode.map(|episode| InboxEpisode {
                             client_episode_id: episode.public_id.clone(),
                             show_title: podcast.title.clone(),
                             episode_title: episode.title.clone(),
                             episode_guid: Some(guid_or_public_id(&episode)),
                             description: Some(episode.description.clone()),
-                        })
+                        }))
                     }) as BoxFuture<'_, _>
                 })
                 .collect(),
         )
-        .await
+        .await?;
+        Ok(inbox.into_iter().flatten().collect())
     }
 
     async fn enqueue_impl(
@@ -489,22 +500,24 @@ impl CastroClient {
 
     async fn dequeue_impl(&self, episode_guid: &str) -> Result<PodcastWriteResult, ClientError> {
         let queue = self.api.fetch_queue().await?;
-        let episodes: Vec<(&CastroQueueItem, CastroEpisode)> = ordered(
+        let episodes: Vec<(&CastroQueueItem, Option<CastroEpisode>)> = ordered(
             queue
                 .queue_items
                 .iter()
                 .map(|item| {
                     Box::pin(async move {
-                        Ok::<_, ClientError>((item, self.fetch_episode(&item.episode_id).await?))
+                        let episode = self.fetch_live_episode(&item.episode_id).await?;
+                        Ok::<_, ClientError>((item, episode))
                     }) as BoxFuture<'_, _>
                 })
                 .collect(),
         )
         .await?;
-        let Some((item, _)) = episodes
-            .iter()
-            .find(|(_, episode)| guid_or_public_id(episode) == episode_guid)
-        else {
+        let Some((item, _)) = episodes.iter().find(|(_, episode)| {
+            episode
+                .as_ref()
+                .is_some_and(|episode| guid_or_public_id(episode) == episode_guid)
+        }) else {
             return Ok(PodcastWriteResult::NotFound);
         };
         let now = self.clock.now_ms();
