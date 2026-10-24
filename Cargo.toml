@@ -61,7 +61,7 @@ omni-stylist = { path = "crates/omni-stylist" }
 # Exact pins (see AGENTS.md, Rust conventions). Every version was published on or
 # before 2026-09-25 and resolves together (checked with cargo generate-lockfile).
 ego-tree = "=0.11.0"  # scraper DOM traversal for html_to_text
-tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "process", "fs", "net", "io-util"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "process", "fs", "net", "io-util"] }
 tokio-util = { version = "=0.7.19", features = ["rt", "io"] }
 tokio-stream = { version = "=0.1.19", features = ["sync"] }
 futures = "=0.3.34"
