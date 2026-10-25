@@ -1,6 +1,11 @@
 //! The monochrome LAN printer: status, and PDF
 //! printing through `pdfinfo` → `cupsfilter` → `rastertobrlaser` → IPP.
 //!
+//! The PDF comes from exactly one source: a public HTTPS URL that Omni
+//! downloads, or bounded inline base64 bytes for a private document that has
+//! no public URL. Both sources pass the same PDF validation and share one
+//! duplicate fingerprint, which covers only the bytes and print settings.
+//!
 //! Duplicate suppression: an exact document + configuration accepted within
 //! five minutes is refused unless `allowDuplicate`, using an in-memory map,
 //! an in-flight set and the durable `printer-accepted-job` row written right
@@ -12,6 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use omni_core::clock::SharedClock;
@@ -29,6 +36,10 @@ use super::pipeline::{DownloadedFile, PdfDownloader, PrintProcesses};
 
 pub const PRINTER_DOWNLOAD_USER_AGENT: &str = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 pub const MAX_PDF_BYTES: usize = 20 * 1024 * 1024;
+/// Decoded inline PDF limit; its base64 form must fit the 4 MiB MCP request.
+pub const MAX_INLINE_PDF_BYTES: usize = 3_000_000;
+/// Base64 length of `MAX_INLINE_PDF_BYTES`.
+pub const MAX_INLINE_PDF_BASE64_CHARS: usize = 4_000_000;
 pub const MAX_PRINT_DATA_BYTES: usize = 256 * 1024 * 1024;
 const MAX_PAGES: u32 = 25;
 const DUPLICATE_WINDOW_MS: i64 = 5 * 60 * 1000;
@@ -118,10 +129,12 @@ impl PrintSides {
     }
 }
 
-/// A print request (the MCP tool's input after defaults).
+/// A print request (the MCP tool's input after defaults). Exactly one of
+/// `url` and `pdf_base64` names the document.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PrintPdfInput {
-    pub url: String,
+    pub url: Option<String>,
+    pub pdf_base64: Option<String>,
     pub paper: Option<PrintPaper>,
     pub sides: Option<PrintSides>,
     pub copies: Option<f64>,
@@ -318,6 +331,44 @@ fn normalize_input(input: &PrintPdfInput) -> Result<NormalizedInput, PrinterErro
     })
 }
 
+/// Where the PDF comes from, resolved from the request's two source fields.
+enum PdfSource<'a> {
+    Url(Url),
+    Inline(&'a str),
+}
+
+fn pdf_source(input: &PrintPdfInput) -> Result<PdfSource<'_>, PrinterError> {
+    match (input.url.as_deref(), input.pdf_base64.as_deref()) {
+        (Some(url), None) => assert_https_document_url(url, "Document URL")
+            .map(PdfSource::Url)
+            .map_err(|e| failure("validate document URL", e)),
+        (None, Some(data)) => Ok(PdfSource::Inline(data)),
+        _ => Err(failure(
+            "validate print request",
+            "Provide exactly one of url and pdfBase64",
+        )),
+    }
+}
+
+/// Decodes and checks inline bytes; errors never echo the input.
+fn decode_inline_pdf(data: &str) -> Result<Bytes, String> {
+    let too_large =
+        || format!("Inline PDF must be between 1 byte and {MAX_INLINE_PDF_BYTES} bytes");
+    if data.len() > MAX_INLINE_PDF_BASE64_CHARS {
+        return Err(too_large());
+    }
+    let body = STANDARD
+        .decode(data)
+        .map_err(|_| "pdfBase64 is not valid standard base64".to_owned())?;
+    if body.is_empty() || body.len() > MAX_INLINE_PDF_BYTES {
+        return Err(too_large());
+    }
+    if !body.starts_with(b"%PDF-") {
+        return Err("pdfBase64 does not contain a PDF".to_owned());
+    }
+    Ok(Bytes::from(body))
+}
+
 fn validate_pdf(download: &DownloadedFile) -> Result<Bytes, String> {
     let kind = download
         .content_type
@@ -487,19 +538,24 @@ impl PrinterService {
         Ok(())
     }
 
-    /// Downloads, validates, converts and submits one PDF.
+    /// Downloads or decodes, validates, converts and submits one PDF.
     pub async fn print_pdf(&self, input: &PrintPdfInput) -> Result<AcceptedPrintJob, PrinterError> {
         let printer = self.require_printer()?.clone();
         let options = normalize_input(input)?;
-        let url = assert_https_document_url(&input.url, "Document URL")
-            .map_err(|e| failure("validate document URL", e))?;
-        let download = self
-            .deps
-            .download
-            .download(&url)
-            .await
-            .map_err(|e| failure("download PDF", e))?;
-        let pdf = validate_pdf(&download).map_err(|e| failure("validate PDF", e))?;
+        let pdf = match pdf_source(input)? {
+            PdfSource::Url(url) => {
+                let download = self
+                    .deps
+                    .download
+                    .download(&url)
+                    .await
+                    .map_err(|e| failure("download PDF", e))?;
+                validate_pdf(&download).map_err(|e| failure("validate PDF", e))?
+            }
+            PdfSource::Inline(data) => {
+                decode_inline_pdf(data).map_err(|e| failure("validate PDF", e))?
+            }
+        };
         let key = duplicate_key(&pdf, &options);
         self.prune_duplicates().await?;
         if !input.allow_duplicate {

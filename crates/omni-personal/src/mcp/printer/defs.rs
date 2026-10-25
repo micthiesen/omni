@@ -30,7 +30,7 @@ pub static PRINT_DOCUMENT: ToolDef<PrintDocumentInput, PrintDocumentOutput> = To
     ToolInfo {
         name: "print_document",
         title: "Print PDF in Black and White",
-        description: "Print a public HTTPS PDF on Michael's Brother HL-L2370DW monochrome laser printer. Black-and-white only. Uses two-sided long-edge printing and Letter paper by default. Every call requires approval because it consumes paper and toner and physically exposes the document.",
+        description: "Print a PDF on Michael's Brother HL-L2370DW monochrome laser printer. Give exactly one source: url (a public HTTPS PDF Omni downloads) or pdfBase64 (the PDF's bytes as standard base64, at most 3,000,000 decoded bytes) for a private document with no public URL. Black-and-white only, at most 25 pages, no encrypted PDFs. Uses two-sided long-edge printing and Letter paper by default. The same PDF bytes and settings accepted within 5 minutes are refused unless allowDuplicate is true. Every call requires approval because it consumes paper and toner and physically exposes the document.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: false,
@@ -39,7 +39,7 @@ pub static PRINT_DOCUMENT: ToolDef<PrintDocumentInput, PrintDocumentOutput> = To
         },
         policy: Policy {
             side_effects: &[
-                "Downloads a public PDF",
+                "Downloads a public PDF when given a URL",
                 "Sends a physical print job to the fixed Brother printer",
                 "Physically exposes the printed document",
             ],
@@ -97,8 +97,17 @@ pub enum Sides {
 #[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrintDocumentInput {
-    #[schemars(description = "Public HTTPS PDF URL", length(max = 2048), url)]
-    pub url: String,
+    #[schemars(
+        description = "Public HTTPS PDF URL. Give this or pdfBase64, not both",
+        length(max = 2048),
+        url
+    )]
+    pub url: Option<String>,
+    #[schemars(
+        description = "The PDF's bytes as standard base64 (at most 3,000,000 decoded bytes), for a private PDF with no public URL. Give this or url, not both",
+        length(min = 1, max = 4_000_000)
+    )]
+    pub pdf_base64: Option<String>,
     #[schemars(length(min = 1, max = 80))]
     pub job_name: Option<String>,
     #[schemars(range(min = 1, max = 3), extend("default" = 1))]

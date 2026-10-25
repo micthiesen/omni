@@ -21820,7 +21820,7 @@
     {
       "name": "print_document",
       "title": "Print PDF in Black and White",
-      "description": "Print a public HTTPS PDF on Michael's Brother HL-L2370DW monochrome laser printer. Black-and-white only. Uses two-sided long-edge printing and Letter paper by default. Every call requires approval because it consumes paper and toner and physically exposes the document.",
+      "description": "Print a PDF on Michael's Brother HL-L2370DW monochrome laser printer. Give exactly one source: url (a public HTTPS PDF Omni downloads) or pdfBase64 (the PDF's bytes as standard base64, at most 3,000,000 decoded bytes) for a private document with no public URL. Black-and-white only, at most 25 pages, no encrypted PDFs. Uses two-sided long-edge printing and Letter paper by default. The same PDF bytes and settings accepted within 5 minutes are refused unless allowDuplicate is true. Every call requires approval because it consumes paper and toner and physically exposes the document.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -21829,7 +21829,13 @@
             "type": "string",
             "maxLength": 2048,
             "format": "uri",
-            "description": "Public HTTPS PDF URL"
+            "description": "Public HTTPS PDF URL. Give this or pdfBase64, not both"
+          },
+          "pdfBase64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000000,
+            "description": "The PDF's bytes as standard base64 (at most 3,000,000 decoded bytes), for a private PDF with no public URL. Give this or url, not both"
           },
           "jobName": {
             "type": "string",
@@ -21866,9 +21872,6 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "url"
-        ],
         "additionalProperties": false
       },
       "annotations": {

@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use omni_core::clock::{SharedClock, TestClock};
@@ -20,7 +22,7 @@ use omni_personal::printer::pipeline::{
     DownloadedFile, PdfDownloader, PrintProcesses, PublicPdfDownloader,
 };
 use omni_personal::printer::service::{
-    AcceptedPrintStore, DurableAcceptedPrintStore, MAX_PRINT_DATA_BYTES,
+    AcceptedPrintStore, DurableAcceptedPrintStore, MAX_INLINE_PDF_BYTES, MAX_PRINT_DATA_BYTES,
 };
 use omni_personal::printer::{
     AcceptedPrintRecord, PrintPaper, PrintPdfInput, PrintSides, PrinterDependencies, PrinterService,
@@ -287,7 +289,14 @@ impl Fixture {
 
 fn input() -> PrintPdfInput {
     PrintPdfInput {
-        url: "https://example.com/file.pdf".into(),
+        url: Some("https://example.com/file.pdf".into()),
+        ..PrintPdfInput::default()
+    }
+}
+
+fn inline(pdf: &[u8]) -> PrintPdfInput {
+    PrintPdfInput {
+        pdf_base64: Some(STANDARD.encode(pdf)),
         ..PrintPdfInput::default()
     }
 }
@@ -580,7 +589,7 @@ async fn validates_the_public_input_shape_before_downloading() {
     let service = f.service();
     let error = service
         .print_pdf(&PrintPdfInput {
-            url: "http://example.com/file.pdf".into(),
+            url: Some("http://example.com/file.pdf".into()),
             ..input()
         })
         .await
@@ -599,6 +608,102 @@ async fn validates_the_public_input_shape_before_downloading() {
             .contains("Copies must be an integer from 1 to 3")
     );
     assert_eq!(f.download.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn prints_inline_pdf_bytes_without_downloading() {
+    let f = Fixture::new();
+    let job = f
+        .service()
+        .print_pdf(&PrintPdfInput {
+            job_name: Some("Return sheet".into()),
+            ..inline(PDF)
+        })
+        .await
+        .unwrap();
+    assert!(job.accepted && job.completed);
+    assert_eq!(job.job_name, "Return sheet");
+    assert_eq!(f.download.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        f.processes.observed_pdf.lock().unwrap().as_deref(),
+        Some(PDF)
+    );
+    assert_eq!(f.printer.print_count(), 1);
+    assert!(f.temp_is_empty());
+}
+
+#[tokio::test]
+async fn rejects_invalid_and_oversized_inline_pdfs_before_converting() {
+    let mut largest = b"%PDF-".to_vec();
+    largest.resize(MAX_INLINE_PDF_BYTES + 1, 0);
+    for (data, message) in [
+        ("%%%not base64".to_owned(), "not valid standard base64"),
+        (String::new(), "between 1 byte and 3000000 bytes"),
+        (
+            STANDARD.encode(b"<html>not a pdf</html>"),
+            "does not contain a PDF",
+        ),
+        (
+            STANDARD.encode(&largest),
+            "between 1 byte and 3000000 bytes",
+        ),
+        ("A".repeat(4_000_004), "between 1 byte and 3000000 bytes"),
+    ] {
+        let f = Fixture::new();
+        let error = f
+            .service()
+            .print_pdf(&PrintPdfInput {
+                pdf_base64: Some(data),
+                ..PrintPdfInput::default()
+            })
+            .await
+            .unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+        assert!(!error.message.contains("not a pdf"), "{}", error.message);
+        assert!(f.processes.text_calls.lock().unwrap().is_empty());
+        assert_eq!(f.printer.print_count(), 0);
+    }
+}
+
+#[tokio::test]
+async fn requires_exactly_one_document_source() {
+    let f = Fixture::new();
+    let service = f.service();
+    for request in [
+        PrintPdfInput {
+            pdf_base64: Some(STANDARD.encode(PDF)),
+            ..input()
+        },
+        PrintPdfInput::default(),
+    ] {
+        let error = service.print_pdf(&request).await.unwrap_err();
+        assert_eq!(error.message, "Provide exactly one of url and pdfBase64");
+    }
+    assert_eq!(f.download.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(f.printer.print_count(), 0);
+}
+
+#[tokio::test]
+async fn suppresses_the_same_pdf_across_url_and_inline_sources() {
+    let f = Fixture::new();
+    let service = f.service();
+    service.print_pdf(&inline(PDF)).await.unwrap();
+    let error = service.print_pdf(&inline(PDF)).await.unwrap_err();
+    assert!(error.message.contains("allowDuplicate"));
+    let error = service.print_pdf(&input()).await.unwrap_err();
+    assert!(error.message.contains("allowDuplicate"));
+    service
+        .print_pdf(&PrintPdfInput {
+            allow_duplicate: true,
+            ..inline(PDF)
+        })
+        .await
+        .unwrap();
+    service
+        .print_pdf(&inline(b"%PDF-1.7\nanother document"))
+        .await
+        .unwrap();
+    assert_eq!(f.printer.print_count(), 3);
 }
 
 #[tokio::test]

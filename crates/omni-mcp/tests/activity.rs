@@ -212,6 +212,25 @@ async fn stylist_calls_keep_only_identifiers() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn print_calls_record_inline_pdf_bytes_only_by_length() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let recorder = ActivityRecorder::new(db.store.clone(), clock.clone(), TaskTracker::new());
+    let call = recorder
+        .start(
+            meta("print_document"),
+            &json!({"pdfBase64": "JVBERi0xLjQK", "jobName": "Return sheet", "copies": 1}),
+        )
+        .await;
+    call.finish(CallOutcome::Ok(None)).await;
+    let calls = all_calls(&db.store).await;
+    assert_eq!(
+        omni_mcp::events::persistence::js_to_json(&calls[0].input),
+        json!({"pdfBase64": "[pdf: 12 base64 chars]", "jobName": "Return sheet", "copies": 1})
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn records_failures_without_changing_them() {
     let clock = clock();
     let db = test_store(&clock).await;

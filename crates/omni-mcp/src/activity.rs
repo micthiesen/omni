@@ -145,8 +145,12 @@ const STYLIST_ACTIVITY_KEYS: [&str; 17] = [
 ];
 
 /// The input copy kept in activity: stylist calls keep only identifiers and
-/// the record kind or event type.
+/// the record kind or event type, and a `print_document` call's inline PDF
+/// bytes are replaced by their length.
 pub fn activity_input(tool: &str, input: &Value) -> Value {
+    if tool == "print_document" {
+        return print_activity_input(input);
+    }
     if !tool.starts_with("stylist_") {
         return input.clone();
     }
@@ -171,6 +175,17 @@ pub fn activity_input(tool: &str, input: &Value) -> Value {
         kept.insert(key.clone(), entry);
     }
     Value::Object(kept)
+}
+
+fn print_activity_input(input: &Value) -> Value {
+    let mut kept = input.clone();
+    if let Some(data) = kept.get_mut("pdfBase64") {
+        *data = match data {
+            Value::String(text) => Value::String(format!("[pdf: {} base64 chars]", text.len())),
+            _ => Value::String("[private]".to_owned()),
+        };
+    }
+    kept
 }
 
 /// The error text kept in activity: for stylist calls only the `[code]`

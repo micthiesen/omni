@@ -508,6 +508,14 @@ async fn exposes_guarded_printer_status_and_physical_printing_through_a_mocked_s
             "allowDuplicate": false,
         })
     );
+    let private = call_tool(
+        &router,
+        "print_document",
+        json!({"pdfBase64": "JVBERi0xLjQK", "copies": 1}),
+    )
+    .await;
+    assert!(!is_error(&private));
+    assert_eq!(prints.lock().unwrap()[1]["pdfBase64"], "JVBERi0xLjQK");
     let annotations = meta("print_document").annotations;
     assert!(!annotations.read_only_hint && !annotations.destructive_hint);
     assert!(!annotations.idempotent_hint && annotations.open_world_hint);
@@ -518,7 +526,7 @@ async fn exposes_guarded_printer_status_and_physical_printing_through_a_mocked_s
     )
     .await;
     assert!(is_error(&malformed));
-    assert_eq!(prints.lock().unwrap().len(), 1);
+    assert_eq!(prints.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

@@ -15,7 +15,8 @@ struct EmptyInput {}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PrintDocumentInput {
-    url: String,
+    url: Option<String>,
+    pdf_base64: Option<String>,
     job_name: Option<String>,
     #[serde(default = "one")]
     copies: f64,
@@ -81,6 +82,7 @@ pub fn tools(printer: Option<Arc<PrinterService>>) -> Result<Vec<McpTool>, ToolM
                 let printer = require(printer.as_ref())?;
                 let request = PrintPdfInput {
                     url: input.url,
+                    pdf_base64: input.pdf_base64,
                     paper: Some(input.paper),
                     sides: Some(input.sides),
                     copies: Some(input.copies),

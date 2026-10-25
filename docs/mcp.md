@@ -50,7 +50,7 @@ families cover:
   (`pets_read` `resource: "trend"`), and aggregate costs
 - Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
   `parcels_get`); these tools never call Parcel
-- optional fixed-printer status and bounded public-PDF printing
+- optional fixed-printer status and bounded PDF printing (public URL or inline bytes)
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
 - agent push notifications to Michael (see "Owner notifications" below)
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
@@ -370,11 +370,17 @@ can recover prior browsing. See Hister's [API documentation](https://hister.org/
 and [browser capture setup](https://hister.org/docs/browser-extension).
 
 Printing is enabled only when `PRINTER_IPP_URL` names one fixed `ipp://` or
-`ipps://` endpoint. The caller supplies a public HTTPS PDF URL, never a printer
-address. Omni rejects private document URLs, oversized or encrypted PDFs, and
-documents over the page limit, then converts accepted PDFs through the model-aware
+`ipps://` endpoint. The caller names the document with exactly one of `url`, a
+public HTTPS PDF URL, or `pdfBase64`, the PDF's bytes as standard base64 (at most
+3,000,000 decoded bytes so the call fits the 4 MiB MCP request limit), and never
+a printer address. Use `pdfBase64` for a private or generated PDF instead of
+publishing it. MCP activity records only the length of `pdfBase64`. Omni rejects
+private document URLs, oversized, non-PDF or encrypted documents, and documents
+over the 25-page limit, then converts accepted PDFs through the model-aware
 CUPS `brlaser` filter before submission and verifies the final IPP job state.
-Long-edge duplex and Letter paper are the defaults.
+Long-edge duplex and Letter paper are the defaults. The same PDF bytes with the
+same settings, from either source, are refused for 5 minutes after acceptance
+unless `allowDuplicate` is true.
 Every print requires explicit approval because it consumes paper and toner and
 physically exposes the document. Omni waits for the final IPP job state and
 reports completion or a printer-reported failure; a timeout remains explicitly
