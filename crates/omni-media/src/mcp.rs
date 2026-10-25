@@ -16,6 +16,7 @@ use crate::arr::inspect::{ArrService, Download, InspectError, ProfileSummary};
 use crate::arr::movies::{
     GrabRequest, MovieSearchRequest, MoviesQuery, ProfileRef, ProfileSetRequest, SearchPurpose,
 };
+use crate::arr::queue::RemoveRequest;
 use crate::arr::seasons::{
     SeasonAddRequest, SeasonSearchRequest, SeasonSearchResult, SeasonSetRequest, SeriesOutcome,
     SeriesProfileRequest, SeriesResult, SeriesStatus,
@@ -519,6 +520,28 @@ struct DownloadsListOutput {
     page: Page<Download>,
 }
 
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadsRemoveInput {
+    service: ArrService,
+    queue_ids: BTreeSet<i64>,
+    #[serde(default = "yes")]
+    blocklist: bool,
+    #[serde(default)]
+    redownload: bool,
+    #[serde(default)]
+    force: bool,
+    #[serde(default)]
+    dry_run: bool,
+}
+
+#[derive(Deserialize)]
+struct NzbGetStatusInput {}
+
 /// The most movies one `detail` page reads in depth.
 const DETAIL_LIMIT: usize = 25;
 
@@ -977,6 +1000,42 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                         truncated: queue.truncated,
                         page: paginate(queue.downloads, input.cursor, input.limit),
                     })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_DOWNLOADS_REMOVE, {
+            let s = s.clone();
+            move |input: DownloadsRemoveInput, _cx| {
+                let s = s.clone();
+                async move {
+                    if input.redownload && !input.blocklist {
+                        return Err(ToolError::input(
+                            "redownload requires blocklist; without it the service would grab the same release again",
+                        ));
+                    }
+                    s.queue
+                        .remove(RemoveRequest {
+                            service: input.service,
+                            queue_ids: input.queue_ids,
+                            blocklist: input.blocklist,
+                            redownload: input.redownload,
+                            force: input.force,
+                            dry_run: input.dry_run,
+                        })
+                        .await
+                        .map_err(|e| inspect_error(&e))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_NZBGET_STATUS, {
+            let s = s.clone();
+            move |_input: NzbGetStatusInput, _cx| {
+                let s = s.clone();
+                async move {
+                    s.nzbget
+                        .status()
+                        .await
+                        .map_err(|e| ToolError::execute(e.to_string()))
                 }
             }
         })?,

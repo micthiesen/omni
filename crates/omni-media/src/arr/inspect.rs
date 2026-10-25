@@ -428,6 +428,8 @@ pub struct QueueRecord {
     #[serde(default)]
     download_client: Option<String>,
     #[serde(default)]
+    download_id: Option<String>,
+    #[serde(default)]
     indexer: Option<String>,
 }
 
@@ -469,6 +471,8 @@ pub struct Download {
     pub added: Option<String>,
     pub protocol: Option<String>,
     pub download_client: Option<String>,
+    /// The download client's id for the download (NZBGet's `drone` parameter).
+    pub download_id: Option<String>,
     pub indexer: Option<String>,
 }
 
@@ -527,6 +531,7 @@ impl From<&QueueRecord> for Download {
             added: r.added.clone(),
             protocol: r.protocol.clone(),
             download_client: r.download_client.clone(),
+            download_id: r.download_id.clone(),
             indexer: r.indexer.clone(),
         }
     }
@@ -566,7 +571,11 @@ impl ArrInspect {
         }
     }
 
-    fn connection(&self, service: ArrService) -> Result<(&str, &str), InspectError> {
+    pub(crate) fn http(&self) -> &ArrHttp {
+        &self.http
+    }
+
+    pub(crate) fn connection(&self, service: ArrService) -> Result<(&str, &str), InspectError> {
         self.config(service)
             .connection()
             .ok_or(InspectError::NotConfigured(service.name()))
@@ -704,7 +713,7 @@ pub fn redact(text: &str) -> String {
     static QUERY_SECRET: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(
         || {
             regex::Regex::new(
-                r"(?i)\b(apikey|api_key|api-key|passkey|rsskey|authkey|token|access_token|password|pass|secret|key|sig|signature)=[^&\s'\x22<>]+",
+                r"(?i)\b(apikey|api_key|api-key|passkey|rsskey|authkey|token|access_token|password|pass|secret|key|sig|signature|r|i)=[^&\s'\x22<>]+",
             )
             .ok()
         },
@@ -789,6 +798,10 @@ mod tests {
         assert_eq!(
             redact("Unable to connect to http://nzbget:hunter2@nzbget:6789/jsonrpc"),
             "Unable to connect to http://<redacted>@nzbget:6789/jsonrpc"
+        );
+        assert_eq!(
+            redact("Fetching https://indexer.example/getnzb/abc.nzb?i=12&r=7f21de"),
+            "Fetching https://indexer.example/getnzb/abc.nzb?i=<redacted>&r=<redacted>"
         );
         assert_eq!(
             redact("Star.Wars.1999.2160p.Remux-GRP"),

@@ -11,8 +11,10 @@ use omni_store::Store;
 
 use crate::arr::inspect::ArrInspect;
 use crate::arr::movies::RadarrMovies;
+use crate::arr::queue::ArrQueue;
 use crate::arr::seasons::SonarrSeasons;
 use crate::media_library::MediaLibrary;
+use crate::nzbget::NzbGet;
 use crate::selection::Research;
 use crate::tmdb::Catalog;
 use crate::watchlist::Watchlist;
@@ -74,6 +76,10 @@ pub struct MediaServices {
     pub movies: RadarrMovies,
     /// Read-only profile, status and queue views of both services.
     pub arr: ArrInspect,
+    /// Queue removals through Radarr or Sonarr.
+    pub queue: ArrQueue,
+    /// Read-only NZBGet status.
+    pub nzbget: NzbGet,
     pub catalog: Arc<dyn Catalog>,
     pub research: Arc<dyn Research>,
     pub notifier: Arc<dyn Notifier>,

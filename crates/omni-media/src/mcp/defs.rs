@@ -285,6 +285,46 @@ pub static MEDIA_DOWNLOADS_LIST: ToolDef<MediaDownloadsListInput, MediaDownloads
         },
     });
 
+pub static MEDIA_DOWNLOADS_REMOVE: ToolDef<MediaDownloadsRemoveInput, MediaDownloadsRemoveOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_downloads_remove",
+        title: "Remove Radarr or Sonarr Downloads",
+        description: "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+        annotations: Annotations {
+            read_only_hint: false,
+            destructive_hint: true,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &[
+                "Removes downloads and their downloaded files from the download client through Radarr or Sonarr",
+                "Blocklists the releases on the configured Radarr or Sonarr account",
+                "With redownload, starts a search that may begin a new download",
+            ],
+            cost: "No direct API charge; a redownload may consume storage, bandwidth, and provider resources",
+            recommended: ApprovalPolicy::RequireApproval,
+        },
+    });
+
+pub static MEDIA_NZBGET_STATUS: ToolDef<MediaNzbgetStatusInput, MediaNzbgetStatusOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_nzbget_status",
+        title: "Get NZBGet Status",
+        description: "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads the configured NZBGet download client"],
+            cost: "No expected monetary cost; bounded LAN API traffic",
+            recommended: ApprovalPolicy::Allow,
+        },
+    });
+
 pub static MEDIA_MOVIES_GET: ToolDef<MediaMoviesGetInput, MediaMoviesGetOutput> = ToolDef::new(
     ToolInfo {
         name: "media_movies_get",
@@ -489,7 +529,7 @@ pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> 
 );
 
 /// Every media tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 24] = [
+pub static TOOLS: [&dyn ToolDefinition; 26] = [
     &MEDIA_CATALOG_SEARCH,
     &MEDIA_CATALOG_GET,
     &MEDIA_CATALOG_BROWSE,
@@ -504,6 +544,8 @@ pub static TOOLS: [&dyn ToolDefinition; 24] = [
     &MEDIA_ARR_PROFILES,
     &MEDIA_ARR_STATUS,
     &MEDIA_DOWNLOADS_LIST,
+    &MEDIA_DOWNLOADS_REMOVE,
+    &MEDIA_NZBGET_STATUS,
     &MEDIA_MOVIES_GET,
     &MEDIA_MOVIE_COLLECTIONS,
     &MEDIA_MOVIES_PROFILE_SET,
@@ -1177,6 +1219,10 @@ pub struct Download {
     pub added: Option<String>,
     pub protocol: Option<String>,
     pub download_client: Option<String>,
+    #[schemars(
+        description = "The download client's id for the download; NZBGet status lists it too"
+    )]
+    pub download_id: Option<String>,
     pub indexer: Option<String>,
 }
 
@@ -1189,6 +1235,195 @@ pub struct MediaDownloadsListOutput {
     pub next_cursor: Option<u64>,
     pub total: u64,
     pub items: Vec<Download>,
+}
+
+#[derive(JsonSchema)]
+pub struct QueueId(#[schemars(transform = positive)] pub u64);
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaDownloadsRemoveInput {
+    pub service: ArrService,
+    #[schemars(
+        description = "queueId values from media_downloads_list",
+        length(min = 1, max = 25)
+    )]
+    pub queue_ids: Vec<QueueId>,
+    #[schemars(
+        description = "Blocklist the release so the service never grabs it again",
+        extend("default" = true)
+    )]
+    pub blocklist: Option<bool>,
+    #[schemars(
+        description = "Let the service search once for a replacement; requires blocklist",
+        extend("default" = false)
+    )]
+    pub redownload: Option<bool>,
+    #[schemars(
+        description = "Remove again although an earlier removal through Omni is recorded. Only when the user explicitly asks",
+        extend("default" = false)
+    )]
+    pub force: Option<bool>,
+    #[schemars(description = "Report what would be removed without removing anything", extend("default" = false))]
+    pub dry_run: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum RemoveOutcome {
+    WouldRemove,
+    Recorded,
+    Removed,
+    StillQueued,
+    Unverified,
+    Uncertain,
+    Rejected,
+    AlreadyRequested,
+    AlreadyRemoved,
+    NotFound,
+    Importing,
+    Failed,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemovedDownload {
+    pub queue_id: i64,
+    #[schemars(
+        description = "would_remove: dryRun. recorded: preview mode, nothing sent. removed: gone from the queue on read-back. still_queued: accepted but still listed. unverified: accepted, queue unreadable. uncertain: may have applied and is never resent automatically. rejected: the service refused. already_requested: an earlier removal through Omni is recorded and the download is still listed (force sends again). already_removed: gone after an earlier removal. not_found: no such download. importing: being imported, not removed. failed: nothing was sent"
+    )]
+    pub outcome: RemoveOutcome,
+    #[schemars(description = "The download as listed before the removal")]
+    pub download: Option<Download>,
+    #[schemars(
+        description = "With blocklist: whether a blocklist entry for the release and title was made during this call; null when not asked for or unreadable"
+    )]
+    pub blocklisted: Option<bool>,
+    #[schemars(description = "When the earlier removal through Omni was asked for (Unix ms)")]
+    pub requested_at: Option<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaDownloadsRemoveOutput {
+    pub service: ArrService,
+    pub dry_run: bool,
+    pub blocklist: bool,
+    pub redownload: bool,
+    pub downloads: Vec<RemovedDownload>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MediaNzbgetStatusInput {}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct NewsServer {
+    pub id: i64,
+    pub active: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NzbgetDownload {
+    pub nzb_id: i64,
+    #[schemars(description = "Radarr's or Sonarr's downloadId for it")]
+    pub download_id: Option<String>,
+    pub name: String,
+    pub category: String,
+    #[schemars(
+        description = "For example QUEUED, PAUSED, DOWNLOADING, PP_QUEUED, LOADING_PARS, VERIFYING_SOURCES, REPAIRING, UNPACKING, MOVING, EXECUTING_SCRIPT"
+    )]
+    pub status: String,
+    pub size_mb: i64,
+    pub remaining_mb: i64,
+    #[schemars(description = "Share of articles still available, in percent")]
+    pub health_percent: f64,
+    #[schemars(description = "Below this health the download cannot be repaired")]
+    pub critical_health_percent: f64,
+    #[schemars(description = "The running post-processing step, for example Unpacking")]
+    pub post_stage: Option<String>,
+    pub post_stage_percent: Option<f64>,
+    pub active_downloads: i64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NzbgetFailure {
+    pub nzb_id: i64,
+    pub download_id: Option<String>,
+    pub name: String,
+    pub category: String,
+    #[schemars(
+        description = "For example FAILURE/HEALTH, FAILURE/PAR, FAILURE/UNPACK, FAILURE/PASSWORD, WARNING/DAMAGED, DELETED/MANUAL"
+    )]
+    pub status: String,
+    pub par_status: String,
+    pub unpack_status: String,
+    pub move_status: String,
+    pub delete_status: String,
+    pub mark_status: String,
+    pub health_percent: f64,
+    pub size_mb: i64,
+    #[schemars(description = "Unix ms")]
+    pub finished_at: i64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct NzbgetMessage {
+    #[schemars(description = "WARNING or ERROR")]
+    pub kind: String,
+    #[schemars(description = "Unix ms")]
+    pub at: i64,
+    pub text: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaNzbgetStatusOutput {
+    pub version: Option<String>,
+    pub download_paused: bool,
+    #[schemars(
+        description = "Downloading is paused and NZBGet's recent log reports low disk space"
+    )]
+    pub paused_for_disk_space: bool,
+    pub post_processing_paused: bool,
+    pub scan_paused: bool,
+    pub quota_reached: bool,
+    #[schemars(description = "Nothing is downloading")]
+    pub idle: bool,
+    #[schemars(description = "When a timed pause ends (Unix ms)")]
+    pub resume_at: Option<i64>,
+    pub download_rate_bytes_per_sec: f64,
+    pub average_download_rate_bytes_per_sec: f64,
+    #[schemars(description = "null: unlimited")]
+    pub download_limit_bytes_per_sec: Option<f64>,
+    pub remaining_mb: i64,
+    pub post_processing_jobs: i64,
+    pub free_disk_space_mb: Option<i64>,
+    pub total_disk_space_mb: Option<i64>,
+    #[schemars(description = "The intermediate directory holding incomplete downloads")]
+    pub free_inter_disk_space_mb: Option<i64>,
+    pub total_inter_disk_space_mb: Option<i64>,
+    pub news_servers: Vec<NewsServer>,
+    #[schemars(description = "At most 50, in queue order")]
+    pub downloads: Vec<NzbgetDownload>,
+    pub total_downloads: u64,
+    #[schemars(
+        description = "Finished downloads that did not succeed, newest first, excluding duplicate handling (DELETED/DUPE, COPY, GOOD); at most 20"
+    )]
+    pub failures: Vec<NzbgetFailure>,
+    pub total_failures: u64,
+    #[schemars(
+        description = "Warnings and errors among NZBGet's last 200 log lines, newest first; at most 25"
+    )]
+    pub messages: Vec<NzbgetMessage>,
+    #[schemars(
+        description = "Reads that failed (history, log): their lists are empty, not complete"
+    )]
+    pub unreadable: Vec<String>,
 }
 
 #[derive(JsonSchema)]

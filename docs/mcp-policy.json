@@ -995,6 +995,24 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "media_downloads_remove",
+      "title": "Remove Radarr or Sonarr Downloads",
+      "description": "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Removes downloads and their downloaded files from the download client through Radarr or Sonarr",
+        "Blocklists the releases on the configured Radarr or Sonarr account",
+        "With redownload, starts a search that may begin a new download"
+      ],
+      "cost": "No direct API charge; a redownload may consume storage, bandwidth, and provider resources",
+      "recommendedPolicy": "require_approval"
+    },
+    {
       "name": "media_library_list",
       "title": "List Plex Media",
       "description": "List the configured Plex library, recent watch history, or in-progress items. An unavailable Plex server is reported as an error, never as an empty library.",
@@ -1108,6 +1126,22 @@
       ],
       "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
       "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "media_nzbget_status",
+      "title": "Get NZBGet Status",
+      "description": "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured NZBGet download client"
+      ],
+      "cost": "No expected monetary cost; bounded LAN API traffic",
+      "recommendedPolicy": "allow"
     },
     {
       "name": "media_recommendation_feedback",

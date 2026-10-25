@@ -46,7 +46,9 @@ families cover:
 - media library, watchlist, Sonarr season management (`media_series_*`, see
   "Sonarr seasons" below), Radarr movie quality and upgrades (`media_movie*`,
   see "Radarr movies" below), Radarr and Sonarr profiles, status and download
-  queues (`media_arr_*`, `media_downloads_list`), recommendations, podcast
+  queues (`media_arr_*`, `media_downloads_list`), queue removal
+  (`media_downloads_remove`) and NZBGet status (`media_nzbget_status`, see
+  "Downloads and NZBGet" below), recommendations, podcast
   accounts, and podcast recommendations
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
@@ -367,6 +369,55 @@ their tracked state and the messages explaining a blocked or failed import.
 Free text from either service (queue messages, health messages, history and
 release titles, rejections) goes through `inspect::redact`, which masks
 key-like URL query values (`apikey`, `passkey`, `token`, ...) and URL userinfo.
+
+### Downloads and NZBGet
+
+`media_downloads_list` entries carry `downloadId`, the download client's id
+(NZBGet's `drone` parameter), which joins them to NZBGet.
+
+`media_nzbget_status` (`crates/omni-media/src/nzbget.rs`) reads NZBGet's
+JSON-RPC API at `NZBGET_URL` with read methods only (`version`, `status`,
+`listgroups`, `history`, `log`), all within 20 s: pause flags (and
+`pausedForDiskSpace` when downloading is paused and one of the last 200 log
+lines reports "Low disk space"), rates and limit, free and total space on the
+download and intermediate disks, news servers, up to 50 queued downloads with
+health and post-processing stage and progress, up to 20 finished downloads
+whose status is not `SUCCESS/*` or duplicate handling (`DELETED/DUPE`, `COPY`,
+`GOOD`), newest first, and up to 25 warnings and errors from the log tail.
+History rows' source `URL` can carry an indexer API key and is never read;
+names and log text pass `inspect::redact` (which also masks Newznab `r=` and
+`i=`), and request errors are redacted before they are logged, since
+`NZBGET_URL` may carry credentials. A failed `status` or `listgroups` read
+fails the call; `history` (read under 48 MiB, since it returns every retained
+row) and `log` are best-effort and are named in `unreadable` when they fail. Nothing in Omni changes NZBGet
+directly.
+
+`media_downloads_remove` (`crates/omni-media/src/arr/queue.rs`) is the only way
+to clear a download, and it goes through Radarr or Sonarr so their queue,
+history and blocklist stay consistent: `DELETE queue/{id}` with
+`removeFromClient=true`, `blocklist` (default true), `skipRedownload` set
+unless `redownload` is asked for (which requires `blocklist`), and
+`changeCategory=false`. The client deletes the download and its downloaded
+files; library files are untouched. At most 25 queue ids per call, all checked
+against one full queue read (a queue past one 500-download page fails the call).
+A download in `importing` state is refused, and `dryRun` reports `would_remove`
+without writing.
+
+Each removal is reserved in a `media-download-removal` row keyed by service and
+queue id (Radarr and Sonarr derive queue ids from the download and the title,
+so they are stable), kept seven days, before the request. A 4xx releases the
+row; a timeout, unreadable response or 5xx leaves it `uncertain`, and so does
+a 404, since the item may already be gone. Queue items sharing a `downloadId`
+(the episodes of a season pack) are one download: only the first is sent and
+the rest take its outcome. After sending,
+the queue is read again: a download no longer listed (by queue id or download
+id) is `removed`, even after an uncertain response, which settles the row;
+otherwise an accepted removal is `still_queued` and an uncertain one stays
+`uncertain`. With `blocklist`, the newest 50 blocklist entries are read and
+`blocklisted` reports whether one for the release title and item is dated
+during this call (a minute of clock slack). A later call
+for a download with a recorded removal reports `already_removed` when it is
+gone or `already_requested` while it is still listed; only `force` sends again.
 
 ### Radarr movies
 

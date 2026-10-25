@@ -16518,6 +16518,17 @@
                                 }
                               ]
                             },
+                            "downloadId": {
+                              "description": "The download client's id for the download; NZBGet status lists it too",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "indexer": {
                               "anyOf": [
                                 {
@@ -16551,6 +16562,7 @@
                             "added",
                             "protocol",
                             "downloadClient",
+                            "downloadId",
                             "indexer"
                           ],
                           "additionalProperties": false
@@ -16563,6 +16575,851 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_downloads_remove",
+                  "title": "Remove Radarr or Sonarr Downloads",
+                  "description": "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "queueIds": {
+                        "minItems": 1,
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "description": "queueId values from media_downloads_list"
+                      },
+                      "blocklist": {
+                        "default": true,
+                        "description": "Blocklist the release so the service never grabs it again",
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "default": false,
+                        "description": "Let the service search once for a replacement; requires blocklist",
+                        "type": "boolean"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Remove again although an earlier removal through Omni is recorded. Only when the user explicitly asks",
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "default": false,
+                        "description": "Report what would be removed without removing anything",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "queueIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "blocklist": {
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "type": "boolean"
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "queueId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "outcome": {
+                              "type": "string",
+                              "enum": [
+                                "would_remove",
+                                "recorded",
+                                "removed",
+                                "still_queued",
+                                "unverified",
+                                "uncertain",
+                                "rejected",
+                                "already_requested",
+                                "already_removed",
+                                "not_found",
+                                "importing",
+                                "failed"
+                              ],
+                              "description": "would_remove: dryRun. recorded: preview mode, nothing sent. removed: gone from the queue on read-back. still_queued: accepted but still listed. unverified: accepted, queue unreadable. uncertain: may have applied and is never resent automatically. rejected: the service refused. already_requested: an earlier removal through Omni is recorded and the download is still listed (force sends again). already_removed: gone after an earlier removal. not_found: no such download. importing: being imported, not removed. failed: nothing was sent"
+                            },
+                            "download": {
+                              "description": "The download as listed before the removal",
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "queueId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "title": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemId": {
+                                      "description": "Radarr's movie id or Sonarr's series id; null when unmatched",
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemTitle": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tmdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tvdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "seasonNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "episodeNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "status": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadStatus": {
+                                      "description": "ok, warning or error",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadState": {
+                                      "description": "For example downloading, importPending, importBlocked, failedPending",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "messages": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Why the download is stuck, rejected or failed"
+                                    },
+                                    "quality": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "customFormatScore": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeLeftBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "timeLeft": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "estimatedCompletionTime": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "added": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "protocol": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadClient": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "indexer": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "queueId",
+                                    "title",
+                                    "itemId",
+                                    "itemTitle",
+                                    "tmdbId",
+                                    "tvdbId",
+                                    "seasonNumber",
+                                    "episodeNumber",
+                                    "status",
+                                    "trackedDownloadStatus",
+                                    "trackedDownloadState",
+                                    "messages",
+                                    "quality",
+                                    "customFormatScore",
+                                    "sizeBytes",
+                                    "sizeLeftBytes",
+                                    "timeLeft",
+                                    "estimatedCompletionTime",
+                                    "added",
+                                    "protocol",
+                                    "downloadClient",
+                                    "downloadId",
+                                    "indexer"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "blocklisted": {
+                              "description": "With blocklist: whether a blocklist entry for the release and title was made during this call; null when not asked for or unreadable",
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "requestedAt": {
+                              "description": "When the earlier removal through Omni was asked for (Unix ms)",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "queueId",
+                            "outcome",
+                            "download",
+                            "blocklisted",
+                            "requestedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "dryRun",
+                      "blocklist",
+                      "redownload",
+                      "downloads"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_nzbget_status",
+                  "title": "Get NZBGet Status",
+                  "description": "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {},
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadPaused": {
+                        "type": "boolean"
+                      },
+                      "pausedForDiskSpace": {
+                        "type": "boolean",
+                        "description": "Downloading is paused and NZBGet's recent log reports low disk space"
+                      },
+                      "postProcessingPaused": {
+                        "type": "boolean"
+                      },
+                      "scanPaused": {
+                        "type": "boolean"
+                      },
+                      "quotaReached": {
+                        "type": "boolean"
+                      },
+                      "idle": {
+                        "type": "boolean",
+                        "description": "Nothing is downloading"
+                      },
+                      "resumeAt": {
+                        "description": "When a timed pause ends (Unix ms)",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "averageDownloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "downloadLimitBytesPerSec": {
+                        "description": "null: unlimited",
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingMb": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "postProcessingJobs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "freeDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "freeInterDiskSpaceMb": {
+                        "description": "The intermediate directory holding incomplete downloads",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalInterDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "newsServers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "active"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "description": "Radarr's or Sonarr's downloadId for it",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example QUEUED, PAUSED, DOWNLOADING, PP_QUEUED, LOADING_PARS, VERIFYING_SOURCES, REPAIRING, UNPACKING, MOVING, EXECUTING_SCRIPT"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "remainingMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "healthPercent": {
+                              "type": "number",
+                              "description": "Share of articles still available, in percent"
+                            },
+                            "criticalHealthPercent": {
+                              "type": "number",
+                              "description": "Below this health the download cannot be repaired"
+                            },
+                            "postStage": {
+                              "description": "The running post-processing step, for example Unpacking",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "postStagePercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "activeDownloads": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "sizeMb",
+                            "remainingMb",
+                            "healthPercent",
+                            "criticalHealthPercent",
+                            "postStage",
+                            "postStagePercent",
+                            "activeDownloads"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "At most 50, in queue order"
+                      },
+                      "totalDownloads": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "failures": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example FAILURE/HEALTH, FAILURE/PAR, FAILURE/UNPACK, FAILURE/PASSWORD, WARNING/DAMAGED, DELETED/MANUAL"
+                            },
+                            "parStatus": {
+                              "type": "string"
+                            },
+                            "unpackStatus": {
+                              "type": "string"
+                            },
+                            "moveStatus": {
+                              "type": "string"
+                            },
+                            "deleteStatus": {
+                              "type": "string"
+                            },
+                            "markStatus": {
+                              "type": "string"
+                            },
+                            "healthPercent": {
+                              "type": "number"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "finishedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "parStatus",
+                            "unpackStatus",
+                            "moveStatus",
+                            "deleteStatus",
+                            "markStatus",
+                            "healthPercent",
+                            "sizeMb",
+                            "finishedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Finished downloads that did not succeed, newest first, excluding duplicate handling (DELETED/DUPE, COPY, GOOD); at most 20"
+                      },
+                      "totalFailures": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "description": "WARNING or ERROR"
+                            },
+                            "at": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "at",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Warnings and errors among NZBGet's last 200 log lines, newest first; at most 25"
+                      },
+                      "unreadable": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Reads that failed (history, log): their lists are empty, not complete"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "downloadPaused",
+                      "pausedForDiskSpace",
+                      "postProcessingPaused",
+                      "scanPaused",
+                      "quotaReached",
+                      "idle",
+                      "resumeAt",
+                      "downloadRateBytesPerSec",
+                      "averageDownloadRateBytesPerSec",
+                      "downloadLimitBytesPerSec",
+                      "remainingMb",
+                      "postProcessingJobs",
+                      "freeDiskSpaceMb",
+                      "totalDiskSpaceMb",
+                      "freeInterDiskSpaceMb",
+                      "totalInterDiskSpaceMb",
+                      "newsServers",
+                      "downloads",
+                      "totalDownloads",
+                      "failures",
+                      "totalFailures",
+                      "messages",
+                      "unreadable"
                     ],
                     "additionalProperties": false
                   }
@@ -17278,6 +18135,17 @@
                                       }
                                     ]
                                   },
+                                  "downloadId": {
+                                    "description": "The download client's id for the download; NZBGet status lists it too",
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "indexer": {
                                     "anyOf": [
                                       {
@@ -17311,6 +18179,7 @@
                                   "added",
                                   "protocol",
                                   "downloadClient",
+                                  "downloadId",
                                   "indexer"
                                 ],
                                 "additionalProperties": false
@@ -18930,6 +19799,17 @@
                                         }
                                       ]
                                     },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "indexer": {
                                       "anyOf": [
                                         {
@@ -18963,6 +19843,7 @@
                                     "added",
                                     "protocol",
                                     "downloadClient",
+                                    "downloadId",
                                     "indexer"
                                   ],
                                   "additionalProperties": false
@@ -54252,6 +55133,17 @@
                                 }
                               ]
                             },
+                            "downloadId": {
+                              "description": "The download client's id for the download; NZBGet status lists it too",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "indexer": {
                               "anyOf": [
                                 {
@@ -54285,6 +55177,7 @@
                             "added",
                             "protocol",
                             "downloadClient",
+                            "downloadId",
                             "indexer"
                           ],
                           "additionalProperties": false
@@ -54297,6 +55190,851 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_downloads_remove",
+                  "title": "Remove Radarr or Sonarr Downloads",
+                  "description": "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "queueIds": {
+                        "minItems": 1,
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "description": "queueId values from media_downloads_list"
+                      },
+                      "blocklist": {
+                        "default": true,
+                        "description": "Blocklist the release so the service never grabs it again",
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "default": false,
+                        "description": "Let the service search once for a replacement; requires blocklist",
+                        "type": "boolean"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Remove again although an earlier removal through Omni is recorded. Only when the user explicitly asks",
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "default": false,
+                        "description": "Report what would be removed without removing anything",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "queueIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "blocklist": {
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "type": "boolean"
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "queueId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "outcome": {
+                              "type": "string",
+                              "enum": [
+                                "would_remove",
+                                "recorded",
+                                "removed",
+                                "still_queued",
+                                "unverified",
+                                "uncertain",
+                                "rejected",
+                                "already_requested",
+                                "already_removed",
+                                "not_found",
+                                "importing",
+                                "failed"
+                              ],
+                              "description": "would_remove: dryRun. recorded: preview mode, nothing sent. removed: gone from the queue on read-back. still_queued: accepted but still listed. unverified: accepted, queue unreadable. uncertain: may have applied and is never resent automatically. rejected: the service refused. already_requested: an earlier removal through Omni is recorded and the download is still listed (force sends again). already_removed: gone after an earlier removal. not_found: no such download. importing: being imported, not removed. failed: nothing was sent"
+                            },
+                            "download": {
+                              "description": "The download as listed before the removal",
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "queueId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "title": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemId": {
+                                      "description": "Radarr's movie id or Sonarr's series id; null when unmatched",
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemTitle": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tmdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tvdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "seasonNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "episodeNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "status": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadStatus": {
+                                      "description": "ok, warning or error",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadState": {
+                                      "description": "For example downloading, importPending, importBlocked, failedPending",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "messages": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Why the download is stuck, rejected or failed"
+                                    },
+                                    "quality": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "customFormatScore": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeLeftBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "timeLeft": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "estimatedCompletionTime": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "added": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "protocol": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadClient": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "indexer": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "queueId",
+                                    "title",
+                                    "itemId",
+                                    "itemTitle",
+                                    "tmdbId",
+                                    "tvdbId",
+                                    "seasonNumber",
+                                    "episodeNumber",
+                                    "status",
+                                    "trackedDownloadStatus",
+                                    "trackedDownloadState",
+                                    "messages",
+                                    "quality",
+                                    "customFormatScore",
+                                    "sizeBytes",
+                                    "sizeLeftBytes",
+                                    "timeLeft",
+                                    "estimatedCompletionTime",
+                                    "added",
+                                    "protocol",
+                                    "downloadClient",
+                                    "downloadId",
+                                    "indexer"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "blocklisted": {
+                              "description": "With blocklist: whether a blocklist entry for the release and title was made during this call; null when not asked for or unreadable",
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "requestedAt": {
+                              "description": "When the earlier removal through Omni was asked for (Unix ms)",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "queueId",
+                            "outcome",
+                            "download",
+                            "blocklisted",
+                            "requestedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "dryRun",
+                      "blocklist",
+                      "redownload",
+                      "downloads"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_nzbget_status",
+                  "title": "Get NZBGet Status",
+                  "description": "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {},
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadPaused": {
+                        "type": "boolean"
+                      },
+                      "pausedForDiskSpace": {
+                        "type": "boolean",
+                        "description": "Downloading is paused and NZBGet's recent log reports low disk space"
+                      },
+                      "postProcessingPaused": {
+                        "type": "boolean"
+                      },
+                      "scanPaused": {
+                        "type": "boolean"
+                      },
+                      "quotaReached": {
+                        "type": "boolean"
+                      },
+                      "idle": {
+                        "type": "boolean",
+                        "description": "Nothing is downloading"
+                      },
+                      "resumeAt": {
+                        "description": "When a timed pause ends (Unix ms)",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "averageDownloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "downloadLimitBytesPerSec": {
+                        "description": "null: unlimited",
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingMb": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "postProcessingJobs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "freeDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "freeInterDiskSpaceMb": {
+                        "description": "The intermediate directory holding incomplete downloads",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalInterDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "newsServers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "active"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "description": "Radarr's or Sonarr's downloadId for it",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example QUEUED, PAUSED, DOWNLOADING, PP_QUEUED, LOADING_PARS, VERIFYING_SOURCES, REPAIRING, UNPACKING, MOVING, EXECUTING_SCRIPT"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "remainingMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "healthPercent": {
+                              "type": "number",
+                              "description": "Share of articles still available, in percent"
+                            },
+                            "criticalHealthPercent": {
+                              "type": "number",
+                              "description": "Below this health the download cannot be repaired"
+                            },
+                            "postStage": {
+                              "description": "The running post-processing step, for example Unpacking",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "postStagePercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "activeDownloads": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "sizeMb",
+                            "remainingMb",
+                            "healthPercent",
+                            "criticalHealthPercent",
+                            "postStage",
+                            "postStagePercent",
+                            "activeDownloads"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "At most 50, in queue order"
+                      },
+                      "totalDownloads": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "failures": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example FAILURE/HEALTH, FAILURE/PAR, FAILURE/UNPACK, FAILURE/PASSWORD, WARNING/DAMAGED, DELETED/MANUAL"
+                            },
+                            "parStatus": {
+                              "type": "string"
+                            },
+                            "unpackStatus": {
+                              "type": "string"
+                            },
+                            "moveStatus": {
+                              "type": "string"
+                            },
+                            "deleteStatus": {
+                              "type": "string"
+                            },
+                            "markStatus": {
+                              "type": "string"
+                            },
+                            "healthPercent": {
+                              "type": "number"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "finishedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "parStatus",
+                            "unpackStatus",
+                            "moveStatus",
+                            "deleteStatus",
+                            "markStatus",
+                            "healthPercent",
+                            "sizeMb",
+                            "finishedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Finished downloads that did not succeed, newest first, excluding duplicate handling (DELETED/DUPE, COPY, GOOD); at most 20"
+                      },
+                      "totalFailures": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "description": "WARNING or ERROR"
+                            },
+                            "at": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "at",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Warnings and errors among NZBGet's last 200 log lines, newest first; at most 25"
+                      },
+                      "unreadable": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Reads that failed (history, log): their lists are empty, not complete"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "downloadPaused",
+                      "pausedForDiskSpace",
+                      "postProcessingPaused",
+                      "scanPaused",
+                      "quotaReached",
+                      "idle",
+                      "resumeAt",
+                      "downloadRateBytesPerSec",
+                      "averageDownloadRateBytesPerSec",
+                      "downloadLimitBytesPerSec",
+                      "remainingMb",
+                      "postProcessingJobs",
+                      "freeDiskSpaceMb",
+                      "totalDiskSpaceMb",
+                      "freeInterDiskSpaceMb",
+                      "totalInterDiskSpaceMb",
+                      "newsServers",
+                      "downloads",
+                      "totalDownloads",
+                      "failures",
+                      "totalFailures",
+                      "messages",
+                      "unreadable"
                     ],
                     "additionalProperties": false
                   }
@@ -55012,6 +56750,17 @@
                                       }
                                     ]
                                   },
+                                  "downloadId": {
+                                    "description": "The download client's id for the download; NZBGet status lists it too",
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "indexer": {
                                     "anyOf": [
                                       {
@@ -55045,6 +56794,7 @@
                                   "added",
                                   "protocol",
                                   "downloadClient",
+                                  "downloadId",
                                   "indexer"
                                 ],
                                 "additionalProperties": false
@@ -56664,6 +58414,17 @@
                                         }
                                       ]
                                     },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "indexer": {
                                       "anyOf": [
                                         {
@@ -56697,6 +58458,7 @@
                                     "added",
                                     "protocol",
                                     "downloadClient",
+                                    "downloadId",
                                     "indexer"
                                   ],
                                   "additionalProperties": false
@@ -92177,6 +93939,17 @@
                                 }
                               ]
                             },
+                            "downloadId": {
+                              "description": "The download client's id for the download; NZBGet status lists it too",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "indexer": {
                               "anyOf": [
                                 {
@@ -92210,6 +93983,7 @@
                             "added",
                             "protocol",
                             "downloadClient",
+                            "downloadId",
                             "indexer"
                           ],
                           "additionalProperties": false
@@ -92222,6 +93996,851 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_downloads_remove",
+                  "title": "Remove Radarr or Sonarr Downloads",
+                  "description": "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "queueIds": {
+                        "minItems": 1,
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "description": "queueId values from media_downloads_list"
+                      },
+                      "blocklist": {
+                        "default": true,
+                        "description": "Blocklist the release so the service never grabs it again",
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "default": false,
+                        "description": "Let the service search once for a replacement; requires blocklist",
+                        "type": "boolean"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Remove again although an earlier removal through Omni is recorded. Only when the user explicitly asks",
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "default": false,
+                        "description": "Report what would be removed without removing anything",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "queueIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "blocklist": {
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "type": "boolean"
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "queueId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "outcome": {
+                              "type": "string",
+                              "enum": [
+                                "would_remove",
+                                "recorded",
+                                "removed",
+                                "still_queued",
+                                "unverified",
+                                "uncertain",
+                                "rejected",
+                                "already_requested",
+                                "already_removed",
+                                "not_found",
+                                "importing",
+                                "failed"
+                              ],
+                              "description": "would_remove: dryRun. recorded: preview mode, nothing sent. removed: gone from the queue on read-back. still_queued: accepted but still listed. unverified: accepted, queue unreadable. uncertain: may have applied and is never resent automatically. rejected: the service refused. already_requested: an earlier removal through Omni is recorded and the download is still listed (force sends again). already_removed: gone after an earlier removal. not_found: no such download. importing: being imported, not removed. failed: nothing was sent"
+                            },
+                            "download": {
+                              "description": "The download as listed before the removal",
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "queueId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "title": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemId": {
+                                      "description": "Radarr's movie id or Sonarr's series id; null when unmatched",
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemTitle": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tmdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tvdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "seasonNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "episodeNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "status": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadStatus": {
+                                      "description": "ok, warning or error",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadState": {
+                                      "description": "For example downloading, importPending, importBlocked, failedPending",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "messages": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Why the download is stuck, rejected or failed"
+                                    },
+                                    "quality": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "customFormatScore": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeLeftBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "timeLeft": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "estimatedCompletionTime": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "added": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "protocol": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadClient": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "indexer": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "queueId",
+                                    "title",
+                                    "itemId",
+                                    "itemTitle",
+                                    "tmdbId",
+                                    "tvdbId",
+                                    "seasonNumber",
+                                    "episodeNumber",
+                                    "status",
+                                    "trackedDownloadStatus",
+                                    "trackedDownloadState",
+                                    "messages",
+                                    "quality",
+                                    "customFormatScore",
+                                    "sizeBytes",
+                                    "sizeLeftBytes",
+                                    "timeLeft",
+                                    "estimatedCompletionTime",
+                                    "added",
+                                    "protocol",
+                                    "downloadClient",
+                                    "downloadId",
+                                    "indexer"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "blocklisted": {
+                              "description": "With blocklist: whether a blocklist entry for the release and title was made during this call; null when not asked for or unreadable",
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "requestedAt": {
+                              "description": "When the earlier removal through Omni was asked for (Unix ms)",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "queueId",
+                            "outcome",
+                            "download",
+                            "blocklisted",
+                            "requestedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "dryRun",
+                      "blocklist",
+                      "redownload",
+                      "downloads"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_nzbget_status",
+                  "title": "Get NZBGet Status",
+                  "description": "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {},
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadPaused": {
+                        "type": "boolean"
+                      },
+                      "pausedForDiskSpace": {
+                        "type": "boolean",
+                        "description": "Downloading is paused and NZBGet's recent log reports low disk space"
+                      },
+                      "postProcessingPaused": {
+                        "type": "boolean"
+                      },
+                      "scanPaused": {
+                        "type": "boolean"
+                      },
+                      "quotaReached": {
+                        "type": "boolean"
+                      },
+                      "idle": {
+                        "type": "boolean",
+                        "description": "Nothing is downloading"
+                      },
+                      "resumeAt": {
+                        "description": "When a timed pause ends (Unix ms)",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "averageDownloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "downloadLimitBytesPerSec": {
+                        "description": "null: unlimited",
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingMb": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "postProcessingJobs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "freeDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "freeInterDiskSpaceMb": {
+                        "description": "The intermediate directory holding incomplete downloads",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalInterDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "newsServers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "active"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "description": "Radarr's or Sonarr's downloadId for it",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example QUEUED, PAUSED, DOWNLOADING, PP_QUEUED, LOADING_PARS, VERIFYING_SOURCES, REPAIRING, UNPACKING, MOVING, EXECUTING_SCRIPT"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "remainingMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "healthPercent": {
+                              "type": "number",
+                              "description": "Share of articles still available, in percent"
+                            },
+                            "criticalHealthPercent": {
+                              "type": "number",
+                              "description": "Below this health the download cannot be repaired"
+                            },
+                            "postStage": {
+                              "description": "The running post-processing step, for example Unpacking",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "postStagePercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "activeDownloads": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "sizeMb",
+                            "remainingMb",
+                            "healthPercent",
+                            "criticalHealthPercent",
+                            "postStage",
+                            "postStagePercent",
+                            "activeDownloads"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "At most 50, in queue order"
+                      },
+                      "totalDownloads": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "failures": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example FAILURE/HEALTH, FAILURE/PAR, FAILURE/UNPACK, FAILURE/PASSWORD, WARNING/DAMAGED, DELETED/MANUAL"
+                            },
+                            "parStatus": {
+                              "type": "string"
+                            },
+                            "unpackStatus": {
+                              "type": "string"
+                            },
+                            "moveStatus": {
+                              "type": "string"
+                            },
+                            "deleteStatus": {
+                              "type": "string"
+                            },
+                            "markStatus": {
+                              "type": "string"
+                            },
+                            "healthPercent": {
+                              "type": "number"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "finishedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "parStatus",
+                            "unpackStatus",
+                            "moveStatus",
+                            "deleteStatus",
+                            "markStatus",
+                            "healthPercent",
+                            "sizeMb",
+                            "finishedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Finished downloads that did not succeed, newest first, excluding duplicate handling (DELETED/DUPE, COPY, GOOD); at most 20"
+                      },
+                      "totalFailures": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "description": "WARNING or ERROR"
+                            },
+                            "at": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "at",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Warnings and errors among NZBGet's last 200 log lines, newest first; at most 25"
+                      },
+                      "unreadable": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Reads that failed (history, log): their lists are empty, not complete"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "downloadPaused",
+                      "pausedForDiskSpace",
+                      "postProcessingPaused",
+                      "scanPaused",
+                      "quotaReached",
+                      "idle",
+                      "resumeAt",
+                      "downloadRateBytesPerSec",
+                      "averageDownloadRateBytesPerSec",
+                      "downloadLimitBytesPerSec",
+                      "remainingMb",
+                      "postProcessingJobs",
+                      "freeDiskSpaceMb",
+                      "totalDiskSpaceMb",
+                      "freeInterDiskSpaceMb",
+                      "totalInterDiskSpaceMb",
+                      "newsServers",
+                      "downloads",
+                      "totalDownloads",
+                      "failures",
+                      "totalFailures",
+                      "messages",
+                      "unreadable"
                     ],
                     "additionalProperties": false
                   }
@@ -92937,6 +95556,17 @@
                                       }
                                     ]
                                   },
+                                  "downloadId": {
+                                    "description": "The download client's id for the download; NZBGet status lists it too",
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "indexer": {
                                     "anyOf": [
                                       {
@@ -92970,6 +95600,7 @@
                                   "added",
                                   "protocol",
                                   "downloadClient",
+                                  "downloadId",
                                   "indexer"
                                 ],
                                 "additionalProperties": false
@@ -94589,6 +97220,17 @@
                                         }
                                       ]
                                     },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "indexer": {
                                       "anyOf": [
                                         {
@@ -94622,6 +97264,7 @@
                                     "added",
                                     "protocol",
                                     "downloadClient",
+                                    "downloadId",
                                     "indexer"
                                   ],
                                   "additionalProperties": false
@@ -129363,6 +132006,17 @@
                                 }
                               ]
                             },
+                            "downloadId": {
+                              "description": "The download client's id for the download; NZBGet status lists it too",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "indexer": {
                               "anyOf": [
                                 {
@@ -129396,6 +132050,7 @@
                             "added",
                             "protocol",
                             "downloadClient",
+                            "downloadId",
                             "indexer"
                           ],
                           "additionalProperties": false
@@ -129408,6 +132063,851 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_downloads_remove",
+                  "title": "Remove Radarr or Sonarr Downloads",
+                  "description": "Remove stuck or failed downloads from the Radarr or Sonarr queue by the queueId media_downloads_list returns. The service removes each download from NZBGet together with its downloaded files (library files are never touched) and, with blocklist (the default), blocklists the release so it is never grabbed again. redownload (requires blocklist) lets the service search once for a replacement; without it nothing is searched, and media_movies_search or media_series_search can search later. Use dryRun to show the user what would be removed first. A download being imported is refused. Each removal is recorded: a download whose earlier removal through Omni is recorded is reported, not removed again, unless force is set because the user explicitly asks; an uncertain removal is never resent automatically. The queue is read back afterwards to confirm each removal.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "queueIds": {
+                        "minItems": 1,
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "description": "queueId values from media_downloads_list"
+                      },
+                      "blocklist": {
+                        "default": true,
+                        "description": "Blocklist the release so the service never grabs it again",
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "default": false,
+                        "description": "Let the service search once for a replacement; requires blocklist",
+                        "type": "boolean"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Remove again although an earlier removal through Omni is recorded. Only when the user explicitly asks",
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "default": false,
+                        "description": "Report what would be removed without removing anything",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "queueIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "service": {
+                        "type": "string",
+                        "enum": [
+                          "radarr",
+                          "sonarr"
+                        ]
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "blocklist": {
+                        "type": "boolean"
+                      },
+                      "redownload": {
+                        "type": "boolean"
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "queueId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "outcome": {
+                              "type": "string",
+                              "enum": [
+                                "would_remove",
+                                "recorded",
+                                "removed",
+                                "still_queued",
+                                "unverified",
+                                "uncertain",
+                                "rejected",
+                                "already_requested",
+                                "already_removed",
+                                "not_found",
+                                "importing",
+                                "failed"
+                              ],
+                              "description": "would_remove: dryRun. recorded: preview mode, nothing sent. removed: gone from the queue on read-back. still_queued: accepted but still listed. unverified: accepted, queue unreadable. uncertain: may have applied and is never resent automatically. rejected: the service refused. already_requested: an earlier removal through Omni is recorded and the download is still listed (force sends again). already_removed: gone after an earlier removal. not_found: no such download. importing: being imported, not removed. failed: nothing was sent"
+                            },
+                            "download": {
+                              "description": "The download as listed before the removal",
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "queueId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "title": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemId": {
+                                      "description": "Radarr's movie id or Sonarr's series id; null when unmatched",
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "itemTitle": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tmdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tvdbId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "seasonNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "episodeNumber": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "status": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadStatus": {
+                                      "description": "ok, warning or error",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "trackedDownloadState": {
+                                      "description": "For example downloading, importPending, importBlocked, failedPending",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "messages": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Why the download is stuck, rejected or failed"
+                                    },
+                                    "quality": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "customFormatScore": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "sizeLeftBytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "timeLeft": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "estimatedCompletionTime": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "added": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "protocol": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadClient": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "indexer": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "queueId",
+                                    "title",
+                                    "itemId",
+                                    "itemTitle",
+                                    "tmdbId",
+                                    "tvdbId",
+                                    "seasonNumber",
+                                    "episodeNumber",
+                                    "status",
+                                    "trackedDownloadStatus",
+                                    "trackedDownloadState",
+                                    "messages",
+                                    "quality",
+                                    "customFormatScore",
+                                    "sizeBytes",
+                                    "sizeLeftBytes",
+                                    "timeLeft",
+                                    "estimatedCompletionTime",
+                                    "added",
+                                    "protocol",
+                                    "downloadClient",
+                                    "downloadId",
+                                    "indexer"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "blocklisted": {
+                              "description": "With blocklist: whether a blocklist entry for the release and title was made during this call; null when not asked for or unreadable",
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "requestedAt": {
+                              "description": "When the earlier removal through Omni was asked for (Unix ms)",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "queueId",
+                            "outcome",
+                            "download",
+                            "blocklisted",
+                            "requestedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "service",
+                      "dryRun",
+                      "blocklist",
+                      "redownload",
+                      "downloads"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_nzbget_status",
+                  "title": "Get NZBGet Status",
+                  "description": "Read the NZBGet download client directly: whether downloading or post-processing is paused (pausedForDiskSpace when downloading is paused and NZBGet's recent log reports low disk space), speed and limit, free space on the download and intermediate disks, news-server state, each queued download with its health and post-processing stage (repairing, unpacking, moving) and progress, the most recent failed or deleted downloads with NZBGet's exact status (FAILURE/HEALTH, FAILURE/UNPACK, ...), and recent warnings and errors from its log. Use it when media_downloads_list shows downloads stalled or failing. Join downloads to Radarr's or Sonarr's queue by downloadId. Read-only: to clear a download, use media_downloads_remove.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {},
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadPaused": {
+                        "type": "boolean"
+                      },
+                      "pausedForDiskSpace": {
+                        "type": "boolean",
+                        "description": "Downloading is paused and NZBGet's recent log reports low disk space"
+                      },
+                      "postProcessingPaused": {
+                        "type": "boolean"
+                      },
+                      "scanPaused": {
+                        "type": "boolean"
+                      },
+                      "quotaReached": {
+                        "type": "boolean"
+                      },
+                      "idle": {
+                        "type": "boolean",
+                        "description": "Nothing is downloading"
+                      },
+                      "resumeAt": {
+                        "description": "When a timed pause ends (Unix ms)",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "downloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "averageDownloadRateBytesPerSec": {
+                        "type": "number"
+                      },
+                      "downloadLimitBytesPerSec": {
+                        "description": "null: unlimited",
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "remainingMb": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "postProcessingJobs": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "freeDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "freeInterDiskSpaceMb": {
+                        "description": "The intermediate directory holding incomplete downloads",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "totalInterDiskSpaceMb": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "newsServers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "active"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "downloads": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "description": "Radarr's or Sonarr's downloadId for it",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example QUEUED, PAUSED, DOWNLOADING, PP_QUEUED, LOADING_PARS, VERIFYING_SOURCES, REPAIRING, UNPACKING, MOVING, EXECUTING_SCRIPT"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "remainingMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "healthPercent": {
+                              "type": "number",
+                              "description": "Share of articles still available, in percent"
+                            },
+                            "criticalHealthPercent": {
+                              "type": "number",
+                              "description": "Below this health the download cannot be repaired"
+                            },
+                            "postStage": {
+                              "description": "The running post-processing step, for example Unpacking",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "postStagePercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "activeDownloads": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "sizeMb",
+                            "remainingMb",
+                            "healthPercent",
+                            "criticalHealthPercent",
+                            "postStage",
+                            "postStagePercent",
+                            "activeDownloads"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "At most 50, in queue order"
+                      },
+                      "totalDownloads": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "failures": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "nzbId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "downloadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "For example FAILURE/HEALTH, FAILURE/PAR, FAILURE/UNPACK, FAILURE/PASSWORD, WARNING/DAMAGED, DELETED/MANUAL"
+                            },
+                            "parStatus": {
+                              "type": "string"
+                            },
+                            "unpackStatus": {
+                              "type": "string"
+                            },
+                            "moveStatus": {
+                              "type": "string"
+                            },
+                            "deleteStatus": {
+                              "type": "string"
+                            },
+                            "markStatus": {
+                              "type": "string"
+                            },
+                            "healthPercent": {
+                              "type": "number"
+                            },
+                            "sizeMb": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "finishedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            }
+                          },
+                          "required": [
+                            "nzbId",
+                            "downloadId",
+                            "name",
+                            "category",
+                            "status",
+                            "parStatus",
+                            "unpackStatus",
+                            "moveStatus",
+                            "deleteStatus",
+                            "markStatus",
+                            "healthPercent",
+                            "sizeMb",
+                            "finishedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Finished downloads that did not succeed, newest first, excluding duplicate handling (DELETED/DUPE, COPY, GOOD); at most 20"
+                      },
+                      "totalFailures": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "description": "WARNING or ERROR"
+                            },
+                            "at": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "at",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Warnings and errors among NZBGet's last 200 log lines, newest first; at most 25"
+                      },
+                      "unreadable": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Reads that failed (history, log): their lists are empty, not complete"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "downloadPaused",
+                      "pausedForDiskSpace",
+                      "postProcessingPaused",
+                      "scanPaused",
+                      "quotaReached",
+                      "idle",
+                      "resumeAt",
+                      "downloadRateBytesPerSec",
+                      "averageDownloadRateBytesPerSec",
+                      "downloadLimitBytesPerSec",
+                      "remainingMb",
+                      "postProcessingJobs",
+                      "freeDiskSpaceMb",
+                      "totalDiskSpaceMb",
+                      "freeInterDiskSpaceMb",
+                      "totalInterDiskSpaceMb",
+                      "newsServers",
+                      "downloads",
+                      "totalDownloads",
+                      "failures",
+                      "totalFailures",
+                      "messages",
+                      "unreadable"
                     ],
                     "additionalProperties": false
                   }
@@ -130123,6 +133623,17 @@
                                       }
                                     ]
                                   },
+                                  "downloadId": {
+                                    "description": "The download client's id for the download; NZBGet status lists it too",
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "indexer": {
                                     "anyOf": [
                                       {
@@ -130156,6 +133667,7 @@
                                   "added",
                                   "protocol",
                                   "downloadClient",
+                                  "downloadId",
                                   "indexer"
                                 ],
                                 "additionalProperties": false
@@ -131775,6 +135287,17 @@
                                         }
                                       ]
                                     },
+                                    "downloadId": {
+                                      "description": "The download client's id for the download; NZBGet status lists it too",
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "indexer": {
                                       "anyOf": [
                                         {
@@ -131808,6 +135331,7 @@
                                     "added",
                                     "protocol",
                                     "downloadClient",
+                                    "downloadId",
                                     "indexer"
                                   ],
                                   "additionalProperties": false

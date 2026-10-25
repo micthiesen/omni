@@ -67,6 +67,8 @@ async fn registers_the_media_tools_in_serving_order() {
             "media_arr_profiles",
             "media_arr_status",
             "media_downloads_list",
+            "media_downloads_remove",
+            "media_nzbget_status",
             "media_movies_get",
             "media_movie_collections",
             "media_movies_profile_set",

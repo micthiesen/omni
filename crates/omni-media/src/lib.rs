@@ -29,6 +29,7 @@ pub mod identity;
 pub mod js;
 pub mod mcp;
 pub mod media_library;
+pub mod nzbget;
 pub mod on_deck;
 pub mod outcomes;
 pub mod persistence;
@@ -50,6 +51,7 @@ pub use services::MediaServices;
 
 use arr::inspect::ArrInspect;
 use arr::movies::{MovieSearchData, RadarrMovies};
+use arr::queue::{ArrQueue, DownloadRemovalData};
 use arr::seasons::{SeasonSearchData, SonarrSeasons};
 use arr::{ArrConfig, ArrHttp};
 use media_library::PlexLibrary;
@@ -116,6 +118,7 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         ctx.tracker.clone(),
     );
     let arr = ArrInspect::new(arr_http.clone(), radarr.clone(), sonarr.clone());
+    let queue = ArrQueue::new(arr.clone(), ctx.store.clone(), ctx.tracker.clone());
     let watchlist = ArrWatchlist::new(arr_http, radarr, sonarr, seasons.clone(), movies.clone());
     let research = WebSearch::new(
         ctx.public_http.clone(),
@@ -131,6 +134,8 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         seasons,
         movies,
         arr,
+        queue,
+        nzbget: nzbget::NzbGet::new(ctx.http.clone(), config.nzbget_url.clone()),
         catalog: Arc::new(TmdbClient::new(
             ctx.http.clone(),
             config.tmdb_api_key.clone(),
@@ -150,6 +155,7 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<TasteProfileData>(),
         EntityDescriptor::of::<SeasonSearchData>(),
         EntityDescriptor::of::<MovieSearchData>(),
+        EntityDescriptor::of::<DownloadRemovalData>(),
     ]
 }
 

@@ -13,6 +13,7 @@ use serde::de::DeserializeOwned;
 
 pub mod inspect;
 pub mod movies;
+pub mod queue;
 pub mod radarr;
 pub mod seasons;
 pub mod sonarr;
@@ -190,6 +191,33 @@ impl ArrHttp {
         }
     }
 
+    /// [`Self::send_limited`] for a write whose response body is empty or
+    /// irrelevant (Radarr's and Sonarr's `DELETE` answer 200 with no body).
+    pub async fn send_unit(
+        &self,
+        (base, api_key): (&str, &str),
+        method: Method,
+        path: &str,
+        limits: Limits,
+    ) -> HttpResult<()> {
+        match tokio::time::timeout(
+            limits.timeout,
+            self.request_bytes(base, api_key, method, path, None, limits.max_bytes),
+        )
+        .await
+        {
+            Ok(result) => match result {
+                HttpResult::Ok(_) => HttpResult::Ok(()),
+                HttpResult::HttpError { status_code } => HttpResult::HttpError { status_code },
+                HttpResult::Unavailable => HttpResult::Unavailable,
+            },
+            Err(_) => {
+                tracing::debug!(target: LOG, "Arr request {path} timed out");
+                HttpResult::Unavailable
+            }
+        }
+    }
+
     async fn request<T: DeserializeOwned>(
         &self,
         base: &str,
@@ -199,6 +227,32 @@ impl ArrHttp {
         body: JsonBody,
         max_bytes: usize,
     ) -> HttpResult<T> {
+        let body = match self
+            .request_bytes(base, api_key, method, path, body, max_bytes)
+            .await
+        {
+            HttpResult::Ok(response) => response.body,
+            HttpResult::HttpError { status_code } => return HttpResult::HttpError { status_code },
+            HttpResult::Unavailable => return HttpResult::Unavailable,
+        };
+        match serde_json::from_slice::<T>(&body) {
+            Ok(value) => HttpResult::Ok(value),
+            Err(e) => {
+                tracing::debug!(target: LOG, "Arr response {path} rejected: {e}");
+                HttpResult::Unavailable
+            }
+        }
+    }
+
+    async fn request_bytes(
+        &self,
+        base: &str,
+        api_key: &str,
+        method: Method,
+        path: &str,
+        body: JsonBody,
+        max_bytes: usize,
+    ) -> HttpResult<omni_http::BoundedResponse> {
         let Some(url) = arr_url(base, path) else {
             return HttpResult::Unavailable;
         };
@@ -225,13 +279,7 @@ impl ArrHttp {
                 status_code: response.status.as_u16(),
             };
         }
-        match serde_json::from_slice::<T>(&response.body) {
-            Ok(value) => HttpResult::Ok(value),
-            Err(e) => {
-                tracing::debug!(target: LOG, "Arr response {path} rejected: {e}");
-                HttpResult::Unavailable
-            }
-        }
+        HttpResult::Ok(response)
     }
 
     /// Records a write instead of sending it (Record mode only).

@@ -163,8 +163,8 @@ change; reuse authorization already given in the conversation.
   RSS.
 - `omni-podcasts`: podcast recommendations, taste reflection, Castro bridge and
   Inbox cleanup.
-- `omni-media`: Plex, TMDB, Radarr/Sonarr, media recommendations, taste
-  reflection.
+- `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, media
+  recommendations, taste reflection.
 - `omni-arr`: `ArrRecovery` and `ObserverRepair`.
 - `omni-reminders`: server iCloud Reminders and the shared protected-access
   (PCS) workflow; callers own authenticated requests, encrypted cookie
@@ -450,13 +450,24 @@ within 24 hours, while a download is queued, a Radarr search covers the movie,
 Radarr's history shows a grab, or a post-add search is pending, the movie is
 reported and never searched or grabbed again, and an uncertain request is never
 retried. A grab takes only a release a fresh search still offers and Radarr
-approves. Omni never deletes media: Radarr's own import replaces the old file,
+approves. Omni never deletes library media: Radarr's own import replaces the old file,
 and an upgrade is `verified` only when the file changed and it is the only
 video file in the movie's folder. Radarr history `data`, release guids and
 download URLs can carry indexer API keys and never leave the adapter (releases
 are named by an opaque `releaseId`); Arr free text passes `inspect::redact`.
 The indexer search of a grab runs outside the write lock; the checks,
 reservation and grab run inside it. See "Radarr movies" in `docs/mcp.md`.
+
+### Downloads and NZBGet
+
+`media_nzbget_status` calls only NZBGet's read methods and never reads history
+`URL`s (indexer keys). Downloads are cleared only through Radarr's or Sonarr's
+queue (`media_downloads_remove`: `removeFromClient`, blocklist by default, no
+search unless `redownload`), never by an NZBGet write, so the services' queues
+and blocklists stay consistent. Each removal is reserved durably per service
+and queue id before the request, settled only by reading the queue back, and
+never resent while recorded unless forced; a download being imported is
+refused. See "Downloads and NZBGet" in `docs/mcp.md`.
 
 ### Observer issue repair
 

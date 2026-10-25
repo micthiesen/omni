@@ -9,6 +9,7 @@ use futures::future::BoxFuture;
 use omni_http::SideEffectMode;
 use omni_media::arr::inspect::ArrInspect;
 use omni_media::arr::movies::RadarrMovies;
+use omni_media::arr::queue::ArrQueue;
 use omni_media::arr::seasons::SonarrSeasons;
 use omni_media::arr::{ArrConfig, ArrHttp};
 use omni_media::error::IntegrationError;
@@ -298,6 +299,8 @@ impl Harness {
             seasons: sonarr_seasons(&app, ArrConfig::default(), SideEffectMode::Live),
             movies: radarr_movies(&app, ArrConfig::default(), SideEffectMode::Live),
             arr: arr_inspect(ArrConfig::default(), ArrConfig::default()),
+            queue: arr_queue(&app, ArrConfig::default(), ArrConfig::default()),
+            nzbget: omni_media::nzbget::NzbGet::new(omni_testkit::no_network(), None),
             catalog: Arc::new(catalog.clone()),
             research: Arc::new(research.clone()),
             notifier: Arc::new(notifier.clone()),
@@ -340,6 +343,15 @@ pub fn arr_inspect(radarr: ArrConfig, sonarr: ArrConfig) -> ArrInspect {
         ArrHttp::new(omni_testkit::no_network(), SideEffectMode::Live),
         radarr,
         sonarr,
+    )
+}
+
+/// Queue removals over `radarr` and `sonarr`.
+pub fn arr_queue(app: &TestApp, radarr: ArrConfig, sonarr: ArrConfig) -> ArrQueue {
+    ArrQueue::new(
+        arr_inspect(radarr, sonarr),
+        app.ctx.store.clone(),
+        app.ctx.tracker.clone(),
     )
 }
 
