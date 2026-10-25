@@ -1,8 +1,9 @@
 //! Radarr/Sonarr v3 API access.
 //!
-//! Every request is bounded (15 s overall, 8 MiB body) and every failure,
-//! malformed payload included, reads as `Unavailable`: callers never mistake a
-//! partial or broken response for the tracked state.
+//! Every request is bounded (15 s overall and an 8 MiB body unless the call
+//! names wider [`Limits`]) and every failure, malformed payload included, reads
+//! as `Unavailable`: callers never mistake a partial or broken response for the
+//! tracked state.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,12 +11,38 @@ use std::time::Duration;
 use omni_http::{HttpClient, Method, RedirectRule, SideEffectMode, Url};
 use serde::de::DeserializeOwned;
 
+pub mod inspect;
+pub mod movies;
 pub mod radarr;
 pub mod seasons;
 pub mod sonarr;
 
 pub const ARR_JSON_MAX_BYTES: usize = 8 * 1024 * 1024;
 const ARR_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Per-request bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limits {
+    pub timeout: Duration,
+    pub max_bytes: usize,
+}
+
+impl Limits {
+    pub const DEFAULT: Self = Self {
+        timeout: ARR_TIMEOUT,
+        max_bytes: ARR_JSON_MAX_BYTES,
+    };
+    /// Whole-library listings: Radarr's movie list runs to several MiB.
+    pub const LIBRARY: Self = Self {
+        timeout: Duration::from_secs(30),
+        max_bytes: 48 * 1024 * 1024,
+    };
+    /// Interactive release searches wait for every indexer.
+    pub const INDEXER_SEARCH: Self = Self {
+        timeout: Duration::from_secs(120),
+        max_bytes: 16 * 1024 * 1024,
+    };
+}
 /// `fetch` follows up to 20 redirects.
 const MAX_REDIRECTS: u8 = 20;
 const LOG: &str = "Recommendations";
@@ -136,8 +163,24 @@ impl ArrHttp {
         path: &str,
         body: JsonBody,
     ) -> HttpResult<T> {
-        match tokio::time::timeout(ARR_TIMEOUT, self.request(base, api_key, method, path, body))
+        self.send_limited((base, api_key), method, path, body, Limits::DEFAULT)
             .await
+    }
+
+    /// [`Self::send_json`] under explicit [`Limits`].
+    pub async fn send_limited<T: DeserializeOwned>(
+        &self,
+        (base, api_key): (&str, &str),
+        method: Method,
+        path: &str,
+        body: JsonBody,
+        limits: Limits,
+    ) -> HttpResult<T> {
+        match tokio::time::timeout(
+            limits.timeout,
+            self.request(base, api_key, method, path, body, limits.max_bytes),
+        )
+        .await
         {
             Ok(result) => result,
             Err(_) => {
@@ -154,6 +197,7 @@ impl ArrHttp {
         method: Method,
         path: &str,
         body: JsonBody,
+        max_bytes: usize,
     ) -> HttpResult<T> {
         let Some(url) = arr_url(base, path) else {
             return HttpResult::Unavailable;
@@ -169,7 +213,7 @@ impl ArrHttp {
                 .header("Content-Type", "application/json")
                 .body(omni_core::js::json_stringify(&body));
         }
-        let response = match request.send_bounded(ARR_JSON_MAX_BYTES).await {
+        let response = match request.send_bounded(max_bytes).await {
             Ok(response) => response,
             Err(e) => {
                 tracing::debug!(target: LOG, "Arr request {path} failed: {e}");

@@ -7,7 +7,10 @@ use std::time::Duration;
 
 use omni_http::SideEffectMode;
 use omni_media::arr::radarr::{add_radarr_movie, fetch_radarr_movies};
-use omni_media::arr::{ARR_JSON_MAX_BYTES, ArrConfig, ArrHttp};
+use omni_media::arr::{ArrConfig, ArrHttp, Limits};
+
+/// The movie list's body bound (it runs to several MiB in a real library).
+const MOVIE_LIST_MAX_BYTES: usize = Limits::LIBRARY.max_bytes;
 use omni_media::types::{AddToWatchlistResult, ExternalIds, MediaItem, MediaType};
 use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param};
@@ -98,7 +101,7 @@ async fn treats_malformed_tracked_movie_payloads_as_unavailable() {
 async fn rejects_an_oversized_declared_response_before_buffering_it() {
     let head = format!(
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
-        ARR_JSON_MAX_BYTES + 1
+        MOVIE_LIST_MAX_BYTES + 1
     );
     let (url, _sent, closed) = common::raw_http_server(head, Vec::new()).await;
     let result = tokio::time::timeout(
@@ -120,7 +123,7 @@ async fn rejects_a_chunked_response_as_soon_as_it_crosses_the_byte_limit() {
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n"
             .to_owned();
     let body = vec![
-        common::chunk(&vec![b' '; ARR_JSON_MAX_BYTES]),
+        common::chunk(&vec![b' '; MOVIE_LIST_MAX_BYTES]),
         common::chunk(b" "),
     ];
     let (url, _sent, closed) = common::raw_http_server(head, body).await;

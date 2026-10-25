@@ -48,6 +48,8 @@ pub mod watchlist;
 pub use on_deck::MediaOnDeck;
 pub use services::MediaServices;
 
+use arr::inspect::ArrInspect;
+use arr::movies::{MovieSearchData, RadarrMovies};
 use arr::seasons::{SeasonSearchData, SonarrSeasons};
 use arr::{ArrConfig, ArrHttp};
 use media_library::PlexLibrary;
@@ -101,17 +103,20 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         ctx.store.clone(),
         ctx.tracker.clone(),
     );
-    let watchlist = ArrWatchlist::new(
-        arr_http,
-        ArrConfig {
-            url: config.radarr_url.clone(),
-            api_key: config.radarr_api_key.clone(),
-            root_folder_path: config.radarr_root_folder_path.clone(),
-            quality_profile_id: config.radarr_quality_profile_id,
-        },
-        sonarr,
-        seasons.clone(),
+    let radarr = ArrConfig {
+        url: config.radarr_url.clone(),
+        api_key: config.radarr_api_key.clone(),
+        root_folder_path: config.radarr_root_folder_path.clone(),
+        quality_profile_id: config.radarr_quality_profile_id,
+    };
+    let movies = RadarrMovies::new(
+        arr_http.clone(),
+        radarr.clone(),
+        ctx.store.clone(),
+        ctx.tracker.clone(),
     );
+    let arr = ArrInspect::new(arr_http.clone(), radarr.clone(), sonarr.clone());
+    let watchlist = ArrWatchlist::new(arr_http, radarr, sonarr, seasons.clone(), movies.clone());
     let research = WebSearch::new(
         ctx.public_http.clone(),
         config.tavily_api_key.clone().unwrap_or_default(),
@@ -124,6 +129,8 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         library: Arc::new(library),
         watchlist: Arc::new(watchlist),
         seasons,
+        movies,
+        arr,
         catalog: Arc::new(TmdbClient::new(
             ctx.http.clone(),
             config.tmdb_api_key.clone(),
@@ -142,6 +149,7 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<TasteEvidenceData>(),
         EntityDescriptor::of::<TasteProfileData>(),
         EntityDescriptor::of::<SeasonSearchData>(),
+        EntityDescriptor::of::<MovieSearchData>(),
     ]
 }
 

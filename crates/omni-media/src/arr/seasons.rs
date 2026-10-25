@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::task::TaskTracker;
 
+use super::inspect::{ArrService, InspectError, fetch_profiles};
 use super::sonarr::{AddSearchLedger, add_sonarr_series_with};
 use super::{ArrConfig, ArrHttp, HttpResult, WriteOutcome, put_opt};
 use crate::types::WatchlistAddOutcome;
@@ -50,6 +51,8 @@ struct SeriesResource {
     tmdb_id: Option<i64>,
     #[serde(default)]
     imdb_id: Option<String>,
+    #[serde(default)]
+    quality_profile_id: Option<i64>,
     #[serde(default)]
     monitored: Option<bool>,
     /// Sonarr v4 only: `all` monitors seasons that appear later, `none` does not.
@@ -261,6 +264,7 @@ pub struct SeriesStatus {
     pub tmdb_id: Option<i64>,
     pub tvdb_id: i64,
     pub title_slug: Option<String>,
+    pub quality_profile_id: Option<i64>,
     pub monitored: bool,
     pub monitor_new_seasons: Option<bool>,
     pub initial_search_pending: bool,
@@ -281,6 +285,9 @@ pub enum SeriesResult {
     NothingSearched,
     NotFound,
     SeasonNotFound,
+    /// A profile change that was only planned (`dryRun`).
+    Preview,
+    ProfileNotFound,
     Unavailable,
     Error,
 }
@@ -380,6 +387,34 @@ pub struct SeasonSetRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeriesProfileRequest {
+    pub tmdb_id: i64,
+    pub quality_profile_id: i64,
+    pub dry_run: bool,
+}
+
+/// A series profile change: the result, the profile before it, and the
+/// series as Sonarr reports it afterwards (as it is, for a preview).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeriesProfileOutcome {
+    pub result: SeriesResult,
+    pub previous_quality_profile_id: Option<i64>,
+    pub quality_profile: Option<(i64, String)>,
+    pub series: Option<SeriesStatus>,
+}
+
+impl SeriesProfileOutcome {
+    fn of(result: SeriesResult) -> Self {
+        Self {
+            result,
+            previous_quality_profile_id: None,
+            quality_profile: None,
+            series: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SeasonSearchRequest {
     pub tmdb_id: i64,
     pub seasons: BTreeSet<i64>,
@@ -466,6 +501,19 @@ impl SonarrSeasons {
             this.search_inner(request)
                 .await
                 .unwrap_or_else(SeriesOutcome::from)
+        })
+        .await
+    }
+
+    /// Changes the series' quality profile, leaving monitoring alone. Never
+    /// searches: Sonarr grabs upgrades for monitored episodes as releases appear.
+    pub async fn set_profile(&self, request: SeriesProfileRequest) -> SeriesProfileOutcome {
+        let this = self.clone();
+        must_complete(&self.tracker, async move {
+            let _writes = this.writes.lock().await;
+            this.set_profile_inner(request)
+                .await
+                .unwrap_or_else(|failure| SeriesProfileOutcome::of(failure.0))
         })
         .await
     }
@@ -724,6 +772,84 @@ impl SonarrSeasons {
         })
     }
 
+    async fn set_profile_inner(&self, request: SeriesProfileRequest) -> Step<SeriesProfileOutcome> {
+        let Some(connection) = self.config.connection() else {
+            return Ok(SeriesProfileOutcome::of(SeriesResult::Unavailable));
+        };
+        let tracked = match self.resolve(connection, request.tmdb_id).await? {
+            Resolved::Tracked(tracked) => *tracked,
+            Resolved::NotTracked(lookup) => {
+                return Ok(SeriesProfileOutcome {
+                    series: Some(untracked_status(&lookup)),
+                    ..SeriesProfileOutcome::of(SeriesResult::NotTracked)
+                });
+            }
+        };
+        let profiles = fetch_profiles(&self.http, ArrService::Sonarr, connection)
+            .await
+            .map_err(|error| {
+                Failure(match error {
+                    InspectError::Http { .. } => SeriesResult::Error,
+                    _ => SeriesResult::Unavailable,
+                })
+            })?;
+        let Some(profile) = profiles
+            .iter()
+            .find(|p| p.id() == request.quality_profile_id)
+        else {
+            return Ok(SeriesProfileOutcome::of(SeriesResult::ProfileNotFound));
+        };
+        let before = tracked.series.quality_profile_id;
+        let outcome = |result, series| SeriesProfileOutcome {
+            result,
+            previous_quality_profile_id: before,
+            quality_profile: Some((profile.id(), profile.name())),
+            series,
+        };
+        if before == Some(request.quality_profile_id) || request.dry_run {
+            let result = if request.dry_run {
+                SeriesResult::Preview
+            } else {
+                SeriesResult::Unchanged
+            };
+            return Ok(outcome(
+                result,
+                Some(self.tracked_status(connection, &tracked).await?),
+            ));
+        }
+        let mut body = tracked.raw.clone();
+        body["qualityProfileId"] = request.quality_profile_id.into();
+        let path = format!("series/{}", tracked.id);
+        if self.http.mode() == SideEffectMode::Record {
+            self.http.record_write(connection.0, &path, body);
+            return Ok(outcome(SeriesResult::Updated, None));
+        }
+        let sent = self
+            .http
+            .send_json::<Value>(connection, Method::PUT, &path, Some(body))
+            .await;
+        if WriteOutcome::of(&sent) == WriteOutcome::Rejected {
+            return Ok(outcome(SeriesResult::Error, None));
+        }
+        // Accepted or uncertain alike, only Sonarr's own state settles it.
+        let written = self.tracked(connection, tracked.id).await?;
+        let verified = written.series.quality_profile_id == Some(request.quality_profile_id);
+        tracing::info!(
+            target: LOG,
+            "Set quality profile {} on series tvdb:{} (verified: {verified})",
+            request.quality_profile_id,
+            tracked.tvdb_id
+        );
+        Ok(outcome(
+            if verified {
+                SeriesResult::Updated
+            } else {
+                SeriesResult::Error
+            },
+            Some(self.tracked_status(connection, &written).await?),
+        ))
+    }
+
     /// Tracked by TMDB id, else looked up and matched by TVDB id.
     async fn resolve(&self, connection: (&str, &str), tmdb_id: i64) -> Step<Resolved> {
         let all = step(
@@ -897,8 +1023,6 @@ impl SonarrSeasons {
         Ok(results)
     }
 
-    /// Reserve → command → record. A reservation inside the window blocks
-    /// the search unless forced; an uncertain request keeps its reservation.
     /// Reserve → command → record. A reservation inside the window blocks
     /// the search unless forced; an uncertain request keeps its reservation
     /// and a rejected one restores the record it replaced. Never fails: the
@@ -1132,6 +1256,7 @@ impl SonarrSeasons {
             tmdb_id: series.tmdb_id,
             tvdb_id,
             title_slug: series.title_slug.clone(),
+            quality_profile_id: series.quality_profile_id,
             monitored: series.monitored == Some(true),
             monitor_new_seasons: monitor_new_seasons(series),
             initial_search_pending: initial_search_pending(series),
@@ -1249,6 +1374,7 @@ fn untracked_status(lookup: &SeriesResource) -> SeriesStatus {
         tmdb_id: lookup.tmdb_id,
         tvdb_id: lookup.tvdb_id.unwrap_or_default(),
         title_slug: lookup.title_slug.clone(),
+        quality_profile_id: None,
         monitored: false,
         monitor_new_seasons: None,
         initial_search_pending: false,

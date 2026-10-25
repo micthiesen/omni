@@ -10,8 +10,8 @@ use std::sync::Arc;
 use omni_http::SideEffectMode;
 use omni_mcp_kit::{McpTool, ToolContext, ToolOutput};
 use omni_media::arr::seasons::{
-    SearchOutcome, SeasonAddRequest, SeasonSearchRequest, SeasonSetRequest, SeriesResult,
-    SonarrSeasons,
+    SearchOutcome, SeasonAddRequest, SeasonSearchRequest, SeasonSetRequest, SeriesProfileRequest,
+    SeriesResult, SonarrSeasons,
 };
 use omni_media::arr::{ArrConfig, ArrHttp};
 use omni_media::mcp::media_tools;
@@ -723,6 +723,7 @@ async fn a_whole_series_watchlist_add_counts_as_a_search_of_every_season() {
         ArrConfig::default(),
         config(&server.uri()),
         seasons.clone(),
+        common::radarr_movies(&h.app, ArrConfig::default(), SideEffectMode::Live),
     );
 
     let added = watchlist
@@ -890,5 +891,73 @@ async fn adds_seasons_of_two_series_in_one_workflow_through_the_tools() {
     assert_eq!(
         status["series"]["seasons"][1]["lastSearch"]["via"],
         "search"
+    );
+}
+
+#[tokio::test]
+async fn a_series_profile_change_is_previewed_written_alone_and_read_back() {
+    let server = MockServer::start().await;
+    let before = series(
+        9,
+        RHONY_TMDB,
+        RHONY_TVDB,
+        true,
+        vec![season(1, true, 10, 10)],
+    );
+    let mut after = before.clone();
+    after["qualityProfileId"] = json!(12);
+    mount(&server, "GET", "/api/v3/series", json!([before.clone()])).await;
+    // Preview, unknown profile and the update each read the series once before the write.
+    for _ in 0..3 {
+        mount_once(&server, "GET", "/api/v3/series/9", before.clone()).await;
+    }
+    mount(&server, "GET", "/api/v3/series/9", after.clone()).await;
+    mount(
+        &server,
+        "GET",
+        "/api/v3/qualityprofile",
+        json!([{"id": 7, "name": "HD Quality"}, {"id": 12, "name": "4K Quality"}]),
+    )
+    .await;
+    mount(&server, "PUT", "/api/v3/series/9", after).await;
+    mount_quiet_activity(&server).await;
+    let (_h, seasons) = seasons_over(&server).await;
+    let request = |quality_profile_id, dry_run| SeriesProfileRequest {
+        tmdb_id: RHONY_TMDB,
+        quality_profile_id,
+        dry_run,
+    };
+
+    let preview = seasons.set_profile(request(12, true)).await;
+    assert_eq!(preview.result, SeriesResult::Preview);
+    assert_eq!(preview.previous_quality_profile_id, Some(7));
+    assert!(
+        requests(&server, "PUT", "/api/v3/series/9")
+            .await
+            .is_empty()
+    );
+
+    let missing = seasons.set_profile(request(99, false)).await;
+    assert_eq!(missing.result, SeriesResult::ProfileNotFound);
+
+    let applied = seasons.set_profile(request(12, false)).await;
+    assert_eq!(applied.result, SeriesResult::Updated);
+    assert_eq!(applied.quality_profile, Some((12, "4K Quality".to_owned())));
+    let puts = requests(&server, "PUT", "/api/v3/series/9").await;
+    assert_eq!(puts.len(), 1);
+    assert_eq!(puts[0]["qualityProfileId"], 12);
+    assert_eq!(
+        monitored_flags(&puts[0]),
+        vec![(1, true)],
+        "monitoring untouched"
+    );
+    assert_eq!(
+        applied.series.expect("read back").quality_profile_id,
+        Some(12)
+    );
+    assert!(
+        requests(&server, "POST", "/api/v3/command")
+            .await
+            .is_empty()
     );
 }

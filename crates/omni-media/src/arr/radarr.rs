@@ -1,9 +1,11 @@
 //! Radarr movies.
 
-use omni_http::SideEffectMode;
+use futures::future::BoxFuture;
+use omni_http::{Method, SideEffectMode};
 use serde::Deserialize;
 
-use super::{ArrConfig, ArrHttp, HttpResult, put_opt};
+use super::movies::AddReservation;
+use super::{ArrConfig, ArrHttp, HttpResult, Limits, WriteOutcome, put_opt};
 use crate::js::present;
 use crate::types::{AddToWatchlistResult, ExternalIds, MediaItem, MediaType};
 
@@ -22,11 +24,25 @@ pub struct RadarrMovie {
     pub imdb_id: Option<String>,
 }
 
+/// The durable record of the search a movie add asks Radarr to run, so the
+/// movie search tool never searches that movie again.
+pub trait MovieAddLedger: Sync {
+    /// Before the POST; `None` (the record failed) aborts the add.
+    fn reserve(&self, tmdb_id: i64) -> BoxFuture<'_, Option<AddReservation>>;
+    /// After the POST, with what its response proves.
+    fn settle(
+        &self,
+        tmdb_id: i64,
+        reservation: AddReservation,
+        outcome: WriteOutcome,
+    ) -> BoxFuture<'_, ()>;
+}
+
 /// Tracked movies, or `None` when Radarr is unavailable or unconfigured.
 pub async fn fetch_radarr_movies(http: &ArrHttp, config: &ArrConfig) -> Option<Vec<MediaItem>> {
     let connection = config.connection()?;
     match http
-        .request_json::<Vec<RadarrMovie>>(connection, "movie", None)
+        .send_limited::<Vec<RadarrMovie>>(connection, Method::GET, "movie", None, Limits::LIBRARY)
         .await
     {
         HttpResult::Ok(movies) => Some(movies.into_iter().filter_map(normalize).collect()),
@@ -59,12 +75,23 @@ fn tracks(movies: &[MediaItem], tmdb_id: i64) -> bool {
     })
 }
 
-/// Adds a movie: existing → lookup → add (search on) → verify by TMDB id.
-/// Success is reported only once the movie is visible in Radarr's list.
+/// [`add_radarr_movie_with`] without a search record.
 pub async fn add_radarr_movie(
     http: &ArrHttp,
     config: &ArrConfig,
     tmdb_id: i64,
+) -> AddToWatchlistResult {
+    add_radarr_movie_with(http, config, tmdb_id, None).await
+}
+
+/// Adds a movie: existing → lookup → reserve the search record → add (search
+/// on) → settle the record → verify by TMDB id. Success is reported only once
+/// the movie is visible in Radarr's list.
+pub async fn add_radarr_movie_with(
+    http: &ArrHttp,
+    config: &ArrConfig,
+    tmdb_id: i64,
+    ledger: Option<&dyn MovieAddLedger>,
 ) -> AddToWatchlistResult {
     let (Some(connection), Some((root_folder_path, quality_profile_id))) =
         (config.connection(), config.acquisition())
@@ -115,10 +142,22 @@ pub async fn add_radarr_movie(
         http.record_write(connection.0, "movie", body);
         return AddToWatchlistResult::Added;
     }
-    match http
+    let reservation = match ledger {
+        Some(ledger) => match ledger.reserve(lookup_tmdb).await {
+            Some(reservation) => Some((ledger, reservation)),
+            None => return AddToWatchlistResult::Error,
+        },
+        None => None,
+    };
+    let created = http
         .request_json::<RadarrMovie>(connection, "movie", Some(body))
-        .await
-    {
+        .await;
+    if let Some((ledger, reservation)) = reservation {
+        ledger
+            .settle(lookup_tmdb, reservation, WriteOutcome::of(&created))
+            .await;
+    }
+    match created {
         HttpResult::Ok(_) => {}
         HttpResult::Unavailable => return AddToWatchlistResult::Unavailable,
         HttpResult::HttpError { .. } => return AddToWatchlistResult::Error,

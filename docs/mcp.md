@@ -44,8 +44,10 @@ families cover:
   Destiny.gg top-embeds setting (`streamer_config_*`, `livestream_settings_update`). These tools never
   accept or return Pushover tokens; set those in the UI
 - media library, watchlist, Sonarr season management (`media_series_*`, see
-  "Sonarr seasons" below), recommendations, podcast accounts, and podcast
-  recommendations
+  "Sonarr seasons" below), Radarr movie quality and upgrades (`media_movie*`,
+  see "Radarr movies" below), Radarr and Sonarr profiles, status and download
+  queues (`media_arr_*`, `media_downloads_list`), recommendations, podcast
+  accounts, and podcast recommendations
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
 - Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
@@ -344,6 +346,102 @@ seasons with nothing missing. `force` bypasses only the 24-hour reservation. A
 4xx rejection releases the reservation (restoring any record it replaced); a
 timeout, unreadable response or 5xx (`uncertain`) keeps it and is never
 retried automatically.
+
+`media_series_profile_set` changes a tracked series' quality profile (PUT of
+the full resource with only `qualityProfileId` changed, then read back) and
+never searches; `dryRun` previews it. `media_series_get` reports the series'
+`qualityProfileId`.
+
+### Radarr and Sonarr status
+
+`media_arr_profiles`, `media_arr_status` and `media_downloads_list` take
+`service: radarr | sonarr` and are read-only (`crates/omni-media/src/arr/inspect.rs`).
+Profiles are read live, never hardcoded: id, name, cutoff, allowed qualities,
+the highest allowed resolution, custom-format thresholds and nonzero scores,
+and `isDefault` for the profile Omni adds titles with. Status covers the
+version, health, root-folder free space, the import settings that decide what
+an upgrade does with the replaced file (`recycleBin: null` means it is deleted),
+and download clients by name and protocol only; client fields carry
+credentials and are never read out. The queue lists up to 500 downloads with
+their tracked state and the messages explaining a blocked or failed import.
+Free text from either service (queue messages, health messages, history and
+release titles, rejections) goes through `inspect::redact`, which masks
+key-like URL query values (`apikey`, `passkey`, `token`, ...) and URL userinfo.
+
+### Radarr movies
+
+The `media_movie*` tools manage movies Radarr tracks, by TMDB id
+(`crates/omni-media/src/arr/movies.rs`). Radarr's movie list runs to several
+MiB, so it is read under `Limits::LIBRARY` (48 MiB, 30 s).
+
+- `media_movies_get` filters by TMDB ids, a title or collection-name substring,
+  `cutoffUnmet` or `missing`, and reports monitoring, profile, the file's
+  quality and media info (resolution, codecs, HDR type, audio), queued
+  downloads, active Radarr searches, Omni's last search or grab, and the state
+  of the last upgrade Omni asked for. `detail` (at most 25 per page) adds the
+  file's custom formats, Radarr's last ten history events (never the `data`
+  field, which holds indexer URLs with API keys) and `libraryFiles`: Radarr's
+  managed files plus a `manualimport` scan of the movie folder with
+  `filterExistingFiles=true`, which lists every other video file in it
+  (recursively, so a video in an `Extras/` subfolder also counts). A failed
+  detail read leaves that movie's `libraryFiles` or `history` null. Verified
+  live on Radarr 6.4 (2026-10-24): a clean folder scans empty, and a stray
+  `.mkv` beside the movie file is listed with Radarr's rejection reason.
+- `media_movie_collections` lists Radarr's TMDB collections with each member
+  and whether Radarr tracks it.
+- `media_movies_profile_set` changes profile (and optionally `monitored`) for
+  the listed movies in one `PUT movie/editor` with `moveFiles: false`, then
+  reads each changed movie back; any mismatch, or a refused write, is `error`.
+  `dryRun` returns before and after without writing. It never searches; RSS
+  picks up upgrades for monitored movies below the new cutoff.
+- `media_movies_search` sends one `MoviesSearch` per movie. `purpose` is
+  required: `missing` skips movies with a file, `upgrade` skips movies without
+  one, whose profile disallows upgrades, or whose file meets the quality cutoff
+  (`qualityCutoffNotMet: false`; a custom-format-score upgrade is left to RSS).
+  A movie whose history cannot be read is reported `unavailable` without
+  hiding the outcomes of searches already sent in the same call.
+- `media_movie_releases` runs Radarr's interactive search
+  (`GET release?movieId=`, up to 120 s) and lists at most 50 releases,
+  approved first, with Radarr's rejections. A release's `guid` can be an indexer
+  download link or magnet carrying an API key or passkey, so it never leaves
+  Omni: each release is named by `releaseId`, the first 32 hex digits of
+  SHA-256 of `<indexerId>\n<guid>`. Download and info URLs are dropped. It grabs
+  nothing but queries every indexer, so it is not read-only and stays out of
+  `shell`.
+- `media_movie_release_grab` grabs one release by `releaseId`. It searches
+  again first (outside the write lock, since that can take minutes) and grabs
+  only when the same release is still offered and Radarr approves it (approved,
+  not rejected or temporarily rejected, download allowed); a rejected release is
+  never forced through. Then, under the lock, it re-reads the movie, queue,
+  commands and history, reserves, and sends the release's raw guid to Radarr.
+
+Searches and grabs never repeat. Each is reserved in the `media-movie-search`
+row (keyed by TMDB id, kept seven days) before the request, and a movie add
+through `media_watchlist_add` or a recommendation reserves it before Radarr's
+add request (`searchForMovie: true`). A movie reserved within 24 hours reports
+`recently_searched`, or `recently_grabbed` after a grab; a `grabbed` event in
+Radarr's own history within 24 hours (RSS, the UI, another client) also reports
+`recently_grabbed`. A download in the queue (`downloading`), a queued or
+started `MoviesSearch` naming the movie or a library-wide `MissingMoviesSearch`
+or `CutoffUnmetMoviesSearch` (`already_running`), and a post-add search Radarr
+has not run (`initial_search_pending`, from `addOptions.searchForMovie`) block
+both. A history `grabbed` row whose date does not parse counts as recent, and a
+queue longer than one 500-download page fails the call rather than deciding
+from part of it. `force` bypasses only the two 24-hour checks (an earlier
+uncertain request included). A search Radarr accepted does not block a grab
+(a search that found nothing acceptable is the reason to pick a release by
+hand), but an earlier grab, an add's search, or a search still `reserved` or
+`uncertain` does (`recently_grabbed`, `recently_searched`). A 4xx releases the
+reservation, restoring any record it replaced, for adds too; a timeout,
+unreadable response or 5xx (`uncertain`) keeps it and is never retried.
+
+Omni deletes nothing. Radarr's own upgrade import replaces the old file, so the
+original stays until the replacement imports. The row records the movie's file
+id at the time of the request, and `upgrade.state` compares it with Radarr now:
+`pending` (same file), `downloading`, `imported` (file changed, folder not
+scanned), `verified` (file changed, exactly one managed file and no other video
+file in the folder), `extra_files` (anything else remains, so the upgrade is not
+complete) or `file_missing`.
 
 ### Browser history
 

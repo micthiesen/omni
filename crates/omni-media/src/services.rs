@@ -9,6 +9,8 @@ use omni_config::Config;
 use omni_core::clock::SharedClock;
 use omni_store::Store;
 
+use crate::arr::inspect::ArrInspect;
+use crate::arr::movies::RadarrMovies;
 use crate::arr::seasons::SonarrSeasons;
 use crate::media_library::MediaLibrary;
 use crate::selection::Research;
@@ -68,6 +70,10 @@ pub struct MediaServices {
     pub watchlist: Arc<dyn Watchlist>,
     /// Season-level Sonarr management for the series MCP tools.
     pub seasons: SonarrSeasons,
+    /// Movie-level Radarr management for the movie MCP tools.
+    pub movies: RadarrMovies,
+    /// Read-only profile, status and queue views of both services.
+    pub arr: ArrInspect,
     pub catalog: Arc<dyn Catalog>,
     pub research: Arc<dyn Research>,
     pub notifier: Arc<dyn Notifier>,

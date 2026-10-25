@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use omni_http::SideEffectMode;
+use omni_media::arr::inspect::ArrInspect;
+use omni_media::arr::movies::RadarrMovies;
 use omni_media::arr::seasons::SonarrSeasons;
 use omni_media::arr::{ArrConfig, ArrHttp};
 use omni_media::error::IntegrationError;
@@ -294,6 +296,8 @@ impl Harness {
             library: Arc::new(library.clone()),
             watchlist: Arc::new(watchlist.clone()),
             seasons: sonarr_seasons(&app, ArrConfig::default(), SideEffectMode::Live),
+            movies: radarr_movies(&app, ArrConfig::default(), SideEffectMode::Live),
+            arr: arr_inspect(ArrConfig::default(), ArrConfig::default()),
             catalog: Arc::new(catalog.clone()),
             research: Arc::new(research.clone()),
             notifier: Arc::new(notifier.clone()),
@@ -317,6 +321,25 @@ pub fn sonarr_seasons(app: &TestApp, config: ArrConfig, mode: SideEffectMode) ->
         config,
         app.ctx.store.clone(),
         app.ctx.tracker.clone(),
+    )
+}
+
+/// Movie management over `config` (an unconfigured Radarr by default).
+pub fn radarr_movies(app: &TestApp, config: ArrConfig, mode: SideEffectMode) -> RadarrMovies {
+    RadarrMovies::new(
+        ArrHttp::new(omni_testkit::no_network(), mode),
+        config,
+        app.ctx.store.clone(),
+        app.ctx.tracker.clone(),
+    )
+}
+
+/// The shared Radarr/Sonarr reads over `radarr` and `sonarr`.
+pub fn arr_inspect(radarr: ArrConfig, sonarr: ArrConfig) -> ArrInspect {
+    ArrInspect::new(
+        ArrHttp::new(omni_testkit::no_network(), SideEffectMode::Live),
+        radarr,
+        sonarr,
     )
 }
 

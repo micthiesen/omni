@@ -441,6 +441,23 @@ within 24 hours, or while a post-add or Sonarr search is pending, a season is
 reported and never searched again, and an uncertain request is never retried.
 See "Sonarr seasons" in `docs/mcp.md`.
 
+### Radarr movies
+
+The `media_movie*` tools keep profile changes and searches separate: a profile
+change never searches. Every movie search and grab, including the post-add
+search of a movie add, is reserved durably per TMDB id before the request;
+within 24 hours, while a download is queued, a Radarr search covers the movie,
+Radarr's history shows a grab, or a post-add search is pending, the movie is
+reported and never searched or grabbed again, and an uncertain request is never
+retried. A grab takes only a release a fresh search still offers and Radarr
+approves. Omni never deletes media: Radarr's own import replaces the old file,
+and an upgrade is `verified` only when the file changed and it is the only
+video file in the movie's folder. Radarr history `data`, release guids and
+download URLs can carry indexer API keys and never leave the adapter (releases
+are named by an opaque `releaseId`); Arr free text passes `inspect::redact`.
+The indexer search of a grab runs outside the write lock; the checks,
+reservation and grab run inside it. See "Radarr movies" in `docs/mcp.md`.
+
 ### Observer issue repair
 
 `ObserverRepair` uses Luna to interpret reports and deterministic Arr tools to

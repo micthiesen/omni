@@ -12,9 +12,13 @@ use omni_core::js::trim;
 use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool};
 use serde::{Deserialize, Serialize};
 
+use crate::arr::inspect::{ArrService, Download, InspectError, ProfileSummary};
+use crate::arr::movies::{
+    GrabRequest, MovieSearchRequest, MoviesQuery, ProfileRef, ProfileSetRequest, SearchPurpose,
+};
 use crate::arr::seasons::{
     SeasonAddRequest, SeasonSearchRequest, SeasonSearchResult, SeasonSetRequest, SeriesOutcome,
-    SeriesResult, SeriesStatus,
+    SeriesProfileRequest, SeriesResult, SeriesStatus,
 };
 use crate::error::IntegrationError;
 use crate::persistence::{
@@ -468,6 +472,121 @@ struct SeriesSearchOutput {
     seasons: Vec<SeasonSearchResult>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesProfileSetInput {
+    tmdb_id: i64,
+    quality_profile_id: i64,
+    #[serde(default)]
+    dry_run: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesProfileSetOutput {
+    result: SeriesResult,
+    previous_quality_profile_id: Option<i64>,
+    quality_profile: Option<ProfileRef>,
+    series: Option<SeriesStatus>,
+}
+
+#[derive(Deserialize)]
+struct ArrServiceInput {
+    service: ArrService,
+}
+
+#[derive(Serialize)]
+struct ArrProfilesOutput {
+    service: ArrService,
+    profiles: Vec<ProfileSummary>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadsListInput {
+    service: ArrService,
+    #[serde(default = "default_cursor")]
+    cursor: usize,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+#[derive(Serialize)]
+struct DownloadsListOutput {
+    service: ArrService,
+    truncated: bool,
+    #[serde(flatten)]
+    page: Page<Download>,
+}
+
+/// The most movies one `detail` page reads in depth.
+const DETAIL_LIMIT: usize = 25;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoviesGetInput {
+    tmdb_ids: Option<BTreeSet<i64>>,
+    query: Option<String>,
+    #[serde(default)]
+    cutoff_unmet: bool,
+    #[serde(default)]
+    missing: bool,
+    #[serde(default)]
+    detail: bool,
+    #[serde(default = "default_cursor")]
+    cursor: usize,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MovieCollectionsInput {
+    query: Option<String>,
+    #[serde(default = "default_cursor")]
+    cursor: usize,
+    #[serde(default = "default_catalog_limit")]
+    limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoviesProfileSetInput {
+    tmdb_ids: BTreeSet<i64>,
+    quality_profile_id: i64,
+    monitored: Option<bool>,
+    #[serde(default)]
+    dry_run: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoviesSearchInput {
+    tmdb_ids: BTreeSet<i64>,
+    purpose: SearchPurpose,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MovieReleasesInput {
+    tmdb_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MovieReleaseGrabInput {
+    tmdb_id: i64,
+    release_id: String,
+    #[serde(default)]
+    force: bool,
+}
+
+fn inspect_error(error: &InspectError) -> ToolError {
+    ToolError::execute(error.to_string())
+}
+
 impl From<SeriesOutcome> for SeriesAddOutput {
     fn from(o: SeriesOutcome) -> Self {
         Self {
@@ -787,6 +906,169 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                         unknown_seasons: outcome.unknown_seasons,
                         seasons: outcome.search,
                     })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_SERIES_PROFILE_SET, {
+            let s = s.clone();
+            move |input: SeriesProfileSetInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let outcome = s
+                        .seasons
+                        .set_profile(SeriesProfileRequest {
+                            tmdb_id: input.tmdb_id,
+                            quality_profile_id: input.quality_profile_id,
+                            dry_run: input.dry_run,
+                        })
+                        .await;
+                    Ok(SeriesProfileSetOutput {
+                        result: outcome.result,
+                        previous_quality_profile_id: outcome.previous_quality_profile_id,
+                        quality_profile: outcome
+                            .quality_profile
+                            .map(|(id, name)| ProfileRef { id, name }),
+                        series: outcome.series,
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_ARR_PROFILES, {
+            let s = s.clone();
+            move |input: ArrServiceInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let profiles = s
+                        .arr
+                        .profiles(input.service)
+                        .await
+                        .map_err(|e| inspect_error(&e))?;
+                    Ok(ArrProfilesOutput {
+                        service: input.service,
+                        profiles,
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_ARR_STATUS, {
+            let s = s.clone();
+            move |input: ArrServiceInput, _cx| {
+                let s = s.clone();
+                async move {
+                    // Five joined reads: too large to hold inline.
+                    Box::pin(s.arr.status(input.service))
+                        .await
+                        .map_err(|e| inspect_error(&e))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_DOWNLOADS_LIST, {
+            let s = s.clone();
+            move |input: DownloadsListInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let queue = s
+                        .arr
+                        .queue(input.service)
+                        .await
+                        .map_err(|e| inspect_error(&e))?;
+                    Ok(DownloadsListOutput {
+                        service: input.service,
+                        truncated: queue.truncated,
+                        page: paginate(queue.downloads, input.cursor, input.limit),
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIES_GET, {
+            let s = s.clone();
+            move |input: MoviesGetInput, _cx| {
+                let s = s.clone();
+                async move {
+                    if input.detail && input.limit > DETAIL_LIMIT {
+                        return Err(ToolError::input(format!(
+                            "limit: at most {DETAIL_LIMIT} with detail"
+                        )));
+                    }
+                    s.movies
+                        .get(MoviesQuery {
+                            tmdb_ids: input.tmdb_ids,
+                            query: input.query,
+                            cutoff_unmet: input.cutoff_unmet,
+                            missing: input.missing,
+                            detail: input.detail,
+                            cursor: input.cursor,
+                            limit: input.limit,
+                        })
+                        .await
+                        .map_err(|e| inspect_error(&e))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIE_COLLECTIONS, {
+            let s = s.clone();
+            move |input: MovieCollectionsInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let collections = s
+                        .movies
+                        .collections(input.query.as_deref())
+                        .await
+                        .map_err(|e| inspect_error(&e))?;
+                    Ok(paginate(collections, input.cursor, input.limit))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIES_PROFILE_SET, {
+            let s = s.clone();
+            move |input: MoviesProfileSetInput, _cx| {
+                let s = s.clone();
+                async move {
+                    Ok(s.movies
+                        .set_profile(ProfileSetRequest {
+                            tmdb_ids: input.tmdb_ids,
+                            quality_profile_id: input.quality_profile_id,
+                            monitored: input.monitored,
+                            dry_run: input.dry_run,
+                        })
+                        .await)
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIES_SEARCH, {
+            let s = s.clone();
+            move |input: MoviesSearchInput, _cx| {
+                let s = s.clone();
+                async move {
+                    Ok(s.movies
+                        .search(MovieSearchRequest {
+                            tmdb_ids: input.tmdb_ids,
+                            purpose: input.purpose,
+                            force: input.force,
+                        })
+                        .await)
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIE_RELEASES, {
+            let s = s.clone();
+            move |input: MovieReleasesInput, _cx| {
+                let s = s.clone();
+                async move { Ok(s.movies.releases(input.tmdb_id).await) }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_MOVIE_RELEASE_GRAB, {
+            let s = s.clone();
+            move |input: MovieReleaseGrabInput, _cx| {
+                let s = s.clone();
+                async move {
+                    Ok(s.movies
+                        .grab(GrabRequest {
+                            tmdb_id: input.tmdb_id,
+                            release_id: input.release_id,
+                            force: input.force,
+                        })
+                        .await)
                 }
             }
         })?,

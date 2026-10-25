@@ -207,6 +207,208 @@ pub static MEDIA_SERIES_SEARCH: ToolDef<MediaSeriesSearchInput, MediaSeriesSearc
         },
     });
 
+pub static MEDIA_SERIES_PROFILE_SET: ToolDef<
+    MediaSeriesProfileSetInput,
+    MediaSeriesProfileSetOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_series_profile_set",
+    title: "Set Sonarr Series Quality Profile",
+    description: "Change the quality profile of a series Sonarr already tracks; monitoring is unchanged. Use media_arr_profiles with service sonarr for the profile ids. dryRun previews the change without writing. This never searches: Sonarr grabs upgrades for monitored episodes below the new profile's cutoff as new releases appear. The result is Sonarr's state read back after the change.",
+    annotations: Annotations {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &[
+            "Changes the configured Sonarr account",
+            "Monitored episodes below the new profile's cutoff may download upgrades as releases appear",
+        ],
+        cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
+        recommended: ApprovalPolicy::RequireApproval,
+    },
+});
+
+pub static MEDIA_ARR_PROFILES: ToolDef<MediaArrProfilesInput, MediaArrProfilesOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_arr_profiles",
+        title: "List Radarr or Sonarr Quality Profiles",
+        description: "List the quality profiles configured in Radarr or Sonarr, read live: id, name, whether upgrades are allowed, the cutoff quality, allowed qualities from least to most preferred, the highest allowed resolution, custom-format score thresholds and nonzero custom-format scores. isDefault marks the profile Omni uses when it adds a title. Use the ids with media_movies_profile_set or media_series_profile_set.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads the configured Radarr or Sonarr account"],
+            cost: "No expected monetary cost; bounded account API traffic",
+            recommended: ApprovalPolicy::Allow,
+        },
+    });
+
+pub static MEDIA_ARR_STATUS: ToolDef<MediaArrStatusInput, MediaArrStatusOutput> = ToolDef::new(
+    ToolInfo {
+        name: "media_arr_status",
+        title: "Get Radarr or Sonarr Status",
+        description: "Read Radarr's or Sonarr's version, health warnings, root folders with free space, the import settings that decide what an upgrade does with the replaced file (recycle bin, hardlinks, propers), and its download clients. Check it before large upgrade batches. No credentials or client addresses are returned.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads the configured Radarr or Sonarr account"],
+            cost: "No expected monetary cost; bounded account API traffic",
+            recommended: ApprovalPolicy::Allow,
+        },
+    },
+);
+
+pub static MEDIA_DOWNLOADS_LIST: ToolDef<MediaDownloadsListInput, MediaDownloadsListOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_downloads_list",
+        title: "List Radarr or Sonarr Downloads",
+        description: "List the Radarr or Sonarr download queue: progress, time left, the tracked state (downloading, import pending, import blocked, failed), and the messages explaining a stalled, rejected or failed import. Downloads the service could not match to a title are included.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads the configured Radarr or Sonarr account"],
+            cost: "No expected monetary cost; bounded account API traffic",
+            recommended: ApprovalPolicy::Allow,
+        },
+    });
+
+pub static MEDIA_MOVIES_GET: ToolDef<MediaMoviesGetInput, MediaMoviesGetOutput> = ToolDef::new(
+    ToolInfo {
+        name: "media_movies_get",
+        title: "Get Radarr Movies",
+        description: "Inspect movies Radarr tracks, by TMDB ids or by a title or collection-name query (for example \"Star Wars\"): monitoring, quality profile, whether the file is below the profile's cutoff, the file's quality, resolution, codecs, HDR and audio, downloads in the queue, active Radarr searches, Omni's last search or grab, and the upgrade it is waiting for. A movie without a file has file null. detail adds custom formats, Radarr's recent history, and a scan of the movie's folder that lists every managed and unmanaged video file; an upgrade is verified only when its file changed and it is the only video file left. Use it to plan and to verify profile changes, searches and upgrades.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads the configured Radarr account"],
+            cost: "No expected monetary cost; bounded account API traffic",
+            recommended: ApprovalPolicy::Allow,
+        },
+    },
+);
+
+pub static MEDIA_MOVIE_COLLECTIONS: ToolDef<
+    MediaMovieCollectionsInput,
+    MediaMovieCollectionsOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_movie_collections",
+    title: "List Radarr Collections",
+    description: "List Radarr's TMDB collections whose name or a member's title contains the query, with every member and whether Radarr tracks it, to find collection gaps. Use media_movies_get for the tracked members' files and quality, and media_watchlist_add to add a missing one.",
+    annotations: Annotations {
+        read_only_hint: true,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &["Reads the configured Radarr account"],
+        cost: "No expected monetary cost; bounded account API traffic",
+        recommended: ApprovalPolicy::Allow,
+    },
+});
+
+pub static MEDIA_MOVIES_PROFILE_SET: ToolDef<
+    MediaMoviesProfileSetInput,
+    MediaMoviesProfileSetOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_movies_profile_set",
+    title: "Set Radarr Movie Quality Profile",
+    description: "Change the quality profile, and optionally monitoring, of movies Radarr tracks, by TMDB id. Use media_arr_profiles with service radarr for the profile ids. dryRun returns the current and planned profile of every movie without writing; show it to the user before applying. Only the listed movies change, and each is read back from Radarr afterwards. This never searches: a monitored movie below the new cutoff picks up upgrades as new releases appear, and media_movies_search with purpose upgrade searches existing releases once.",
+    annotations: Annotations {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &[
+            "Changes the configured Radarr account",
+            "Monitored movies below the new profile's cutoff may download upgrades as releases appear",
+        ],
+        cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
+        recommended: ApprovalPolicy::RequireApproval,
+    },
+});
+
+pub static MEDIA_MOVIES_SEARCH: ToolDef<MediaMoviesSearchInput, MediaMoviesSearchOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_movies_search",
+        title: "Search Radarr Movies",
+        description: "Ask Radarr to run its automatic search, which picks and downloads the best release its profile and rules accept, for the listed movies. purpose missing searches only movies without a file; purpose upgrade searches only movies whose file is below the profile's quality cutoff (a file that meets it by quality but not by custom-format score is reported cutoff_met; Radarr's RSS still upgrades it as better releases appear), and Radarr replaces the old file itself when the upgrade imports, so nothing is deleted first. Each movie is searched at most once per 24 hours, counting searches, grabs and adds through Omni: a movie searched or grabbed recently, one with a download in the queue, a Radarr search running, a grab in Radarr's history within 24 hours, or a post-add search not yet run is skipped and reported instead. Set force only when the user explicitly asks to search again; it bypasses only the 24-hour checks, including an earlier uncertain request and a grab in Radarr's history, never a queued download, a running search or a pending post-add search. Returns Radarr's command ids; a queued search is not a download, so verify with media_movies_get.",
+        annotations: Annotations {
+            read_only_hint: false,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &[
+                "Starts searches on the configured Radarr account",
+                "Begins media acquisition and downloads; an imported upgrade replaces the old file",
+            ],
+            cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
+            recommended: ApprovalPolicy::RequireApproval,
+        },
+    });
+
+pub static MEDIA_MOVIE_RELEASES: ToolDef<MediaMovieReleasesInput, MediaMovieReleasesOutput> =
+    ToolDef::new(ToolInfo {
+        name: "media_movie_releases",
+        title: "List Radarr Movie Releases",
+        description: "Run Radarr's interactive search for one tracked movie and list the releases its indexers return, approved ones first in Radarr's preference order: quality, resolution, size, custom formats and score, languages, release group, age, and Radarr's rejection reasons. Nothing is grabbed. Prefer media_movies_search; use this only when a title needs scrutiny (a bad automatic pick, a quality problem, HDR or audio requirements), then grab one approved release with media_movie_release_grab and explain the choice. Each call queries every indexer, so do not repeat it needlessly.",
+        annotations: Annotations {
+            read_only_hint: false,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Queries every configured indexer through Radarr; nothing is grabbed"],
+            cost: "Consumes indexer API quota; no download",
+            recommended: ApprovalPolicy::Allow,
+        },
+    });
+
+pub static MEDIA_MOVIE_RELEASE_GRAB: ToolDef<
+    MediaMovieReleaseGrabInput,
+    MediaMovieReleaseGrabOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_movie_release_grab",
+    title: "Grab a Radarr Movie Release",
+    description: "Download one release chosen from media_movie_releases (by its releaseId) for a tracked movie. Omni searches again first and grabs only when the same release is still offered and Radarr approves it under the movie's profile and release rules; a rejected release is never grabbed. A movie with a download in the queue, a Radarr search running, a post-add search not yet run, a grab within 24 hours (through Omni or in Radarr's history), or an Omni search whose outcome is uncertain is reported instead; a search Radarr accepted that found nothing acceptable does not block it. force bypasses only the 24-hour checks and only when the user explicitly asks. Radarr replaces the old file itself when the download imports.",
+    annotations: Annotations {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &[
+            "Sends a release to the download client of the configured Radarr account",
+            "An imported upgrade replaces the movie's old file",
+        ],
+        cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
+        recommended: ApprovalPolicy::RequireApproval,
+    },
+});
+
 pub static MEDIA_RECOMMENDATIONS_LIST: ToolDef<
     MediaRecommendationsListInput,
     MediaRecommendationsListOutput,
@@ -287,7 +489,7 @@ pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> 
 );
 
 /// Every media tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 14] = [
+pub static TOOLS: [&dyn ToolDefinition; 24] = [
     &MEDIA_CATALOG_SEARCH,
     &MEDIA_CATALOG_GET,
     &MEDIA_CATALOG_BROWSE,
@@ -298,6 +500,16 @@ pub static TOOLS: [&dyn ToolDefinition; 14] = [
     &MEDIA_SERIES_ADD,
     &MEDIA_SERIES_SEASONS_SET,
     &MEDIA_SERIES_SEARCH,
+    &MEDIA_SERIES_PROFILE_SET,
+    &MEDIA_ARR_PROFILES,
+    &MEDIA_ARR_STATUS,
+    &MEDIA_DOWNLOADS_LIST,
+    &MEDIA_MOVIES_GET,
+    &MEDIA_MOVIE_COLLECTIONS,
+    &MEDIA_MOVIES_PROFILE_SET,
+    &MEDIA_MOVIES_SEARCH,
+    &MEDIA_MOVIE_RELEASES,
+    &MEDIA_MOVIE_RELEASE_GRAB,
     &MEDIA_RECOMMENDATIONS_LIST,
     &MEDIA_RECOMMENDATION_GET,
     &MEDIA_RECOMMENDATION_FEEDBACK,
@@ -607,6 +819,8 @@ pub struct SeriesStatus {
     pub tmdb_id: Option<i64>,
     pub tvdb_id: i64,
     pub title_slug: Option<String>,
+    #[schemars(description = "null for a series Sonarr does not track; see media_arr_profiles")]
+    pub quality_profile_id: Option<i64>,
     #[schemars(description = "Series-level monitoring; a season downloads only when both are on")]
     pub monitored: bool,
     #[schemars(
@@ -777,6 +991,682 @@ pub struct MediaSeriesSearchOutput {
     pub series: Option<SeriesStatus>,
     pub unknown_seasons: Vec<u64>,
     pub seasons: Vec<SeasonSearchResult>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaSeriesProfileSetInput {
+    #[schemars(transform = positive)]
+    pub tmdb_id: u64,
+    #[schemars(transform = positive)]
+    pub quality_profile_id: u64,
+    #[schemars(
+        description = "Return the planned change without writing",
+        extend("default" = false)
+    )]
+    pub dry_run: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum MediaSeriesProfileSetResult {
+    Preview,
+    Updated,
+    Unchanged,
+    NotTracked,
+    NotFound,
+    ProfileNotFound,
+    Unavailable,
+    Error,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ProfileRef {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaSeriesProfileSetOutput {
+    pub result: MediaSeriesProfileSetResult,
+    pub previous_quality_profile_id: Option<i64>,
+    pub quality_profile: Option<ProfileRef>,
+    #[schemars(description = "Sonarr's state after the change; null when it could not be read")]
+    pub series: Option<SeriesStatus>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+pub enum ArrService {
+    Radarr,
+    Sonarr,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MediaArrProfilesInput {
+    pub service: ArrService,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FormatScore {
+    pub name: String,
+    pub score: i64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArrProfile {
+    pub id: i64,
+    pub name: String,
+    pub upgrade_allowed: bool,
+    #[schemars(description = "The quality or quality group at which upgrades by quality stop")]
+    pub cutoff: Option<String>,
+    #[schemars(description = "Allowed qualities, least to most preferred")]
+    pub allowed_qualities: Vec<String>,
+    pub max_resolution: Option<i64>,
+    pub min_format_score: Option<i64>,
+    #[schemars(description = "Upgrades continue until a release reaches this custom-format score")]
+    pub cutoff_format_score: Option<i64>,
+    pub min_upgrade_format_score: Option<i64>,
+    #[schemars(description = "Custom formats with a nonzero score")]
+    pub custom_format_scores: Vec<FormatScore>,
+    pub language: Option<String>,
+    #[schemars(description = "The profile Omni uses when it adds a title")]
+    pub is_default: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MediaArrProfilesOutput {
+    pub service: ArrService,
+    pub profiles: Vec<ArrProfile>,
+}
+
+pub type MediaArrStatusInput = MediaArrProfilesInput;
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct HealthItem {
+    pub source: Option<String>,
+    #[schemars(rename = "type")]
+    pub kind: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RootFolder {
+    pub path: String,
+    pub accessible: bool,
+    pub free_space: Option<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportSettings {
+    #[schemars(description = "null: a file replaced by an upgrade is deleted, not recycled")]
+    pub recycle_bin: Option<String>,
+    pub copy_using_hardlinks: Option<bool>,
+    pub download_propers_and_repacks: Option<String>,
+    pub minimum_free_space_when_importing_mb: Option<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DownloadClient {
+    pub name: String,
+    pub implementation: Option<String>,
+    pub protocol: Option<String>,
+    pub enabled: bool,
+    pub remove_completed_downloads: Option<bool>,
+    pub remove_failed_downloads: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaArrStatusOutput {
+    pub service: ArrService,
+    pub version: Option<String>,
+    pub health: Vec<HealthItem>,
+    pub root_folders: Vec<RootFolder>,
+    pub import_settings: ImportSettings,
+    pub download_clients: Vec<DownloadClient>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaDownloadsListInput {
+    pub service: ArrService,
+    #[schemars(description = "Zero-based result offset", extend("default" = 0))]
+    pub cursor: Option<u64>,
+    #[schemars(range(min = 1, max = 100), extend("default" = 25))]
+    pub limit: Option<u64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Download {
+    pub queue_id: Option<i64>,
+    pub title: Option<String>,
+    #[schemars(description = "Radarr's movie id or Sonarr's series id; null when unmatched")]
+    pub item_id: Option<i64>,
+    pub item_title: Option<String>,
+    pub tmdb_id: Option<i64>,
+    pub tvdb_id: Option<i64>,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
+    pub status: Option<String>,
+    #[schemars(description = "ok, warning or error")]
+    pub tracked_download_status: Option<String>,
+    #[schemars(
+        description = "For example downloading, importPending, importBlocked, failedPending"
+    )]
+    pub tracked_download_state: Option<String>,
+    #[schemars(description = "Why the download is stuck, rejected or failed")]
+    pub messages: Vec<String>,
+    pub quality: Option<String>,
+    pub custom_format_score: Option<i64>,
+    pub size_bytes: Option<f64>,
+    pub size_left_bytes: Option<f64>,
+    pub time_left: Option<String>,
+    pub estimated_completion_time: Option<String>,
+    pub added: Option<String>,
+    pub protocol: Option<String>,
+    pub download_client: Option<String>,
+    pub indexer: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaDownloadsListOutput {
+    pub service: ArrService,
+    #[schemars(description = "The service holds more downloads than one read returns")]
+    pub truncated: bool,
+    pub next_cursor: Option<u64>,
+    pub total: u64,
+    pub items: Vec<Download>,
+}
+
+#[derive(JsonSchema)]
+pub struct TmdbId(#[schemars(transform = positive)] pub u64);
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMoviesGetInput {
+    #[schemars(length(min = 1, max = 100))]
+    pub tmdb_ids: Option<Vec<TmdbId>>,
+    #[schemars(
+        description = "Case-insensitive substring of the movie title or its collection's name",
+        length(max = 200)
+    )]
+    pub query: Option<String>,
+    #[schemars(
+        description = "Only movies whose file is below the profile's quality cutoff",
+        extend("default" = false)
+    )]
+    pub cutoff_unmet: Option<bool>,
+    #[schemars(description = "Only movies without a file", extend("default" = false))]
+    pub missing: Option<bool>,
+    #[schemars(
+        description = "Add custom formats, recent history and a scan of each movie's folder; at most 25 movies per page",
+        extend("default" = false)
+    )]
+    pub detail: Option<bool>,
+    #[schemars(description = "Zero-based result offset", extend("default" = 0))]
+    pub cursor: Option<u64>,
+    #[schemars(range(min = 1, max = 100), extend("default" = 25))]
+    pub limit: Option<u64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+pub enum MovieSearchVia {
+    Add,
+    Search,
+    Grab,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+pub enum SearchPurpose {
+    Missing,
+    Upgrade,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LastMovieSearch {
+    pub requested_at: i64,
+    pub via: MovieSearchVia,
+    pub purpose: Option<SearchPurpose>,
+    #[schemars(
+        description = "reserved and uncertain mean the request may have reached Radarr; they block a repeat like a confirmed search"
+    )]
+    pub state: SearchState,
+    pub command_id: Option<i64>,
+    #[schemars(description = "The movie's file when the search or grab was asked for")]
+    pub previous_file_id: Option<i64>,
+    pub release_title: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovieFile {
+    pub id: Option<i64>,
+    pub relative_path: Option<String>,
+    pub size_bytes: Option<f64>,
+    pub date_added: Option<String>,
+    #[schemars(description = "Radarr's quality name, for example Bluray-2160p")]
+    pub quality: Option<String>,
+    #[schemars(description = "The quality's resolution: 2160 is 4K")]
+    pub resolution: Option<i64>,
+    pub source: Option<String>,
+    #[schemars(description = "The video stream's frame size, for example 3840x1600")]
+    pub video_resolution: Option<String>,
+    pub video_codec: Option<String>,
+    pub video_bit_depth: Option<i64>,
+    pub dynamic_range: Option<String>,
+    #[schemars(description = "For example HDR10, HDR10Plus, DV HDR10")]
+    pub dynamic_range_type: Option<String>,
+    pub audio_codec: Option<String>,
+    pub audio_channels: Option<f64>,
+    pub audio_languages: Option<String>,
+    pub run_time: Option<String>,
+    pub languages: Vec<String>,
+    pub release_group: Option<String>,
+    pub scene_name: Option<String>,
+    pub edition: Option<String>,
+    #[schemars(description = "Present only with detail")]
+    pub custom_formats: Option<Vec<String>>,
+    pub custom_format_score: Option<i64>,
+    #[schemars(description = "The file is below the profile's quality cutoff")]
+    pub cutoff_not_met: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ActiveMovieSearch {
+    pub name: String,
+    pub status: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum UpgradeState {
+    Pending,
+    Downloading,
+    Imported,
+    Verified,
+    ExtraFiles,
+    FileMissing,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpgradeCheck {
+    #[schemars(
+        description = "pending: nothing grabbed or imported yet. downloading: in the queue. imported: the file changed (pass detail to verify). verified: the file changed and it is the only video file for the movie. extra_files: other video files remain, so the upgrade is not complete. file_missing: the movie has no file"
+    )]
+    pub state: UpgradeState,
+    pub previous_file_id: i64,
+    pub current_file_id: Option<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManagedFile {
+    pub id: Option<i64>,
+    pub relative_path: Option<String>,
+    pub size_bytes: Option<f64>,
+    pub quality: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnmanagedFile {
+    pub path: Option<String>,
+    pub size_bytes: Option<f64>,
+    pub quality: Option<String>,
+    pub rejections: Vec<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LibraryFiles {
+    #[schemars(description = "Files Radarr manages for the movie")]
+    pub managed: Vec<ManagedFile>,
+    #[schemars(
+        description = "Other video files in the movie's folder; null when the folder could not be scanned"
+    )]
+    pub unmanaged: Option<Vec<UnmanagedFile>>,
+    #[schemars(description = "Exactly one managed file and no other video file in the folder")]
+    pub exactly_one_file: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistoryEvent {
+    pub event_type: Option<String>,
+    pub date: Option<String>,
+    pub source_title: Option<String>,
+    pub quality: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovieStatus {
+    pub radarr_id: i64,
+    pub tmdb_id: i64,
+    pub imdb_id: Option<String>,
+    pub title: String,
+    pub year: Option<i64>,
+    pub collection: Option<String>,
+    pub collection_tmdb_id: Option<i64>,
+    pub monitored: bool,
+    pub quality_profile_id: Option<i64>,
+    pub quality_profile: Option<String>,
+    pub upgrade_allowed: Option<bool>,
+    pub has_file: bool,
+    pub is_available: Option<bool>,
+    pub path: Option<String>,
+    #[schemars(description = "null when the movie has no file")]
+    pub file: Option<MovieFile>,
+    pub managed_file_count: Option<i64>,
+    #[schemars(description = "Radarr's search after adding the movie has not run yet")]
+    pub initial_search_pending: bool,
+    pub downloads: Vec<Download>,
+    pub active_searches: Vec<ActiveMovieSearch>,
+    #[schemars(description = "The last search or grab Omni started or asked for")]
+    pub last_search: Option<LastMovieSearch>,
+    #[schemars(description = "The last upgrade Omni asked for, checked against Radarr now")]
+    pub upgrade: Option<UpgradeCheck>,
+    #[schemars(description = "Present only with detail")]
+    pub library_files: Option<LibraryFiles>,
+    #[schemars(description = "Present only with detail: Radarr's latest events, newest first")]
+    pub history: Option<Vec<HistoryEvent>>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMoviesGetOutput {
+    pub items: Vec<MovieStatus>,
+    pub next_cursor: Option<u64>,
+    pub total: u64,
+    #[schemars(description = "Requested TMDB ids Radarr does not track")]
+    pub not_tracked: Vec<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMovieCollectionsInput {
+    #[schemars(
+        description = "Case-insensitive substring of the collection's name or a member's title",
+        length(max = 200)
+    )]
+    pub query: Option<String>,
+    #[schemars(description = "Zero-based result offset", extend("default" = 0))]
+    pub cursor: Option<u64>,
+    #[schemars(range(min = 1, max = 50), extend("default" = 10))]
+    pub limit: Option<u64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CollectionMember {
+    pub tmdb_id: Option<i64>,
+    pub title: Option<String>,
+    pub year: Option<i64>,
+    #[schemars(description = "Radarr tracks the movie")]
+    pub tracked: bool,
+    #[schemars(description = "On Radarr's import exclusion list")]
+    pub excluded: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovieCollection {
+    pub tmdb_id: Option<i64>,
+    pub title: String,
+    #[schemars(description = "Radarr adds new members automatically")]
+    pub monitored: bool,
+    pub tracked: u64,
+    pub untracked: u64,
+    pub members: Vec<CollectionMember>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMovieCollectionsOutput {
+    pub next_cursor: Option<u64>,
+    pub total: u64,
+    pub items: Vec<MovieCollection>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMoviesProfileSetInput {
+    #[schemars(length(min = 1, max = 100))]
+    pub tmdb_ids: Vec<TmdbId>,
+    #[schemars(transform = positive)]
+    pub quality_profile_id: u64,
+    #[schemars(description = "Also set monitoring; unchanged when omitted")]
+    pub monitored: Option<bool>,
+    #[schemars(
+        description = "Return the current and planned settings without writing",
+        extend("default" = false)
+    )]
+    pub dry_run: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum MediaMoviesProfileSetResult {
+    Preview,
+    Updated,
+    Unchanged,
+    NotTracked,
+    ProfileNotFound,
+    Unavailable,
+    Error,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovieSettings {
+    pub quality_profile_id: Option<i64>,
+    pub monitored: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileChange {
+    pub tmdb_id: i64,
+    pub radarr_id: i64,
+    pub title: String,
+    pub before: MovieSettings,
+    #[schemars(description = "Planned in a preview; Radarr's state read back otherwise")]
+    pub after: MovieSettings,
+    pub changed: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMoviesProfileSetOutput {
+    #[schemars(description = "error: Radarr refused the change or did not apply all of it")]
+    pub result: MediaMoviesProfileSetResult,
+    pub profile: Option<ProfileRef>,
+    pub movies: Vec<ProfileChange>,
+    pub not_tracked: Vec<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMoviesSearchInput {
+    #[schemars(length(min = 1, max = 50))]
+    pub tmdb_ids: Vec<TmdbId>,
+    #[schemars(
+        description = "missing: only movies without a file. upgrade: only movies whose file is below the profile's cutoff"
+    )]
+    pub purpose: SearchPurpose,
+    #[schemars(
+        description = "Search even if the movie was searched or grabbed in the last 24 hours. Only when the user explicitly asks to search again",
+        extend("default" = false)
+    )]
+    pub force: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum MediaMoviesSearchResult {
+    Searched,
+    NothingSearched,
+    Unavailable,
+    Error,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum MovieSearchOutcome {
+    Queued,
+    Uncertain,
+    Failed,
+    NotTracked,
+    NotMonitored,
+    HasFile,
+    NoFile,
+    CutoffMet,
+    UpgradesDisabled,
+    InitialSearchPending,
+    AlreadyRunning,
+    Downloading,
+    RecentlySearched,
+    RecentlyGrabbed,
+    Unavailable,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovieSearchResult {
+    pub tmdb_id: i64,
+    pub radarr_id: Option<i64>,
+    pub title: Option<String>,
+    #[schemars(
+        description = "queued, initial_search_pending, already_running, downloading, recently_searched and recently_grabbed mean a search is covered: do not search the movie again. uncertain may have started one and is never retried. failed: Radarr rejected the search. unavailable: Radarr's history for the movie could not be read, so nothing was searched"
+    )]
+    pub outcome: MovieSearchOutcome,
+    pub command_id: Option<i64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MediaMoviesSearchOutput {
+    pub result: MediaMoviesSearchResult,
+    pub movies: Vec<MovieSearchResult>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMovieReleasesInput {
+    #[schemars(transform = positive)]
+    pub tmdb_id: u64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum MediaMovieReleasesResult {
+    Listed,
+    NotTracked,
+    Unavailable,
+    Error,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Release {
+    #[schemars(description = "Omni's handle for the release; pass it to media_movie_release_grab")]
+    pub release_id: String,
+    pub indexer_id: i64,
+    pub indexer: Option<String>,
+    pub title: Option<String>,
+    pub size_bytes: Option<f64>,
+    pub age_days: Option<i64>,
+    pub protocol: Option<String>,
+    pub quality: Option<String>,
+    pub resolution: Option<i64>,
+    pub custom_formats: Vec<String>,
+    pub custom_format_score: Option<i64>,
+    pub languages: Vec<String>,
+    pub release_group: Option<String>,
+    pub edition: Option<String>,
+    pub seeders: Option<i64>,
+    pub leechers: Option<i64>,
+    #[schemars(description = "Radarr would grab it under the movie's profile and release rules")]
+    pub approved: bool,
+    pub rejections: Vec<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MediaMovieReleasesOutput {
+    pub result: MediaMovieReleasesResult,
+    pub movie: Option<MovieStatus>,
+    #[schemars(
+        description = "At most 50: approved releases first, each group in Radarr's preference order"
+    )]
+    pub releases: Vec<Release>,
+    pub total: u64,
+    pub approved: u64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMovieReleaseGrabInput {
+    #[schemars(transform = positive)]
+    pub tmdb_id: u64,
+    #[schemars(
+        description = "releaseId from media_movie_releases",
+        pattern("^[0-9a-f]{32}$")
+    )]
+    pub release_id: String,
+    #[schemars(
+        description = "Grab even if the movie was searched or grabbed in the last 24 hours. Only when the user explicitly asks",
+        extend("default" = false)
+    )]
+    pub force: Option<bool>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum GrabOutcome {
+    Grabbed,
+    Uncertain,
+    Failed,
+    NotTracked,
+    ReleaseNotFound,
+    ReleaseRejected,
+    InitialSearchPending,
+    AlreadyRunning,
+    Downloading,
+    RecentlyGrabbed,
+    RecentlySearched,
+    Unavailable,
+    Error,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaMovieReleaseGrabOutput {
+    #[schemars(
+        description = "grabbed: sent to the download client; verify the import with media_movies_get. uncertain may have grabbed and is never retried. release_not_found: the release is no longer offered; list releases again"
+    )]
+    pub outcome: GrabOutcome,
+    pub radarr_id: Option<i64>,
+    pub title: Option<String>,
+    pub release: Option<Release>,
 }
 
 #[derive(JsonSchema)]

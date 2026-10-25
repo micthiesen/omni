@@ -899,6 +899,38 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "media_arr_profiles",
+      "title": "List Radarr or Sonarr Quality Profiles",
+      "description": "List the quality profiles configured in Radarr or Sonarr, read live: id, name, whether upgrades are allowed, the cutoff quality, allowed qualities from least to most preferred, the highest allowed resolution, custom-format score thresholds and nonzero custom-format scores. isDefault marks the profile Omni uses when it adds a title. Use the ids with media_movies_profile_set or media_series_profile_set.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr or Sonarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_arr_status",
+      "title": "Get Radarr or Sonarr Status",
+      "description": "Read Radarr's or Sonarr's version, health warnings, root folders with free space, the import settings that decide what an upgrade does with the replaced file (recycle bin, hardlinks, propers), and its download clients. Check it before large upgrade batches. No credentials or client addresses are returned.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr or Sonarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "media_catalog_browse",
       "title": "Browse Media Catalog",
       "description": "Browse weekly trending titles or a filtered TMDB discovery page. Results are bounded and adult titles are excluded by the underlying client.",
@@ -947,6 +979,22 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "media_downloads_list",
+      "title": "List Radarr or Sonarr Downloads",
+      "description": "List the Radarr or Sonarr download queue: progress, time left, the tracked state (downloading, import pending, import blocked, failed), and the messages explaining a stalled, rejected or failed import. Downloads the service could not match to a title are included.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr or Sonarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "media_library_list",
       "title": "List Plex Media",
       "description": "List the configured Plex library, recent watch history, or in-progress items. An unavailable Plex server is reported as an error, never as an empty library.",
@@ -961,6 +1009,105 @@
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
       "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_movie_collections",
+      "title": "List Radarr Collections",
+      "description": "List Radarr's TMDB collections whose name or a member's title contains the query, with every member and whether Radarr tracks it, to find collection gaps. Use media_movies_get for the tracked members' files and quality, and media_watchlist_add to add a missing one.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_movie_release_grab",
+      "title": "Grab a Radarr Movie Release",
+      "description": "Download one release chosen from media_movie_releases (by its releaseId) for a tracked movie. Omni searches again first and grabs only when the same release is still offered and Radarr approves it under the movie's profile and release rules; a rejected release is never grabbed. A movie with a download in the queue, a Radarr search running, a post-add search not yet run, a grab within 24 hours (through Omni or in Radarr's history), or an Omni search whose outcome is uncertain is reported instead; a search Radarr accepted that found nothing acceptable does not block it. force bypasses only the 24-hour checks and only when the user explicitly asks. Radarr replaces the old file itself when the download imports.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Sends a release to the download client of the configured Radarr account",
+        "An imported upgrade replaces the movie's old file"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "media_movie_releases",
+      "title": "List Radarr Movie Releases",
+      "description": "Run Radarr's interactive search for one tracked movie and list the releases its indexers return, approved ones first in Radarr's preference order: quality, resolution, size, custom formats and score, languages, release group, age, and Radarr's rejection reasons. Nothing is grabbed. Prefer media_movies_search; use this only when a title needs scrutiny (a bad automatic pick, a quality problem, HDR or audio requirements), then grab one approved release with media_movie_release_grab and explain the choice. Each call queries every indexer, so do not repeat it needlessly.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Queries every configured indexer through Radarr; nothing is grabbed"
+      ],
+      "cost": "Consumes indexer API quota; no download",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_movies_get",
+      "title": "Get Radarr Movies",
+      "description": "Inspect movies Radarr tracks, by TMDB ids or by a title or collection-name query (for example \"Star Wars\"): monitoring, quality profile, whether the file is below the profile's cutoff, the file's quality, resolution, codecs, HDR and audio, downloads in the queue, active Radarr searches, Omni's last search or grab, and the upgrade it is waiting for. A movie without a file has file null. detail adds custom formats, Radarr's recent history, and a scan of the movie's folder that lists every managed and unmanaged video file; an upgrade is verified only when its file changed and it is the only video file left. Use it to plan and to verify profile changes, searches and upgrades.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_movies_profile_set",
+      "title": "Set Radarr Movie Quality Profile",
+      "description": "Change the quality profile, and optionally monitoring, of movies Radarr tracks, by TMDB id. Use media_arr_profiles with service radarr for the profile ids. dryRun returns the current and planned profile of every movie without writing; show it to the user before applying. Only the listed movies change, and each is read back from Radarr afterwards. This never searches: a monitored movie below the new cutoff picks up upgrades as new releases appear, and media_movies_search with purpose upgrade searches existing releases once.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes the configured Radarr account",
+        "Monitored movies below the new profile's cutoff may download upgrades as releases appear"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "media_movies_search",
+      "title": "Search Radarr Movies",
+      "description": "Ask Radarr to run its automatic search, which picks and downloads the best release its profile and rules accept, for the listed movies. purpose missing searches only movies without a file; purpose upgrade searches only movies whose file is below the profile's quality cutoff (a file that meets it by quality but not by custom-format score is reported cutoff_met; Radarr's RSS still upgrades it as better releases appear), and Radarr replaces the old file itself when the upgrade imports, so nothing is deleted first. Each movie is searched at most once per 24 hours, counting searches, grabs and adds through Omni: a movie searched or grabbed recently, one with a download in the queue, a Radarr search running, a grab in Radarr's history within 24 hours, or a post-add search not yet run is skipped and reported instead. Set force only when the user explicitly asks to search again; it bypasses only the 24-hour checks, including an earlier uncertain request and a grab in Radarr's history, never a queued download, a running search or a pending post-add search. Returns Radarr's command ids; a queued search is not a download, so verify with media_movies_get.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Starts searches on the configured Radarr account",
+        "Begins media acquisition and downloads; an imported upgrade replaces the old file"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_recommendation_feedback",
@@ -1038,6 +1185,23 @@
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
       "recommendedPolicy": "allow"
+    },
+    {
+      "name": "media_series_profile_set",
+      "title": "Set Sonarr Series Quality Profile",
+      "description": "Change the quality profile of a series Sonarr already tracks; monitoring is unchanged. Use media_arr_profiles with service sonarr for the profile ids. dryRun previews the change without writing. This never searches: Sonarr grabs upgrades for monitored episodes below the new profile's cutoff as new releases appear. The result is Sonarr's state read back after the change.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes the configured Sonarr account",
+        "Monitored episodes below the new profile's cutoff may download upgrades as releases appear"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "media_series_search",
