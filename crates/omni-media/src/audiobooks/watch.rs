@@ -352,6 +352,9 @@ impl Audiobooks {
     }
 
     async fn scan(&self, key: &str, path: &str) {
+        // Rows written before single-file downloads were scanned by folder
+        // hold the file itself.
+        let path = super::scan_folder(path);
         match self.plex_scan(key, path).await {
             Ok(()) => tracing::info!(target: LOG, "Asked Plex to scan {path}"),
             Err(reason) => tracing::warn!(target: LOG, "Plex scan of {path} failed: {reason}"),

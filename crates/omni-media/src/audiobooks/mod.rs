@@ -1403,15 +1403,23 @@ impl Audiobooks {
     }
 }
 
-/// The folder (multi-file torrent) or file a finished torrent occupies.
+/// The folder a finished torrent occupies: its own folder, or the save
+/// folder for a single-file torrent. Plex scans folders, not files.
 fn landed_path(status: &TorrentStatus) -> String {
     let base = status.save_path.trim_end_matches('/');
-    let top = status
-        .files
-        .first()
-        .and_then(|f| f.split('/').next())
-        .unwrap_or(status.name.as_str());
-    format!("{base}/{top}")
+    match status.files.first().and_then(|f| f.split_once('/')) {
+        Some((top, _)) => format!("{base}/{top}"),
+        None => base.to_owned(),
+    }
+}
+
+/// The folder to scan for `path`: a file's own folder, else `path`.
+fn scan_folder(path: &str) -> &str {
+    if is_audio(path) {
+        path.rsplit_once('/').map_or(path, |(dir, _)| dir)
+    } else {
+        path
+    }
 }
 
 fn is_audio(file: &str) -> bool {
@@ -1426,7 +1434,7 @@ fn has_audio(status: &TorrentStatus) -> bool {
 #[cfg(test)]
 mod tests {
     use super::deluge::TorrentStatus;
-    use super::{has_audio, landed_path};
+    use super::{has_audio, landed_path, scan_folder};
 
     #[test]
     fn finds_where_a_download_landed_and_whether_it_has_audio() {
@@ -1442,6 +1450,19 @@ mod tests {
         assert_eq!(
             landed_path(&status),
             "/media/storage/deluge/books/Project Hail Mary"
+        );
+        let single = TorrentStatus {
+            files: vec!["The Martian (Unabridged).m4b".to_owned()],
+            ..status.clone()
+        };
+        assert_eq!(landed_path(&single), "/media/storage/deluge/books");
+        assert_eq!(
+            scan_folder("/media/storage/deluge/books/The Martian (Unabridged).m4b"),
+            "/media/storage/deluge/books"
+        );
+        assert_eq!(
+            scan_folder("/media/storage/deluge/books"),
+            "/media/storage/deluge/books"
         );
         assert!(has_audio(&status));
         let ebook = TorrentStatus {
