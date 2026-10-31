@@ -125,9 +125,13 @@ with `_meta["io.omni/gateway"].error` set to the kind.
   optional GET stream relays `list_changed` notifications. The deprecated
   HTTP+SSE transport is reported as unsupported.
 - **Bundled stdio servers** (`client/stdio.rs`, `bundled.rs`): an integration
-  names a server the image ships (today `karakeep`, `@karakeep/mcp@0.33.0`,
-  installed from `deploy/mcp-stdio/package-lock.json` with integrity hashes and
-  no install scripts) and never a command. The child gets a cleared
+  names a server the image ships and never a command: `karakeep`
+  (`@karakeep/mcp@0.33.0`, installed from `deploy/mcp-stdio/package-lock.json`
+  with integrity hashes and no install scripts) and `obscura` (the Obscura
+  headless browser's `browser_*` tools, a SHA-256-pinned release binary at
+  `/usr/local/bin/obscura` run as `obscura mcp --stealth`; its default block on
+  loopback, private and link-local addresses stays on, so pages cannot reach
+  the LAN). The child gets a cleared
   environment: `PATH`, `HOME`, `NODE_ENV` and only the variables the server
   declares. Its stderr tail appears in errors with configured values redacted.
   A dead process is restarted on the next request.

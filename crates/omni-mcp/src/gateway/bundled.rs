@@ -1,10 +1,10 @@
 //! Stdio MCP servers bundled in the image.
 //!
 //! A stdio integration names one of these by id; it never names a command,
-//! so the management UI cannot run arbitrary programs. Each server's npm
-//! package is installed at image build from the lockfile in
-//! `deploy/mcp-stdio/` (exact versions and integrity hashes, no install
-//! scripts) and runs with Node from the runtime image.
+//! so the management UI cannot run arbitrary programs. Each npm server is
+//! installed at image build from the lockfile in `deploy/mcp-stdio/` (exact
+//! versions and integrity hashes, no install scripts) and runs with Node from
+//! the runtime image; Obscura is a pinned, SHA-256-checked release binary.
 
 use std::path::{Path, PathBuf};
 
@@ -69,15 +69,18 @@ impl BundledRegistry {
     pub fn installed(root: &Path) -> Self {
         let entry = root.join("node_modules/@karakeep/mcp/dist/index.js");
         Self {
-            servers: vec![BundledServer {
-                id: "karakeep".into(),
-                name: "Karakeep".into(),
-                package: "@karakeep/mcp@0.33.0".into(),
-                env: vec!["KARAKEEP_API_ADDR".into(), "KARAKEEP_API_KEY".into()],
-                program: PathBuf::from("node"),
-                args: vec![entry.to_string_lossy().into_owned()],
-                entry: Some(entry),
-            }],
+            servers: vec![
+                BundledServer {
+                    id: "karakeep".into(),
+                    name: "Karakeep".into(),
+                    package: "@karakeep/mcp@0.33.0".into(),
+                    env: vec!["KARAKEEP_API_ADDR".into(), "KARAKEEP_API_KEY".into()],
+                    program: PathBuf::from("node"),
+                    args: vec![entry.to_string_lossy().into_owned()],
+                    entry: Some(entry),
+                },
+                obscura(),
+            ],
         }
     }
 
@@ -109,3 +112,22 @@ impl BundledRegistry {
         &self.servers
     }
 }
+
+/// Obscura's headless browser, a release binary the Dockerfile installs (not
+/// an npm package). It keeps its default SSRF guard: never pass
+/// `--allow-private-network`, so pages cannot reach the LAN.
+fn obscura() -> BundledServer {
+    let program = PathBuf::from(OBSCURA_BINARY);
+    BundledServer {
+        id: "obscura".into(),
+        name: "Obscura browser".into(),
+        package: "obscura@0.2.5".into(),
+        env: Vec::new(),
+        program: program.clone(),
+        args: vec!["mcp".into(), "--stealth".into()],
+        entry: Some(program),
+    }
+}
+
+/// Where the image installs Obscura.
+pub const OBSCURA_BINARY: &str = "/usr/local/bin/obscura";

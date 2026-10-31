@@ -68,7 +68,7 @@ impl ToolHandler for Unwired {
 
 /// Every package's tool definitions, in serving order ([`TOOL_ORDER`]).
 pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
-    let packages: [&[&'static dyn ToolDefinition]; 18] = [
+    let packages: [&[&'static dyn ToolDefinition]; 19] = [
         &omni_reminders::mcp::defs::TOOLS,
         &omni_mcp::tools::system::defs::TOOLS,
         &omni_email::mcp_tools::defs::TOOLS,
@@ -83,6 +83,7 @@ pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
         &omni_personal::mcp::personal::defs::TOOLS,
         &omni_personal::mcp::printer::defs::TOOLS,
         &omni_personal::mcp::browser_history::defs::TOOLS,
+        &omni_personal::mcp::amazon::defs::TOOLS,
         &omni_personal::mcp::owner_notify::defs::TOOLS,
         &omni_stylist::mcp::defs::TOOLS,
         &omni_mcp::tools::claude_sessions::defs::TOOLS,

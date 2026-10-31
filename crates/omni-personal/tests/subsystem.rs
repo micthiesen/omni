@@ -79,6 +79,8 @@ async fn registers_tasks_tools_and_entities() {
             "browse_browser_history",
             "get_browser_page",
             "set_browser_page_label",
+            "amazon_search",
+            "amazon_product",
             "notify_owner_blocked",
             "notify_owner_requested",
         ]

@@ -17,7 +17,7 @@ use crate::json::order_by_schema;
 
 /// Every tool's name in `tools/list` order. The served set must equal this
 /// list; each tool's contract lives in its package's `defs` module.
-pub const TOOL_ORDER: [&str; 133] = [
+pub const TOOL_ORDER: [&str; 135] = [
     "list_reminder_lists",
     "get_reminder_list",
     "update_reminder_list",
@@ -129,6 +129,8 @@ pub const TOOL_ORDER: [&str; 133] = [
     "browse_browser_history",
     "get_browser_page",
     "set_browser_page_label",
+    "amazon_search",
+    "amazon_product",
     "notify_owner_blocked",
     "notify_owner_requested",
     "stylist_context_get",

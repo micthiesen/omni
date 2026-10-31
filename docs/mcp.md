@@ -56,6 +56,8 @@ families cover:
   `parcels_get`); these tools never call Parcel
 - optional fixed-printer status and bounded PDF printing (public URL or inline bytes)
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
+- Amazon search and product pages read through a headless browser
+  (`amazon_search`, `amazon_product`, see "Amazon" below)
 - agent push notifications to Michael (see "Owner notifications" below)
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
   record queries, measurement comparison, typed records and immutable events,
@@ -534,6 +536,30 @@ Every print requires explicit approval because it consumes paper and toner and
 physically exposes the document. Omni waits for the final IPP job state and
 reports completion or a printer-reported failure; a timeout remains explicitly
 unconfirmed.
+
+### Amazon
+
+`amazon_search` and `amazon_product` read public Amazon pages through one
+headless [Obscura](https://github.com/h4ckf0r0day/obscura) browser
+(`obscura mcp --stealth`, a pinned release binary in the image) and return
+compact JSON: search results with ASIN, title, brand, price, list price,
+rating, review count, badge and delivery text, or one product's price,
+availability, seller, bullets, specification rows, review summary and up to 8
+reviews. amazon.ca is the default store (CAD); `store: "com"` reads
+amazon.com. Sponsored results are hidden unless `includeSponsored` is true.
+
+A fresh browser meets Amazon's bot check (an AWS WAF challenge, then a
+"Continue shopping" interstitial). A load that lands on either warms up: it
+opens the store's home page, presses continue, lets the page run 8 seconds,
+and retries, at most three times. The cookies then carry later calls, which
+take about 15 seconds; a cold call takes 30 to 60. An image CAPTCHA is
+reported, never solved. Calls are serialized because the browser has one
+page, and the process is replaced after a browser error, a call over 150
+seconds, a CAPTCHA, or 200 pages. Nothing signs in, so prices are the
+logged-out ones. Obscura keeps its default private-network block, so pages
+cannot reach the LAN. The extraction scripts (`omni-personal/src/amazon/js/`)
+follow Amazon's markup and need updating when it changes; results come back
+empty or partial rather than wrong-typed.
 
 ### Owner notifications
 

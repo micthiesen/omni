@@ -1,10 +1,10 @@
 //! Personal services: Whisker pet weights, the LAN printer, the Hister
-//! browser-history archive, Codex / Claude Code reset alerts, and agent push
-//! notifications to the owner.
+//! browser-history archive, Amazon search through a headless browser,
+//! Codex / Claude Code reset alerts, and agent push notifications to the owner.
 //!
 //! [`subsystem`] builds the routes (`/api/pets`, `/api/pets/health`, CSV
 //! export), the tasks (`PetTracker`, `CodexResets`, `ClaudeResets`), the MCP
-//! tools (`pets_read`, `costs_read`, printer, browser-history and
+//! tools (`pets_read`, `costs_read`, printer, browser-history, Amazon and
 //! `notify_owner_*` tools), the PetTracker data-gap alert gate and the entity
 //! descriptors (`codex-reset-delivery`, `claude-reset-delivery`,
 //! `printer-accepted-job`, `pet-health-alert`, `pet-health-dismissal`,
@@ -20,6 +20,7 @@ use omni_store::entity::EntityDescriptor;
 use omni_tasks::Task;
 use omni_tasks::health::SUSTAINED_FAILURE;
 
+pub mod amazon;
 pub mod claude_resets;
 pub mod codex_resets;
 pub mod hister;
@@ -29,6 +30,8 @@ pub mod pets;
 pub mod printer;
 pub mod reset_alerts;
 
+use crate::amazon::AmazonService;
+use crate::amazon::browser::ObscuraLauncher;
 use crate::claude_resets::task::{ClaudeSource, claude_reset_task};
 use crate::codex_resets::task::{CodexSource, codex_reset_task};
 use crate::hister::HisterService;
@@ -55,6 +58,8 @@ use crate::reset_alerts::{
 pub const NAME: &str = "personal";
 const PRINTER_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20);
+/// The image installs Obscura on `PATH` (Dockerfile `obscura` stage).
+const OBSCURA_PROGRAM: &str = "obscura";
 
 /// Construction failures (all configuration or schema problems; fail boot).
 #[derive(Debug, thiserror::Error)]
@@ -206,6 +211,9 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
     )?;
     mcp_tools.extend(mcp::printer::tools(printer_service(ctx)?)?);
     mcp_tools.extend(mcp::browser_history::tools(hister_service(ctx)?)?);
+    mcp_tools.extend(mcp::amazon::tools(Arc::new(AmazonService::new(Arc::new(
+        ObscuraLauncher::new(OBSCURA_PROGRAM),
+    ))))?);
     mcp_tools.extend(mcp::owner_notify::tools(OwnerNotifier::new(
         ctx.store.clone(),
         ctx.clock.clone(),

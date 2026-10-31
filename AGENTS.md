@@ -176,8 +176,9 @@ change; reuse authorization already given in the conversation.
   read-only tools (`docs/shell.md`) and the policy inventory.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
 - `omni-personal`: pets, LAN printer, Hister, Codex/Claude reset alerts
-  (`reset_alerts`), and agent push notifications to the owner
-  (`owner_notify`, the `notify_owner_*` tools).
+  (`reset_alerts`), agent push notifications to the owner
+  (`owner_notify`, the `notify_owner_*` tools), and Amazon search and
+  product reads through a headless Obscura browser (`amazon`).
 - `omni-stylist`: the fit-first stylist ledger: typed records and events,
   private evidence, frozen predictions, narrow rules, the versioned runbook,
   archives and the `StylistBackup` task.

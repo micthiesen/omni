@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.27.1
 
 # Stage graph (BuildKit builds independent stages in parallel):
-#   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, silero, speaker,
-#              segmentation, parakeet
+#   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, obscura, silero,
+#              speaker, segmentation, parakeet
 #   rust:      chef -> planner -> server (cook, then workspace build)
 #                             \-> web (cook, then trunk) -> web-dist
 #   runtime:   apt layer, then static assets, then the frequently changing outputs
@@ -44,6 +44,23 @@ RUN case "${TARGETARCH}" in \
     "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${ASSET}" \
     "${SHA256}" /out/yt-dlp \
   && chmod 755 /out/yt-dlp
+
+# Obscura headless browser (Amazon tools and the gateway's `obscura` stdio
+# integration). The stealth build impersonates a browser's TLS fingerprint.
+FROM fetch AS obscura
+ARG TARGETARCH
+ARG OBSCURA_VERSION=v0.2.5
+RUN case "${TARGETARCH}" in \
+    amd64) ASSET=obscura-x86_64-linux-stealth.tar.gz; SHA256=d9175cf7573d0243fc303a6f1a3b68affc757af0b5549cacb018e9670988316c ;; \
+    arm64) ASSET=obscura-aarch64-linux-stealth.tar.gz; SHA256=e28ed5ff2dbabe8d820c7b1ef56e6005399aff15912c7774777719e66a021a32 ;; \
+    *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+  esac \
+  && fetch-verified.sh \
+    "https://github.com/h4ckf0r0day/obscura/releases/download/${OBSCURA_VERSION}/${ASSET}" \
+    "${SHA256}" /tmp/obscura.tar.gz \
+  && mkdir -p /out \
+  && tar -xzf /tmp/obscura.tar.gz -C /out obscura \
+  && chmod 755 /out/obscura
 
 # Livestream intelligence models, one stage each.
 FROM fetch AS silero
@@ -201,6 +218,7 @@ COPY --from=speaker --chown=node:node /models/ ./assets/livestream-intelligence/
 COPY --from=segmentation --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=parakeet --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=yt-dlp /out/yt-dlp /usr/local/bin/yt-dlp
+COPY --from=obscura /out/obscura /usr/local/bin/obscura
 COPY --from=mcp-stdio --chown=node:node /opt/mcp-stdio ./mcp-stdio
 COPY --chown=node:node assets ./assets
 COPY --from=web-dist --chown=node:node /dist ./web
@@ -211,8 +229,8 @@ USER node
 
 # Fails the build when a runtime invariant is missing: ffmpeg arnndn,
 # firequalizer and libmp3lame, the denoise model, the brlaser filter and PPD,
-# cupsfilter, pdfinfo, the sherpa models and a runnable yt-dlp. It reads only
-# the tool and model paths, so it needs no runtime secrets.
+# cupsfilter, pdfinfo, the sherpa models, and runnable yt-dlp and obscura. It
+# reads only the tool and model paths, so it needs no runtime secrets.
 RUN omni doctor --image
 
 # The commit this image was built from (CI passes it); after the doctor so a new
