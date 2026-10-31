@@ -130,7 +130,7 @@ js-sys = "=0.3.106"
 wasm-bindgen-futures = "=0.4.79"
 wasm-bindgen-test = "=0.3.79"
 console_error_panic_hook = "=0.1.7"
-pulldown-cmark = { version = "=0.13.4", default-features = false }
+pulldown-cmark = { version = "=0.13.5", default-features = false }
 wiremock = "=0.6.5"
 tempfile = "=3.27.0"
 proptest = "=1.11.0"

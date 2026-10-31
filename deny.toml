@@ -23,6 +23,12 @@ ignore = [
   { id = "RUSTSEC-2026-0367", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
   { id = "RUSTSEC-2026-0368", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
   { id = "RUSTSEC-2026-0369", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
+  # zstd 0.13 and zstd-safe 7 come only through that build-time zip 2.4.2
+  # (zip ^2 requires zstd ^0.13) and decompress only in the same never-run iOS
+  # extraction. Remove with the zip entries above.
+  { id = "RUSTSEC-2026-0391", reason = "zstd reached only through sherpa-onnx-sys's build-time zip, never run" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd-safe reached only through sherpa-onnx-sys's build-time zip, never run" },
+  { id = "RUSTSEC-2026-0403", reason = "zstd-safe reached only through sherpa-onnx-sys's build-time zip, never run" },
 ]
 
 [licenses]
