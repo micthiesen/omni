@@ -44,6 +44,11 @@ impl PlexLibrary {
         }
     }
 
+    /// The client, or why there is none.
+    pub fn client(&self) -> Result<PlexClient, String> {
+        self.client.clone()
+    }
+
     /// `createPlexClient(url, token, accountId)` over `get`.
     pub fn from_config(
         url: Option<&str>,

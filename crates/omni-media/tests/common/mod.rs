@@ -300,6 +300,7 @@ impl Harness {
             movies: radarr_movies(&app, ArrConfig::default(), SideEffectMode::Live),
             arr: arr_inspect(ArrConfig::default(), ArrConfig::default()),
             queue: arr_queue(&app, ArrConfig::default(), ArrConfig::default()),
+            audiobooks: audiobooks(&app),
             nzbget: omni_media::nzbget::NzbGet::new(omni_testkit::no_network(), None),
             catalog: Arc::new(catalog.clone()),
             research: Arc::new(research.clone()),
@@ -315,6 +316,36 @@ impl Harness {
             services,
         }
     }
+}
+
+/// Audiobooks with nothing configured.
+pub fn audiobooks(app: &TestApp) -> omni_media::audiobooks::Audiobooks {
+    use omni_media::audiobooks::deluge::{Deluge, DelugeConfig};
+    omni_media::audiobooks::Audiobooks::new(
+        omni_testkit::no_network(),
+        SideEffectMode::Live,
+        omni_media::audiobooks::AudiobooksConfig {
+            prowlarr_url: None,
+            prowlarr_api_key: None,
+            indexer: "MyAnonamouse".to_owned(),
+            language: "ENG".to_owned(),
+            library: "Audiobooks".to_owned(),
+            label: "books".to_owned(),
+            plex_url: None,
+            plex_token: None,
+        },
+        Err("PLEX_URL is not configured".to_owned()),
+        Arc::new(Deluge::new(DelugeConfig {
+            host: None,
+            port: None,
+            username: None,
+            password: None,
+            cert_sha256: None,
+        })),
+        app.ctx.store.clone(),
+        app.ctx.tracker.clone(),
+        app.ctx.pushover.clone(),
+    )
 }
 
 /// Season management over `config` (an unconfigured Sonarr by default).

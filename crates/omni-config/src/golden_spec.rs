@@ -13,6 +13,17 @@ const RUST_ONLY: &[&str] = &[
     "FFMPEG_PATH",
     "YT_DLP_PATH",
     "OMNI_GATEWAY_PUBLIC_URL",
+    "PROWLARR_URL",
+    "PROWLARR_API_KEY",
+    "PLEX_AUDIOBOOKS_LIBRARY",
+    "AUDIOBOOK_INDEXER",
+    "AUDIOBOOK_LANGUAGE",
+    "DELUGE_HOST",
+    "DELUGE_PORT",
+    "DELUGE_USERNAME",
+    "DELUGE_PASSWORD",
+    "DELUGE_CERT_SHA256",
+    "DELUGE_LABEL",
 ];
 
 fn env(case: &Value) -> BTreeMap<String, String> {

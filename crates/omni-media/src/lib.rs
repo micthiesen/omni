@@ -21,6 +21,7 @@ use omni_store::entity::EntityDescriptor;
 use omni_tasks::{CronSchedule, Task};
 
 pub mod arr;
+pub mod audiobooks;
 pub mod candidates;
 pub mod error;
 pub mod filters;
@@ -54,6 +55,8 @@ use arr::movies::{MovieSearchData, RadarrMovies};
 use arr::queue::{ArrQueue, DownloadRemovalData};
 use arr::seasons::{SeasonSearchData, SonarrSeasons};
 use arr::{ArrConfig, ArrHttp};
+use audiobooks::deluge::{Deluge, DelugeConfig};
+use audiobooks::{AudiobookGrabData, Audiobooks, AudiobooksConfig};
 use media_library::PlexLibrary;
 use persistence::{IdentityAliasData, RecommendationData};
 use plex::HttpPlexGet;
@@ -119,6 +122,31 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
     );
     let arr = ArrInspect::new(arr_http.clone(), radarr.clone(), sonarr.clone());
     let queue = ArrQueue::new(arr.clone(), ctx.store.clone(), ctx.tracker.clone());
+    let audiobooks = Audiobooks::new(
+        ctx.http.clone(),
+        ctx.side_effects,
+        AudiobooksConfig {
+            prowlarr_url: config.prowlarr_url.clone(),
+            prowlarr_api_key: config.prowlarr_api_key.clone(),
+            indexer: config.audiobook_indexer.clone(),
+            language: config.audiobook_language.clone(),
+            library: config.plex_audiobooks_library.clone(),
+            label: config.deluge_label.clone(),
+            plex_url: config.plex_url.clone(),
+            plex_token: config.plex_token.clone(),
+        },
+        library.client(),
+        Arc::new(Deluge::new(DelugeConfig {
+            host: config.deluge_host.clone(),
+            port: config.deluge_port,
+            username: config.deluge_username.clone(),
+            password: config.deluge_password.clone(),
+            cert_sha256: config.deluge_cert_sha256.clone(),
+        })),
+        ctx.store.clone(),
+        ctx.tracker.clone(),
+        ctx.pushover.clone(),
+    );
     let watchlist = ArrWatchlist::new(arr_http, radarr, sonarr, seasons.clone(), movies.clone());
     let research = WebSearch::new(
         ctx.public_http.clone(),
@@ -135,6 +163,7 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         movies,
         arr,
         queue,
+        audiobooks,
         nzbget: nzbget::NzbGet::new(ctx.http.clone(), config.nzbget_url.clone()),
         catalog: Arc::new(TmdbClient::new(
             ctx.http.clone(),
@@ -156,6 +185,7 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<SeasonSearchData>(),
         EntityDescriptor::of::<MovieSearchData>(),
         EntityDescriptor::of::<DownloadRemovalData>(),
+        EntityDescriptor::of::<AudiobookGrabData>(),
     ]
 }
 
@@ -232,6 +262,13 @@ pub fn tasks(services: &MediaServices) -> Result<Vec<Arc<dyn Task>>, MediaSetupE
     if let Some(task) =
         taste::task::MediaTasteReflectionTask::create(services.clone(), taste_schedule)
     {
+        tasks.push(Arc::new(task));
+    }
+    if let Some(task) = audiobooks::watch::AudiobookWatchTask::create(
+        services.audiobooks.clone(),
+        services.clock.clone(),
+        &tz,
+    ) {
         tasks.push(Arc::new(task));
     }
     Ok(tasks)

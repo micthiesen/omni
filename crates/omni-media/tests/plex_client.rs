@@ -329,3 +329,34 @@ async fn skips_history_episodes_with_an_empty_series_key() {
         .expect("history");
     assert!(history.is_empty());
 }
+
+#[tokio::test]
+async fn lists_albums_of_the_named_music_library_only() {
+    let get = FnGet::new(|path, params| match path {
+        "/library/sections" => Ok(response(json!({"Directory": [
+            {"key": "6", "type": "artist", "title": "Music"},
+            {"key": "3", "type": "show", "title": "Audiobooks"},
+            {"key": "4", "type": "artist", "title": "Audiobooks"}
+        ]}))),
+        "/library/sections/4/all" if param(params, "type") == Some("9") => {
+            Ok(response(json!({"size": 1, "totalSize": 1, "Metadata": [
+                {"type": "album", "title": "Project Hail Mary", "parentTitle": "Andy Weir",
+                 "year": 2021, "addedAt": 1_700_000_000}
+            ]})))
+        }
+        other => Err(format!("unexpected {other}")),
+    });
+    let plex = client(&get, None);
+
+    let albums = plex
+        .fetch_music_albums("Audiobooks")
+        .await
+        .expect("read")
+        .expect("library");
+    let missing = plex.fetch_music_albums("Podcasts").await.expect("read");
+
+    assert_eq!(albums.len(), 1);
+    assert_eq!(albums[0].parent_title.as_deref(), Some("Andy Weir"));
+    assert_eq!(albums[0].added_at, Some(1_700_000_000.0));
+    assert!(missing.is_none());
+}

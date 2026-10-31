@@ -21,6 +21,7 @@ use crate::arr::seasons::{
     SeasonAddRequest, SeasonSearchRequest, SeasonSearchResult, SeasonSetRequest, SeriesOutcome,
     SeriesProfileRequest, SeriesResult, SeriesStatus,
 };
+use crate::audiobooks::{GrabRequest as AudiobookGrabRequest, LibraryAudiobook};
 use crate::error::IntegrationError;
 use crate::persistence::{
     FeedbackInput, RecommendationData, get_all_recommendations, get_recommendation,
@@ -541,6 +542,48 @@ struct DownloadsRemoveInput {
 
 #[derive(Deserialize)]
 struct NzbGetStatusInput {}
+
+#[derive(Deserialize)]
+struct AudiobooksSearchInput {
+    query: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudiobookGrabInput {
+    query: String,
+    release_id: String,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Deserialize)]
+struct AudiobooksListInput {
+    query: Option<String>,
+    #[serde(default = "default_cursor")]
+    cursor: usize,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudiobooksListOutput {
+    library: String,
+    #[serde(flatten)]
+    page: Page<LibraryAudiobook>,
+}
+
+#[derive(Deserialize)]
+struct AudiobooksStatusInput {
+    query: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudiobookCancelInput {
+    grab_id: String,
+}
 
 /// The most movies one `detail` page reads in depth.
 const DETAIL_LIMIT: usize = 25;
@@ -1128,6 +1171,69 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                             force: input.force,
                         })
                         .await)
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_AUDIOBOOKS_SEARCH, {
+            let s = s.clone();
+            move |input: AudiobooksSearchInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let query = non_empty_trimmed(&input.query, "query")?;
+                    Ok(s.audiobooks.search(&query).await)
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_AUDIOBOOK_GRAB, {
+            let s = s.clone();
+            move |input: AudiobookGrabInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let query = non_empty_trimmed(&input.query, "query")?;
+                    Ok(s.audiobooks
+                        .grab(AudiobookGrabRequest {
+                            query,
+                            release_id: input.release_id,
+                            force: input.force,
+                        })
+                        .await)
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_AUDIOBOOKS_STATUS, {
+            let s = s.clone();
+            move |input: AudiobooksStatusInput, _cx| {
+                let s = s.clone();
+                async move {
+                    s.audiobooks
+                        .status(input.query.as_deref().map(trim))
+                        .await
+                        .map_err(|e| ToolError::execute(e.to_string()))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_AUDIOBOOK_CANCEL, {
+            let s = s.clone();
+            move |input: AudiobookCancelInput, _cx| {
+                let s = s.clone();
+                async move { Ok(s.audiobooks.cancel(&input.grab_id).await) }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_AUDIOBOOKS_LIST, {
+            let s = s.clone();
+            move |input: AudiobooksListInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let query = input.query.as_deref().map(trim);
+                    let library = s
+                        .audiobooks
+                        .library(query)
+                        .await
+                        .map_err(|e| ToolError::execute(e.to_string()))?;
+                    Ok(AudiobooksListOutput {
+                        library: library.library,
+                        page: paginate(library.books, input.cursor, input.limit),
+                    })
                 }
             }
         })?,

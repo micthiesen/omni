@@ -48,7 +48,8 @@ families cover:
   see "Radarr movies" below), Radarr and Sonarr profiles, status and download
   queues (`media_arr_*`, `media_downloads_list`), queue removal
   (`media_downloads_remove`) and NZBGet status (`media_nzbget_status`, see
-  "Downloads and NZBGet" below), recommendations, podcast
+  "Downloads and NZBGet" below), audiobooks (`media_audiobook*`, see
+  "Audiobooks" below), recommendations, podcast
   accounts, and podcast recommendations
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
@@ -371,6 +372,68 @@ their tracked state and the messages explaining a blocked or failed import.
 Free text from either service (queue messages, health messages, history and
 release titles, rejections) goes through `inspect::redact`, which masks
 key-like URL query values (`apikey`, `passkey`, `token`, ...) and URL userinfo.
+
+### Audiobooks
+
+`media_audiobooks_search`, `media_audiobook_grab`, `media_audiobooks_status`,
+`media_audiobook_cancel` and `media_audiobooks_list`
+(`crates/omni-media/src/audiobooks/`) take a book from MyAnonamouse into the
+Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
+"Audiobooks"), which Prologue reads, and tell the owner when it is there.
+
+- **Search** queries Prowlarr (`PROWLARR_URL`, `PROWLARR_API_KEY`) in the
+  audiobook category (3030) on the one enabled indexer named
+  `AUDIOBOOK_INDEXER` (default `MyAnonamouse`). `rank.rs` parses MAM titles
+  (`Title by Author [LANG / FORMAT]`) and orders releases by: every query
+  word matched, seeded, `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged,
+  m4b before m4a/aac before mp3 before other audio, at least three seeders,
+  freeleech, then seeders. Ebook-only releases are dropped. Each release has
+  notes explaining its place; `alreadyHave` lists matching library albums and
+  open grabs. Releases are named by an opaque `releaseId`; guids and download
+  URLs carry passkeys and never leave the module.
+- **Grab** checks that the Deluge label (`DELUGE_LABEL`, default `books`)
+  moves finished torrents into a folder that is one of the Plex library's
+  locations (`not_set_up` otherwise), searches again, refuses a book already
+  in the library or on its way unless `force`, downloads the `.torrent`
+  through Prowlarr's proxy (only its path and query, against the configured
+  Prowlarr origin), reads the info hash, reserves `media-audiobook-grab` by
+  that hash, and adds the torrent to Deluge with that move folder and label.
+  Every check that can refuse (including an active grab of the same release)
+  runs before the `.torrent` download, which counts as a tracker snatch, and
+  Record mode never downloads. The add is verified by reading the torrent
+  back. An add whose answer was lost is `uncertain` and is settled only by
+  reading Deluge; an active grab of the same torrent always blocks another
+  add, `force` included. A torrent Deluge already had from elsewhere is
+  `already_in_deluge` and is never tracked or cancelled by Omni.
+- **Watch** (`AudiobookWatch`, every five minutes, only while grabs are open)
+  advances each grab: `downloading` until Deluge reports it finished and moved
+  into the label's folder; then it must contain an audio file (`no_audio`
+  otherwise), Plex is asked to scan exactly that folder (`refresh?path=`),
+  and the grab is `ready` once Plex has a track for every audio file of the
+  download (paths compared by words, since Plex can report characters
+  differently), so a partly scanned book never counts. Ready sends one
+  "Audiobook ready" notification, reserved as `sending` before the push and
+  never resent when uncertain. Problems notify once each: `stalled` (no
+  progress for 12 hours), `not_in_plex` (finished 2 hours ago, rescanned every
+  30 minutes, no longer followed after 24 hours), `no_audio`, `missing`
+  (absent from Deluge on reads at least 10 minutes apart before finishing),
+  `never_added` (an uncertain add still absent after 24 hours) and
+  `deluge_error` (Deluge's own text is not passed on: it can quote the
+  tracker URL with the passkey). An unreadable Deluge or Plex leaves grabs
+  unchanged and marks the run degraded.
+- **Cancel** removes an unfinished torrent Omni added, with its partial data,
+  and verifies it is gone. Finished downloads keep seeding (MAM requires it)
+  and are never removed by Omni.
+
+Deluge is reached through its daemon RPC (`DELUGE_HOST`, `DELUGE_PORT`
+default 58846), not the web UI: an account from Deluge's `auth` file
+(`DELUGE_USERNAME`, `DELUGE_PASSWORD`; level 5 is enough) and a pin of the
+daemon's self-signed certificate (`DELUGE_CERT_SHA256`, from
+`openssl x509 -in ssl/daemon.cert -noout -fingerprint -sha256`). Trust is the
+pin alone, so the certificate's dates and name are not checked; Deluge's v1
+certificates are read directly and only TLS 1.3 is accepted. On Boris the
+account is `omni`, the label `books` moves to `/media/storage/deluge/books`,
+and that folder is a location of the Plex Audiobooks library (section 4).
 
 ### Downloads and NZBGet
 

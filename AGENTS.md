@@ -163,8 +163,9 @@ change; reuse authorization already given in the conversation.
   RSS.
 - `omni-podcasts`: podcast recommendations, taste reflection, Castro bridge and
   Inbox cleanup.
-- `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, media
-  recommendations, taste reflection.
+- `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, audiobooks
+  (MyAnonamouse through Prowlarr and Deluge into the Plex audiobook library,
+  `AudiobookWatch`), media recommendations, taste reflection.
 - `omni-arr`: `ArrRecovery` and `ObserverRepair`.
 - `omni-reminders`: server iCloud Reminders and the shared protected-access
   (PCS) workflow; callers own authenticated requests, encrypted cookie
@@ -469,6 +470,20 @@ and blocklists stay consistent. Each removal is reserved durably per service
 and queue id before the request, settled only by reading the queue back, and
 never resent while recorded unless forced; a download being imported is
 refused. See "Downloads and NZBGet" in `docs/mcp.md`.
+
+### Audiobooks
+
+The audiobook tools (`omni-media/src/audiobooks/`) add MyAnonamouse torrents
+to Deluge's daemon only under a label that moves finished downloads into a
+Plex audiobook library folder, so Plex never sees partial files. A grab is
+reserved by info hash before the add, verified by reading Deluge, and an
+uncertain add is settled only by reading; an active grab of the same torrent
+always blocks another, `force` included. Omni touches only torrents it added,
+cancels only unfinished ones, and never removes a finished (seeding)
+download. "Ready" means a Plex track lives in the download's folder; it
+notifies once, and each problem once. Release guids and download URLs carry
+passkeys and never leave the module. Trust in Deluge is the certificate pin
+alone. See "Audiobooks" in `docs/mcp.md`.
 
 ### Observer issue repair
 

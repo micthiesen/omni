@@ -20745,6 +20745,1007 @@
                   }
                 },
                 {
+                  "name": "media_audiobooks_search",
+                  "title": "Search Audiobooks",
+                  "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Book title, optionally with the author (\"Project Hail Mary Andy Weir\")"
+                      }
+                    },
+                    "required": [
+                      "query"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string",
+                        "enum": [
+                          "listed",
+                          "unavailable"
+                        ]
+                      },
+                      "releases": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "1 is the best for Prologue"
+                            },
+                            "releaseId": {
+                              "type": "string",
+                              "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "language": {
+                              "description": "The indexer's language code (ENG, DUT, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "formats": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                            },
+                            "sizeMb": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "files": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeders": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "leechers": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grabs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "freeleech": {
+                              "type": "boolean",
+                              "description": "Downloading it does not count against tracker ratio"
+                            },
+                            "publishedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "goodMatch": {
+                              "type": "boolean",
+                              "description": "Matches every query word, seeded, English, unabridged"
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Why it ranks where it does"
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "releaseId",
+                            "title",
+                            "book",
+                            "author",
+                            "language",
+                            "formats",
+                            "sizeMb",
+                            "files",
+                            "seeders",
+                            "leechers",
+                            "grabs",
+                            "freeleech",
+                            "publishedAt",
+                            "goodMatch",
+                            "notes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Best first; at most 20"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Matching books already in the library or being downloaded"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "releases",
+                      "total",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_grab",
+                  "title": "Download an Audiobook",
+                  "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The query passed to media_audiobooks_search that listed the release"
+                      },
+                      "releaseId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$",
+                        "description": "releaseId from media_audiobooks_search"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Download even if the book is already in the library or on its way. Only when the user explicitly asks",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "query",
+                      "releaseId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "grabbed",
+                          "uncertain",
+                          "failed",
+                          "release_not_found",
+                          "already_have",
+                          "already_grabbed",
+                          "already_in_deluge",
+                          "not_set_up",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. release_not_found: search again"
+                      },
+                      "grabId": {
+                        "description": "The torrent's info hash; use it with media_audiobooks_status and media_audiobook_cancel",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "release": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "1 is the best for Prologue"
+                              },
+                              "releaseId": {
+                                "type": "string",
+                                "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "book": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "language": {
+                                "description": "The indexer's language code (ENG, DUT, ...)",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "formats": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                              },
+                              "sizeMb": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "files": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "seeders": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "leechers": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "grabs": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "freeleech": {
+                                "type": "boolean",
+                                "description": "Downloading it does not count against tracker ratio"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "goodMatch": {
+                                "type": "boolean",
+                                "description": "Matches every query word, seeded, English, unabridged"
+                              },
+                              "notes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Why it ranks where it does"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "releaseId",
+                              "title",
+                              "book",
+                              "author",
+                              "language",
+                              "formats",
+                              "sizeMb",
+                              "files",
+                              "seeders",
+                              "leechers",
+                              "grabs",
+                              "freeleech",
+                              "publishedAt",
+                              "goodMatch",
+                              "notes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "release",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_status",
+                  "title": "Audiobook Download Status",
+                  "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words, or a grabId (or its prefix)"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "grabs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "grabId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "type": "string",
+                              "description": "Book and author"
+                            },
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "reserved",
+                                "uncertain",
+                                "downloading",
+                                "finished",
+                                "ready",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "progressPercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "etaSecs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeds": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "downloadKbps": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "delugeState": {
+                              "description": "Deluge's own state (Downloading, Seeding, Paused, Error, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problem": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "stalled",
+                                    "not_in_plex",
+                                    "no_audio",
+                                    "missing",
+                                    "never_added",
+                                    "deluge_error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problemDetail": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexAlbum": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexArtist": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "notified": {
+                              "type": "boolean",
+                              "description": "The ready notification was sent"
+                            },
+                            "requestedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "finishedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cancellable": {
+                              "type": "boolean",
+                              "description": "media_audiobook_cancel can still remove it"
+                            }
+                          },
+                          "required": [
+                            "grabId",
+                            "title",
+                            "book",
+                            "stage",
+                            "progressPercent",
+                            "etaSecs",
+                            "seeds",
+                            "downloadKbps",
+                            "delugeState",
+                            "problem",
+                            "problemDetail",
+                            "plexAlbum",
+                            "plexArtist",
+                            "notified",
+                            "requestedAt",
+                            "finishedAt",
+                            "cancellable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Newest first; at most 30"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "delugeUnreadable": {
+                        "description": "Deluge could not be read; stored progress is shown",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "grabs",
+                      "total",
+                      "delugeUnreadable"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_cancel",
+                  "title": "Cancel an Audiobook Download",
+                  "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "grabId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{40}$",
+                        "description": "grabId from media_audiobooks_status"
+                      }
+                    },
+                    "required": [
+                      "grabId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "cancelled",
+                          "already_gone",
+                          "finished",
+                          "not_found",
+                          "uncertain",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "cancelled: removed with its partial data. finished: it completed and keeps seeding. uncertain: read media_audiobooks_status again"
+                      },
+                      "grabId": {
+                        "type": "string"
+                      },
+                      "book": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "book",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_list",
+                  "title": "List Audiobooks",
+                  "description": "List the audiobooks in the Plex audiobook library that Prologue reads, newest first, optionally filtered by title or author words. Downloads still on their way are in media_audiobooks_status.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words"
+                      },
+                      "cursor": {
+                        "default": 0,
+                        "description": "Zero-based result offset",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "limit": {
+                        "default": 25,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "library": {
+                        "type": "string",
+                        "description": "The Plex library's title"
+                      },
+                      "nextCursor": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "year": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "addedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "year",
+                            "addedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Audiobooks, newest first"
+                      }
+                    },
+                    "required": [
+                      "library",
+                      "nextCursor",
+                      "total",
+                      "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "media_recommendations_list",
                   "title": "List Media Recommendations",
                   "description": "List persisted media recommendation attempts and outcomes, optionally filtered by status or feedback.",
@@ -59851,6 +60852,1007 @@
                       "radarrId",
                       "title",
                       "release"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_search",
+                  "title": "Search Audiobooks",
+                  "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Book title, optionally with the author (\"Project Hail Mary Andy Weir\")"
+                      }
+                    },
+                    "required": [
+                      "query"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string",
+                        "enum": [
+                          "listed",
+                          "unavailable"
+                        ]
+                      },
+                      "releases": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "1 is the best for Prologue"
+                            },
+                            "releaseId": {
+                              "type": "string",
+                              "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "language": {
+                              "description": "The indexer's language code (ENG, DUT, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "formats": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                            },
+                            "sizeMb": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "files": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeders": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "leechers": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grabs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "freeleech": {
+                              "type": "boolean",
+                              "description": "Downloading it does not count against tracker ratio"
+                            },
+                            "publishedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "goodMatch": {
+                              "type": "boolean",
+                              "description": "Matches every query word, seeded, English, unabridged"
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Why it ranks where it does"
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "releaseId",
+                            "title",
+                            "book",
+                            "author",
+                            "language",
+                            "formats",
+                            "sizeMb",
+                            "files",
+                            "seeders",
+                            "leechers",
+                            "grabs",
+                            "freeleech",
+                            "publishedAt",
+                            "goodMatch",
+                            "notes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Best first; at most 20"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Matching books already in the library or being downloaded"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "releases",
+                      "total",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_grab",
+                  "title": "Download an Audiobook",
+                  "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The query passed to media_audiobooks_search that listed the release"
+                      },
+                      "releaseId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$",
+                        "description": "releaseId from media_audiobooks_search"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Download even if the book is already in the library or on its way. Only when the user explicitly asks",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "query",
+                      "releaseId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "grabbed",
+                          "uncertain",
+                          "failed",
+                          "release_not_found",
+                          "already_have",
+                          "already_grabbed",
+                          "already_in_deluge",
+                          "not_set_up",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. release_not_found: search again"
+                      },
+                      "grabId": {
+                        "description": "The torrent's info hash; use it with media_audiobooks_status and media_audiobook_cancel",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "release": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "1 is the best for Prologue"
+                              },
+                              "releaseId": {
+                                "type": "string",
+                                "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "book": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "language": {
+                                "description": "The indexer's language code (ENG, DUT, ...)",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "formats": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                              },
+                              "sizeMb": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "files": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "seeders": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "leechers": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "grabs": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "freeleech": {
+                                "type": "boolean",
+                                "description": "Downloading it does not count against tracker ratio"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "goodMatch": {
+                                "type": "boolean",
+                                "description": "Matches every query word, seeded, English, unabridged"
+                              },
+                              "notes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Why it ranks where it does"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "releaseId",
+                              "title",
+                              "book",
+                              "author",
+                              "language",
+                              "formats",
+                              "sizeMb",
+                              "files",
+                              "seeders",
+                              "leechers",
+                              "grabs",
+                              "freeleech",
+                              "publishedAt",
+                              "goodMatch",
+                              "notes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "release",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_status",
+                  "title": "Audiobook Download Status",
+                  "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words, or a grabId (or its prefix)"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "grabs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "grabId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "type": "string",
+                              "description": "Book and author"
+                            },
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "reserved",
+                                "uncertain",
+                                "downloading",
+                                "finished",
+                                "ready",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "progressPercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "etaSecs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeds": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "downloadKbps": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "delugeState": {
+                              "description": "Deluge's own state (Downloading, Seeding, Paused, Error, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problem": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "stalled",
+                                    "not_in_plex",
+                                    "no_audio",
+                                    "missing",
+                                    "never_added",
+                                    "deluge_error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problemDetail": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexAlbum": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexArtist": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "notified": {
+                              "type": "boolean",
+                              "description": "The ready notification was sent"
+                            },
+                            "requestedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "finishedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cancellable": {
+                              "type": "boolean",
+                              "description": "media_audiobook_cancel can still remove it"
+                            }
+                          },
+                          "required": [
+                            "grabId",
+                            "title",
+                            "book",
+                            "stage",
+                            "progressPercent",
+                            "etaSecs",
+                            "seeds",
+                            "downloadKbps",
+                            "delugeState",
+                            "problem",
+                            "problemDetail",
+                            "plexAlbum",
+                            "plexArtist",
+                            "notified",
+                            "requestedAt",
+                            "finishedAt",
+                            "cancellable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Newest first; at most 30"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "delugeUnreadable": {
+                        "description": "Deluge could not be read; stored progress is shown",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "grabs",
+                      "total",
+                      "delugeUnreadable"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_cancel",
+                  "title": "Cancel an Audiobook Download",
+                  "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "grabId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{40}$",
+                        "description": "grabId from media_audiobooks_status"
+                      }
+                    },
+                    "required": [
+                      "grabId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "cancelled",
+                          "already_gone",
+                          "finished",
+                          "not_found",
+                          "uncertain",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "cancelled: removed with its partial data. finished: it completed and keeps seeding. uncertain: read media_audiobooks_status again"
+                      },
+                      "grabId": {
+                        "type": "string"
+                      },
+                      "book": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "book",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_list",
+                  "title": "List Audiobooks",
+                  "description": "List the audiobooks in the Plex audiobook library that Prologue reads, newest first, optionally filtered by title or author words. Downloads still on their way are in media_audiobooks_status.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words"
+                      },
+                      "cursor": {
+                        "default": 0,
+                        "description": "Zero-based result offset",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "limit": {
+                        "default": 25,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "library": {
+                        "type": "string",
+                        "description": "The Plex library's title"
+                      },
+                      "nextCursor": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "year": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "addedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "year",
+                            "addedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Audiobooks, newest first"
+                      }
+                    },
+                    "required": [
+                      "library",
+                      "nextCursor",
+                      "total",
+                      "items"
                     ],
                     "additionalProperties": false
                   }
@@ -99158,6 +101160,1007 @@
                   }
                 },
                 {
+                  "name": "media_audiobooks_search",
+                  "title": "Search Audiobooks",
+                  "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Book title, optionally with the author (\"Project Hail Mary Andy Weir\")"
+                      }
+                    },
+                    "required": [
+                      "query"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string",
+                        "enum": [
+                          "listed",
+                          "unavailable"
+                        ]
+                      },
+                      "releases": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "1 is the best for Prologue"
+                            },
+                            "releaseId": {
+                              "type": "string",
+                              "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "language": {
+                              "description": "The indexer's language code (ENG, DUT, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "formats": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                            },
+                            "sizeMb": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "files": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeders": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "leechers": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grabs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "freeleech": {
+                              "type": "boolean",
+                              "description": "Downloading it does not count against tracker ratio"
+                            },
+                            "publishedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "goodMatch": {
+                              "type": "boolean",
+                              "description": "Matches every query word, seeded, English, unabridged"
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Why it ranks where it does"
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "releaseId",
+                            "title",
+                            "book",
+                            "author",
+                            "language",
+                            "formats",
+                            "sizeMb",
+                            "files",
+                            "seeders",
+                            "leechers",
+                            "grabs",
+                            "freeleech",
+                            "publishedAt",
+                            "goodMatch",
+                            "notes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Best first; at most 20"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Matching books already in the library or being downloaded"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "releases",
+                      "total",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_grab",
+                  "title": "Download an Audiobook",
+                  "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The query passed to media_audiobooks_search that listed the release"
+                      },
+                      "releaseId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$",
+                        "description": "releaseId from media_audiobooks_search"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Download even if the book is already in the library or on its way. Only when the user explicitly asks",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "query",
+                      "releaseId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "grabbed",
+                          "uncertain",
+                          "failed",
+                          "release_not_found",
+                          "already_have",
+                          "already_grabbed",
+                          "already_in_deluge",
+                          "not_set_up",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. release_not_found: search again"
+                      },
+                      "grabId": {
+                        "description": "The torrent's info hash; use it with media_audiobooks_status and media_audiobook_cancel",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "release": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "1 is the best for Prologue"
+                              },
+                              "releaseId": {
+                                "type": "string",
+                                "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "book": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "language": {
+                                "description": "The indexer's language code (ENG, DUT, ...)",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "formats": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                              },
+                              "sizeMb": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "files": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "seeders": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "leechers": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "grabs": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "freeleech": {
+                                "type": "boolean",
+                                "description": "Downloading it does not count against tracker ratio"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "goodMatch": {
+                                "type": "boolean",
+                                "description": "Matches every query word, seeded, English, unabridged"
+                              },
+                              "notes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Why it ranks where it does"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "releaseId",
+                              "title",
+                              "book",
+                              "author",
+                              "language",
+                              "formats",
+                              "sizeMb",
+                              "files",
+                              "seeders",
+                              "leechers",
+                              "grabs",
+                              "freeleech",
+                              "publishedAt",
+                              "goodMatch",
+                              "notes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "release",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_status",
+                  "title": "Audiobook Download Status",
+                  "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words, or a grabId (or its prefix)"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "grabs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "grabId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "type": "string",
+                              "description": "Book and author"
+                            },
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "reserved",
+                                "uncertain",
+                                "downloading",
+                                "finished",
+                                "ready",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "progressPercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "etaSecs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeds": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "downloadKbps": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "delugeState": {
+                              "description": "Deluge's own state (Downloading, Seeding, Paused, Error, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problem": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "stalled",
+                                    "not_in_plex",
+                                    "no_audio",
+                                    "missing",
+                                    "never_added",
+                                    "deluge_error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problemDetail": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexAlbum": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexArtist": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "notified": {
+                              "type": "boolean",
+                              "description": "The ready notification was sent"
+                            },
+                            "requestedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "finishedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cancellable": {
+                              "type": "boolean",
+                              "description": "media_audiobook_cancel can still remove it"
+                            }
+                          },
+                          "required": [
+                            "grabId",
+                            "title",
+                            "book",
+                            "stage",
+                            "progressPercent",
+                            "etaSecs",
+                            "seeds",
+                            "downloadKbps",
+                            "delugeState",
+                            "problem",
+                            "problemDetail",
+                            "plexAlbum",
+                            "plexArtist",
+                            "notified",
+                            "requestedAt",
+                            "finishedAt",
+                            "cancellable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Newest first; at most 30"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "delugeUnreadable": {
+                        "description": "Deluge could not be read; stored progress is shown",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "grabs",
+                      "total",
+                      "delugeUnreadable"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_cancel",
+                  "title": "Cancel an Audiobook Download",
+                  "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "grabId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{40}$",
+                        "description": "grabId from media_audiobooks_status"
+                      }
+                    },
+                    "required": [
+                      "grabId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "cancelled",
+                          "already_gone",
+                          "finished",
+                          "not_found",
+                          "uncertain",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "cancelled: removed with its partial data. finished: it completed and keeps seeding. uncertain: read media_audiobooks_status again"
+                      },
+                      "grabId": {
+                        "type": "string"
+                      },
+                      "book": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "book",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_list",
+                  "title": "List Audiobooks",
+                  "description": "List the audiobooks in the Plex audiobook library that Prologue reads, newest first, optionally filtered by title or author words. Downloads still on their way are in media_audiobooks_status.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words"
+                      },
+                      "cursor": {
+                        "default": 0,
+                        "description": "Zero-based result offset",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "limit": {
+                        "default": 25,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "library": {
+                        "type": "string",
+                        "description": "The Plex library's title"
+                      },
+                      "nextCursor": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "year": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "addedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "year",
+                            "addedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Audiobooks, newest first"
+                      }
+                    },
+                    "required": [
+                      "library",
+                      "nextCursor",
+                      "total",
+                      "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "media_recommendations_list",
                   "title": "List Media Recommendations",
                   "description": "List persisted media recommendation attempts and outcomes, optionally filtered by status or feedback.",
@@ -137716,6 +140719,1007 @@
                       "radarrId",
                       "title",
                       "release"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_search",
+                  "title": "Search Audiobooks",
+                  "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Book title, optionally with the author (\"Project Hail Mary Andy Weir\")"
+                      }
+                    },
+                    "required": [
+                      "query"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string",
+                        "enum": [
+                          "listed",
+                          "unavailable"
+                        ]
+                      },
+                      "releases": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "1 is the best for Prologue"
+                            },
+                            "releaseId": {
+                              "type": "string",
+                              "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "language": {
+                              "description": "The indexer's language code (ENG, DUT, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "formats": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                            },
+                            "sizeMb": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "files": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeders": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "leechers": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grabs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "freeleech": {
+                              "type": "boolean",
+                              "description": "Downloading it does not count against tracker ratio"
+                            },
+                            "publishedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "goodMatch": {
+                              "type": "boolean",
+                              "description": "Matches every query word, seeded, English, unabridged"
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Why it ranks where it does"
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "releaseId",
+                            "title",
+                            "book",
+                            "author",
+                            "language",
+                            "formats",
+                            "sizeMb",
+                            "files",
+                            "seeders",
+                            "leechers",
+                            "grabs",
+                            "freeleech",
+                            "publishedAt",
+                            "goodMatch",
+                            "notes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Best first; at most 20"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Matching books already in the library or being downloaded"
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "releases",
+                      "total",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_grab",
+                  "title": "Download an Audiobook",
+                  "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The query passed to media_audiobooks_search that listed the release"
+                      },
+                      "releaseId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$",
+                        "description": "releaseId from media_audiobooks_search"
+                      },
+                      "force": {
+                        "default": false,
+                        "description": "Download even if the book is already in the library or on its way. Only when the user explicitly asks",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "query",
+                      "releaseId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "grabbed",
+                          "uncertain",
+                          "failed",
+                          "release_not_found",
+                          "already_have",
+                          "already_grabbed",
+                          "already_in_deluge",
+                          "not_set_up",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. release_not_found: search again"
+                      },
+                      "grabId": {
+                        "description": "The torrent's info hash; use it with media_audiobooks_status and media_audiobook_cancel",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "release": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "1 is the best for Prologue"
+                              },
+                              "releaseId": {
+                                "type": "string",
+                                "description": "Omni's handle for the release; pass it to media_audiobook_grab"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "book": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "language": {
+                                "description": "The indexer's language code (ENG, DUT, ...)",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "formats": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Audio formats, best first (m4b, m4a, aac, mp3, ...)"
+                              },
+                              "sizeMb": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "files": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "seeders": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "leechers": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "grabs": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "freeleech": {
+                                "type": "boolean",
+                                "description": "Downloading it does not count against tracker ratio"
+                              },
+                              "publishedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "goodMatch": {
+                                "type": "boolean",
+                                "description": "Matches every query word, seeded, English, unabridged"
+                              },
+                              "notes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Why it ranks where it does"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "releaseId",
+                              "title",
+                              "book",
+                              "author",
+                              "language",
+                              "formats",
+                              "sizeMb",
+                              "files",
+                              "seeders",
+                              "leechers",
+                              "grabs",
+                              "freeleech",
+                              "publishedAt",
+                              "goodMatch",
+                              "notes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "alreadyHave": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "description": "in_library, or the grab's stage"
+                            },
+                            "grabId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "status",
+                            "grabId"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "release",
+                      "alreadyHave",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_status",
+                  "title": "Audiobook Download Status",
+                  "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words, or a grabId (or its prefix)"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "grabs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "grabId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "book": {
+                              "type": "string",
+                              "description": "Book and author"
+                            },
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "reserved",
+                                "uncertain",
+                                "downloading",
+                                "finished",
+                                "ready",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "progressPercent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "etaSecs": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "seeds": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "downloadKbps": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "delugeState": {
+                              "description": "Deluge's own state (Downloading, Seeding, Paused, Error, ...)",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problem": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "stalled",
+                                    "not_in_plex",
+                                    "no_audio",
+                                    "missing",
+                                    "never_added",
+                                    "deluge_error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "problemDetail": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexAlbum": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plexArtist": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "notified": {
+                              "type": "boolean",
+                              "description": "The ready notification was sent"
+                            },
+                            "requestedAt": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Unix ms"
+                            },
+                            "finishedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cancellable": {
+                              "type": "boolean",
+                              "description": "media_audiobook_cancel can still remove it"
+                            }
+                          },
+                          "required": [
+                            "grabId",
+                            "title",
+                            "book",
+                            "stage",
+                            "progressPercent",
+                            "etaSecs",
+                            "seeds",
+                            "downloadKbps",
+                            "delugeState",
+                            "problem",
+                            "problemDetail",
+                            "plexAlbum",
+                            "plexArtist",
+                            "notified",
+                            "requestedAt",
+                            "finishedAt",
+                            "cancellable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Newest first; at most 30"
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "delugeUnreadable": {
+                        "description": "Deluge could not be read; stored progress is shown",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "grabs",
+                      "total",
+                      "delugeUnreadable"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobook_cancel",
+                  "title": "Cancel an Audiobook Download",
+                  "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "grabId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{40}$",
+                        "description": "grabId from media_audiobooks_status"
+                      }
+                    },
+                    "required": [
+                      "grabId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "cancelled",
+                          "already_gone",
+                          "finished",
+                          "not_found",
+                          "uncertain",
+                          "unavailable",
+                          "error"
+                        ],
+                        "description": "cancelled: removed with its partial data. finished: it completed and keeps seeding. uncertain: read media_audiobooks_status again"
+                      },
+                      "grabId": {
+                        "type": "string"
+                      },
+                      "book": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "grabId",
+                      "book",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_audiobooks_list",
+                  "title": "List Audiobooks",
+                  "description": "List the audiobooks in the Plex audiobook library that Prologue reads, newest first, optionally filtered by title or author words. Downloads still on their way are in media_audiobooks_status.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Title or author words"
+                      },
+                      "cursor": {
+                        "default": 0,
+                        "description": "Zero-based result offset",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "limit": {
+                        "default": 25,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "library": {
+                        "type": "string",
+                        "description": "The Plex library's title"
+                      },
+                      "nextCursor": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "author": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "year": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "addedAt": {
+                              "description": "Unix ms",
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "year",
+                            "addedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Audiobooks, newest first"
+                      }
+                    },
+                    "required": [
+                      "library",
+                      "nextCursor",
+                      "total",
+                      "items"
                     ],
                     "additionalProperties": false
                   }

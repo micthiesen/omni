@@ -52,6 +52,34 @@ struct PlexDirectory {
     key: Option<String>,
     #[serde(default, rename = "type", deserialize_with = "present")]
     kind: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    title: Option<String>,
+    #[serde(default, rename = "Location")]
+    location: Vec<PlexLocation>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct PlexLocation {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+/// A music-type library section and its folders.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MusicSection {
+    pub key: String,
+    pub locations: Vec<String>,
+}
+
+impl MusicSection {
+    /// `path` is one of the section's folders or inside one.
+    pub fn contains(&self, path: &str) -> bool {
+        let path = path.trim_end_matches('/');
+        self.locations.iter().any(|location| {
+            let location = location.trim_end_matches('/');
+            path == location || path.starts_with(&format!("{location}/"))
+        })
+    }
 }
 
 /// One Plex metadata entry; every field is optional but never `null`.
@@ -85,6 +113,11 @@ pub struct PlexMetadata {
     #[serde(default, rename = "accountID", deserialize_with = "present")]
     pub account_id: Option<f64>,
     #[serde(default, deserialize_with = "present")]
+    pub parent_title: Option<String>,
+    /// Unix seconds.
+    #[serde(default, deserialize_with = "present")]
+    pub added_at: Option<f64>,
+    #[serde(default, deserialize_with = "present")]
     pub grandparent_rating_key: Option<String>,
     #[serde(default, deserialize_with = "present")]
     pub grandparent_key: Option<String>,
@@ -96,6 +129,56 @@ pub struct PlexMetadata {
     pub grandparent_year: Option<f64>,
     #[serde(default, rename = "Guid", deserialize_with = "present")]
     pub guids: Option<Vec<PlexGuid>>,
+}
+
+/// A track in a music library and where its files are.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlexTrack {
+    pub album_rating_key: Option<String>,
+    pub album: Option<String>,
+    pub artist: Option<String>,
+    pub files: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct TrackPage {
+    #[serde(rename = "MediaContainer")]
+    media_container: TrackContainer,
+}
+
+#[derive(Default, Deserialize)]
+struct TrackContainer {
+    #[serde(default)]
+    size: Option<usize>,
+    #[serde(default, rename = "totalSize")]
+    total_size: Option<usize>,
+    #[serde(default, rename = "Metadata")]
+    metadata: Vec<TrackMetadata>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackMetadata {
+    #[serde(default)]
+    parent_rating_key: Option<String>,
+    #[serde(default)]
+    parent_title: Option<String>,
+    #[serde(default)]
+    grandparent_title: Option<String>,
+    #[serde(default, rename = "Media")]
+    media: Vec<TrackMedia>,
+}
+
+#[derive(Default, Deserialize)]
+struct TrackMedia {
+    #[serde(default, rename = "Part")]
+    part: Vec<TrackPart>,
+}
+
+#[derive(Default, Deserialize)]
+struct TrackPart {
+    #[serde(default)]
+    file: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -555,6 +638,101 @@ impl PlexClient {
             }
         }
         Ok(items.into_values().collect())
+    }
+
+    /// The music-type library section titled `title`.
+    pub async fn music_section(
+        &self,
+        title: &str,
+    ) -> Result<Option<MusicSection>, IntegrationError> {
+        let sections = self
+            .container("Plex library sections", "/library/sections", Vec::new())
+            .await?;
+        Ok(sections
+            .directory
+            .unwrap_or_default()
+            .into_iter()
+            .find(|s| s.kind.as_deref() == Some("artist") && s.title.as_deref() == Some(title))
+            .and_then(|s| {
+                Some(MusicSection {
+                    key: s.key.filter(|k| !k.is_empty())?,
+                    locations: s.location.into_iter().filter_map(|l| l.path).collect(),
+                })
+            }))
+    }
+
+    /// Every album in the music-type library section titled `title`, or
+    /// `None` when there is no such section.
+    pub async fn fetch_music_albums(
+        &self,
+        title: &str,
+    ) -> Result<Option<Vec<PlexMetadata>>, IntegrationError> {
+        let Some(MusicSection { key, .. }) = self.music_section(title).await? else {
+            return Ok(None);
+        };
+        const SIZE: usize = 500;
+        /// Plex's album metadata type.
+        const ALBUM: &str = "9";
+        let albums = self
+            .paginate(
+                &format!("Plex library section {key}"),
+                &format!("/library/sections/{key}/all"),
+                SIZE,
+                |start| {
+                    params(&[
+                        ("type", ALBUM.to_owned()),
+                        ("X-Plex-Container-Start", start.to_string()),
+                        ("X-Plex-Container-Size", SIZE.to_string()),
+                    ])
+                },
+            )
+            .await?;
+        Ok(Some(albums))
+    }
+
+    /// Every track in music section `key` with its album and files.
+    pub async fn fetch_music_tracks(&self, key: &str) -> Result<Vec<PlexTrack>, IntegrationError> {
+        const SIZE: usize = 500;
+        /// Plex's track metadata type.
+        const TRACK: &str = "10";
+        let operation = format!("Plex library section {key} tracks");
+        let mut tracks = Vec::new();
+        let mut start = 0usize;
+        loop {
+            let raw = self
+                .fetch(
+                    &operation,
+                    &format!("/library/sections/{key}/all"),
+                    params(&[
+                        ("type", TRACK.to_owned()),
+                        ("X-Plex-Container-Start", start.to_string()),
+                        ("X-Plex-Container-Size", SIZE.to_string()),
+                    ]),
+                )
+                .await?;
+            let page: TrackPage = serde_json::from_value(raw)
+                .map_err(|e| IntegrationError::new(format!("decode {operation}"), e))?;
+            let container = page.media_container;
+            let count = container.metadata.len();
+            tracks.extend(container.metadata.into_iter().map(|t| {
+                PlexTrack {
+                    album_rating_key: t.parent_rating_key,
+                    album: t.parent_title,
+                    artist: t.grandparent_title,
+                    files: t
+                        .media
+                        .into_iter()
+                        .flat_map(|m| m.part.into_iter().filter_map(|p| p.file))
+                        .collect(),
+                }
+            }));
+            let total = container.total_size.or(container.size).unwrap_or(0);
+            start += count;
+            if count == 0 || start >= total {
+                break;
+            }
+        }
+        Ok(tracks)
     }
 
     /// Every movie and show in the movie/show library sections.

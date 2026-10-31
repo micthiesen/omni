@@ -13,6 +13,7 @@ use crate::arr::inspect::ArrInspect;
 use crate::arr::movies::RadarrMovies;
 use crate::arr::queue::ArrQueue;
 use crate::arr::seasons::SonarrSeasons;
+use crate::audiobooks::Audiobooks;
 use crate::media_library::MediaLibrary;
 use crate::nzbget::NzbGet;
 use crate::selection::Research;
@@ -78,6 +79,8 @@ pub struct MediaServices {
     pub arr: ArrInspect,
     /// Queue removals through Radarr or Sonarr.
     pub queue: ArrQueue,
+    /// Audiobook search and grabs through Prowlarr; the Plex audiobook library.
+    pub audiobooks: Audiobooks,
     /// Read-only NZBGet status.
     pub nzbget: NzbGet,
     pub catalog: Arc<dyn Catalog>,

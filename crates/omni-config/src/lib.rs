@@ -266,6 +266,23 @@ config_struct! {
     observer_repair_enabled: bool = "OBSERVER_REPAIR_ENABLED",
     arr_recovery_enabled: bool = "ARR_RECOVERY_ENABLED",
     nzbget_url: Option<String> = "NZBGET_URL",
+    prowlarr_url: Option<String> = "PROWLARR_URL",
+    prowlarr_api_key: Option<String> = "PROWLARR_API_KEY",
+    /// The Plex music-type library that holds audiobooks; default "Audiobooks".
+    plex_audiobooks_library: String = "PLEX_AUDIOBOOKS_LIBRARY",
+    /// The Prowlarr indexer audiobooks are searched on; default "MyAnonamouse".
+    audiobook_indexer: String = "AUDIOBOOK_INDEXER",
+    /// Preferred release language code in indexer titles; default "ENG".
+    audiobook_language: String = "AUDIOBOOK_LANGUAGE",
+    deluge_host: Option<String> = "DELUGE_HOST",
+    /// Deluge daemon RPC port; default 58846.
+    deluge_port: Option<u64> = "DELUGE_PORT",
+    deluge_username: Option<String> = "DELUGE_USERNAME",
+    deluge_password: Option<String> = "DELUGE_PASSWORD",
+    /// SHA-256 of the daemon's (self-signed) TLS certificate, hex.
+    deluge_cert_sha256: Option<String> = "DELUGE_CERT_SHA256",
+    /// The Deluge label whose completed folder is in the audiobook library; default "books".
+    deluge_label: String = "DELUGE_LABEL",
     arr_recovery_local_files: bool = "ARR_RECOVERY_LOCAL_FILES",
     tz: String = "TZ",
     smtp_host: Option<String> = "SMTP_HOST",
@@ -526,6 +543,17 @@ impl Config {
             observer_repair_enabled: env.boolean("OBSERVER_REPAIR_ENABLED", true)?,
             arr_recovery_enabled: env.boolean("ARR_RECOVERY_ENABLED", true)?,
             nzbget_url: env.opt("NZBGET_URL"),
+            prowlarr_url: env.opt("PROWLARR_URL"),
+            prowlarr_api_key: env.opt("PROWLARR_API_KEY"),
+            plex_audiobooks_library: env.string("PLEX_AUDIOBOOKS_LIBRARY", "Audiobooks"),
+            audiobook_indexer: env.string("AUDIOBOOK_INDEXER", "MyAnonamouse"),
+            audiobook_language: env.string("AUDIOBOOK_LANGUAGE", "ENG"),
+            deluge_host: env.opt("DELUGE_HOST"),
+            deluge_port: env.optional_positive_int("DELUGE_PORT")?,
+            deluge_username: env.opt("DELUGE_USERNAME"),
+            deluge_password: env.opt("DELUGE_PASSWORD"),
+            deluge_cert_sha256: env.opt("DELUGE_CERT_SHA256"),
+            deluge_label: env.string("DELUGE_LABEL", "books"),
             arr_recovery_local_files: env.boolean("ARR_RECOVERY_LOCAL_FILES", false)?,
             tz: env.string("TZ", "America/Vancouver"),
             smtp_host: env.opt("SMTP_HOST"),
