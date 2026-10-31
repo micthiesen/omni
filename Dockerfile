@@ -3,7 +3,8 @@
 # Stage graph (BuildKit builds independent stages in parallel):
 #   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, obscura, silero,
 #              speaker, segmentation, parakeet
-#   rust:      chef -> planner -> server (cook, then workspace build)
+#   rust:      chef -> planner -> server-build (cook, then workspace build),
+#              or server-prebuilt from CI (SERVER_SOURCE)
 #                             \-> web (cook, then trunk) -> web-dist
 #   runtime:   apt layer, then static assets, then the frequently changing outputs
 # Every download is pinned and SHA-256 verified in its own stage, so it caches
@@ -12,6 +13,11 @@
 # The Rust stages rely on cargo-chef layers rather than cache mounts: CI exports
 # layers to the GitHub Actions cache, but never cache mounts, so a mounted
 # registry or target directory would rebuild every dependency there.
+
+# build (default) compiles the server binaries here; prebuilt takes them from
+# prebuilt/server/ in the context, where CI's server job puts binaries compiled
+# in this same Rust image with a whole-target cache (docs/ci.md).
+ARG SERVER_SOURCE=build
 
 # --- Downloads (the Rust image already carries curl, bzip2 and sha256sum) ---
 FROM rust:1.97.1-bookworm AS fetch
@@ -111,7 +117,7 @@ COPY crates ./crates
 RUN cargo chef prepare --recipe-path recipe.json
 
 # --- Server binaries ---
-FROM chef AS server
+FROM chef AS server-build
 COPY --from=sherpa-lib /opt/sherpa-onnx /opt/sherpa-onnx
 ENV SHERPA_ONNX_ARCHIVE_DIR=/opt/sherpa-onnx
 COPY --from=planner /src/recipe.json recipe.json
@@ -131,6 +137,11 @@ RUN cargo build --release --locked -p omni -p omni-live-intel \
     && mkdir -p /out \
     && install -m 0755 target/release/omni target/release/omni-voice-enroll \
       target/release/omni-intel-doctor /out/
+
+FROM scratch AS server-prebuilt
+COPY prebuilt/server/ /out/
+
+FROM server-${SERVER_SOURCE} AS server
 
 # --- Web frontend ---
 FROM chef AS web

@@ -24,7 +24,8 @@ cargo deny --locked check                # advisories, licenses, bans, sources
 (cd crates/omni-web && trunk build --release)   # when the frontend changed
 ```
 
-`cargo xtask gate` is the local equivalent of CI's lint and test jobs, except
+CI and its build caching are described in `docs/ci.md`; change the workflow and
+that file together. `cargo xtask gate` is the local equivalent of CI's lint and test jobs, except
 `cargo deny` (install with `cargo install --locked cargo-deny@0.20.2`, the CI
 pin). Tests run under cargo-nextest (`.config/nextest.toml`; CI pins
 `cargo-nextest@0.9.143` and uses `--profile ci`) and fall back to `cargo test`

@@ -23,19 +23,24 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental output is never reused across CI runs and doubles the cache.
+  CARGO_INCREMENTAL: 0
+
 # Actions are pinned to full commit SHAs; the comment names the release.
 #
-# The checks run as two parallel jobs, lint and test, so neither waits on the
-# other's compile. Each keeps its own Rust cache: clippy writes check metadata
-# (native and wasm32) while tests write full debug builds, and one shared entry
-# would hold whichever job saved first and leave the other cold.
+# lint, test and server start together. Each restores its own whole-target
+# cache (.github/actions/cargo-cache) saved by the newest main commit, with
+# file mtimes set to commit times, so only crates changed since then rebuild.
+# See docs/ci.md.
 #
-# The image build starts beside them instead of after: it is the longest job and
-# needs nothing from the checks. It writes its layers to the GitHub Actions cache
-# without pushing. `publish` runs only after lint, test and image all pass and
-# repeats the same build, which is then fully cached, to push the image; nothing
-# untested reaches the registry. Pull requests build the image to prove the
-# Dockerfile but neither push nor write the shared caches.
+# server compiles the release binaries in the Dockerfile's own Rust image (same
+# glibc as the runtime); image packages them (SERVER_SOURCE=prebuilt) and writes
+# its layers to the GitHub Actions cache without pushing. publish runs only after
+# lint, test and image pass and repeats the same build, then fully cached, to
+# push; nothing untested reaches the registry. Pull requests build everything but
+# neither push nor save caches.
 
 jobs:
   lint:
@@ -45,6 +50,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history dates each file for restore-mtimes.py.
+          fetch-depth: 0
 
       - name: Install the pinned Rust toolchain
         # rust-toolchain.toml selects the version and components.
@@ -55,13 +63,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-      - name: Cache Cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Restore the lint build
+        uses: ./.github/actions/cargo-cache
         with:
-          # Native and wasm32 clippy artifacts of this job only; the key already
-          # covers the rustc version, Cargo.lock and rust-toolchain.toml.
-          shared-key: lint
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          name: lint
+          mode: restore
+
+      - name: Date files so only crates changed since the cached build rebuild
+        run: python3 scripts/ci/restore-mtimes.py
 
       - name: Fetch the verified sherpa-onnx static library
         # Clippy runs build scripts too, including sherpa-onnx-sys's, which reads it.
@@ -82,6 +91,12 @@ jobs:
           cargo clippy -p omni-web -p omni-web-kit -p omni-web-pages
           --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
 
+      - name: Save the lint build
+        uses: ./.github/actions/cargo-cache
+        with:
+          name: lint
+          mode: save
+
       - name: Check crate dependency direction
         run: cargo xtask deps-check
 
@@ -100,18 +115,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Install the pinned Rust toolchain
         # rust-toolchain.toml selects the version and components. Tests run on
         # the host target only, so wasm32 is not installed here.
         run: rustup toolchain install
 
-      - name: Cache Cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Restore the test build
+        uses: ./.github/actions/cargo-cache
         with:
-          # Native test builds of this job only.
-          shared-key: test
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          name: test
+          mode: restore
+
+      - name: Date files so only crates changed since the cached build rebuild
+        run: python3 scripts/ci/restore-mtimes.py
 
       - name: Fetch the verified sherpa-onnx static library
         # The library is extracted outside target/ and linked through
@@ -134,14 +153,96 @@ jobs:
         # would skip; add `cargo test --workspace --locked --doc` if that changes.
         run: cargo nextest run --workspace --locked --profile ci
 
-  # The image's web stage runs the release trunk build with the pinned tools, so
-  # the frontend build is checked here rather than in lint or test.
-  image:
+      - name: Save the test build
+        # A failing test still leaves a valid build to start the fix from.
+        if: success() || failure()
+        uses: ./.github/actions/cargo-cache
+        with:
+          name: test
+          mode: save
+
+  # The release binaries, built where they will run: the Dockerfile's Rust image
+  # (Debian bookworm, like the node:*-slim runtime), with the same packages and
+  # profile as the Dockerfile's server-build stage.
+  server:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: rust:1.97.1-bookworm
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Trust the checkout
+        # The container runs as root over a checkout owned by the runner user.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchain and zstd for the cache
+        run: |
+          rustup toolchain install
+          apt-get update -qq && apt-get install -y -qq zstd
+
+      - name: Restore the release build
+        uses: ./.github/actions/cargo-cache
+        with:
+          name: release-server
+          mode: restore
+          cargo-home: /usr/local/cargo
+
+      - name: Date files so only crates changed since the cached build rebuild
+        run: python3 scripts/ci/restore-mtimes.py
+
+      - name: Fetch the verified sherpa-onnx static library
+        run: |
+          deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
+          tar -xjf "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib.tar.bz2 -C "$RUNNER_TEMP/sherpa-onnx"
+          echo "SHERPA_ONNX_LIB_DIR=$(echo "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib/lib)" >> "$GITHUB_ENV"
+
+      - name: Build the release binaries
+        run: >-
+          cargo build --release --locked -p omni -p omni-live-intel
+          --bin omni --bin omni-voice-enroll --bin omni-intel-doctor
+
+      - name: Save the release build
+        uses: ./.github/actions/cargo-cache
+        with:
+          name: release-server
+          mode: save
+          cargo-home: /usr/local/cargo
+
+      - name: Package the binaries
+        # A tarball keeps the executable bits that artifacts drop.
+        run: >-
+          tar -C target/release -cf server.tar
+          omni omni-voice-enroll omni-intel-doctor
+
+      - name: Upload the binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server
+          path: server.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  # The image's web stage runs the release trunk build with the pinned tools, so
+  # the frontend build is checked here rather than in lint or test.
+  image:
+    runs-on: ubuntu-latest
+    needs: server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the server binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: server
+
+      - name: Unpack the server binaries into the build context
+        run: mkdir -p prebuilt/server && tar -C prebuilt/server -xf server.tar && rm server.tar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -153,7 +254,9 @@ jobs:
           file: Dockerfile
           push: false
           # Same build args as publish, so its build is a cache hit.
-          build-args: OMNI_REVISION=${{ github.sha }}
+          build-args: |
+            OMNI_REVISION=${{ github.sha }}
+            SERVER_SOURCE=prebuilt
           # mode=max keeps every stage, including the cargo-chef dependency layers.
           cache-from: type=gha,scope=omni
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni,mode=max,ignore-error=true' || '' }}
@@ -170,6 +273,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the server binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: server
+
+      - name: Unpack the server binaries into the build context
+        run: mkdir -p prebuilt/server && tar -C prebuilt/server -xf server.tar && rm server.tar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -188,7 +299,9 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          build-args: OMNI_REVISION=${{ github.sha }}
+          build-args: |
+            OMNI_REVISION=${{ github.sha }}
+            SERVER_SOURCE=prebuilt
           tags: |
             ghcr.io/${{ github.repository_owner }}/omni:latest
             ghcr.io/${{ github.repository_owner }}/omni:${{ github.sha }}
@@ -201,14 +314,38 @@ jobs:
         if: always()
         run: docker logout ghcr.io
 
+  # Each main commit saves its own Cargo cache keys, so delete superseded ones
+  # before they crowd the repository's 10 GB cache quota: keep the newest entry
+  # of each cache name (grouped without the commit and toolchain hash, so a
+  # toolchain bump drops the old toolchain's build too). Also removes the retired Swatinem/rust-cache entries.
+  prune:
+    runs-on: ubuntu-latest
+    needs: [lint, test, server]
+    if: always() && github.ref == 'refs/heads/main'
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete superseded Cargo caches
+        run: |
+          gh cache list --ref refs/heads/main --limit 1000 --json id,key,createdAt \
+            --jq '(map(select(.key | startswith("v0-rust-"))) | .[].id),
+                  (map(select(.key | startswith("cargo-")))
+                   | group_by(.key | split("-")[:-2] | join("-"))
+                   | map(sort_by(.createdAt) | .[:-1][]) | .[].id)' |
+          while read -r id; do gh cache delete "$id"; done
+
   notify:
     runs-on: ubuntu-latest
-    needs: [lint, test, image, publish]
+    needs: [lint, test, server, image, publish]
     if: >-
       always() &&
       github.ref == 'refs/heads/main' &&
       (needs.lint.result == 'failure' || needs.test.result == 'failure' ||
-      needs.image.result == 'failure' || needs.publish.result == 'failure')
+      needs.server.result == 'failure' || needs.image.result == 'failure' ||
+      needs.publish.result == 'failure')
 
     steps:
       - name: Send CI failure notification
@@ -220,6 +357,7 @@ jobs:
           FAILED=""
           [ "${{ needs.lint.result }}" = "failure" ] && FAILED="lint"
           [ "${{ needs.test.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }test"
+          [ "${{ needs.server.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }server"
           [ "${{ needs.image.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }image"
           [ "${{ needs.publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }publish"
           MESSAGE="Failed jobs: ${FAILED}"

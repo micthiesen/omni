@@ -1,0 +1,48 @@
+# Restores or saves one Cargo build cache. See docs/ci.md "Caching".
+#
+# Every commit gets its own key, and a restore falls back to the newest entry
+# of the same name, OS, architecture and toolchain, so a run reuses main's
+# compiled workspace crates and rebuilds only what changed (with file mtimes
+# set by scripts/ci/restore-mtimes.py). Swatinem/rust-cache keeps only
+# dependencies and normalizes workspace versions out of its key.
+name: Cargo cache
+description: Restore or save the Cargo registry and target directory for one build flavor.
+inputs:
+  name:
+    description: Build flavor sharing the cache, such as lint, test or release-server.
+    required: true
+  mode:
+    description: restore or save.
+    required: true
+  cargo-home:
+    description: CARGO_HOME of the job (the rust image uses /usr/local/cargo).
+    default: ~/.cargo
+runs:
+  using: composite
+  steps:
+    - if: inputs.mode == 'restore'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ inputs.cargo-home }}/registry/index/
+          ${{ inputs.cargo-home }}/registry/cache/
+          ${{ inputs.cargo-home }}/git/db/
+          target/
+        key: cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
+        restore-keys: cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+    # The commit the saved build comes from; restore-mtimes.py marks every
+    # file changed since it as new, so nothing committed earlier is skipped.
+    - if: inputs.mode == 'save' && github.ref == 'refs/heads/main'
+      shell: bash
+      run: git rev-parse HEAD > target/.cache-sha
+    # Only main saves: GitHub scopes a cache to the ref that saved it, so a
+    # branch or pull request save could never be restored elsewhere.
+    - if: inputs.mode == 'save' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ inputs.cargo-home }}/registry/index/
+          ${{ inputs.cargo-home }}/registry/cache/
+          ${{ inputs.cargo-home }}/git/db/
+          target/
+        key: cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}

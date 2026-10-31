@@ -12,6 +12,8 @@
 !deploy/web-tools/install.sh
 !deploy/mcp-stdio/package.json
 !deploy/mcp-stdio/package-lock.json
+# Server binaries CI compiled for SERVER_SOURCE=prebuilt.
+!prebuilt/server/
 # Release builds never read tests, fixtures or build output, so
 # editing them must not invalidate the Rust layers. Captured golden fixtures
 # can hold production data and never enter the context.

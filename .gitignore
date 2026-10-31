@@ -16,3 +16,4 @@ ios/OmniLive/DerivedData/
 
 # Rust
 /target/
+/prebuilt/
