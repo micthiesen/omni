@@ -2,9 +2,10 @@
 //!
 //! MyAnonamouse titles read `Title by Author [LANG / FORMAT]` (formats can be
 //! several, `MP3 M4B`), with ` [VIP]` appended by Prowlarr for VIP torrents.
-//! In order, a release ranks higher when it: matches every word of the query;
-//! has seeders; is in the preferred language; is unabridged; is not VIP
-//! (MyAnonamouse lets only VIP members download those); is m4b (one chaptered file, which Prologue plays best), then
+//! VIP only adds a note: a refused VIP grab is held until the account has
+//! VIP (see `pending`). In order, a release ranks higher when it: matches
+//! every word of the query; has seeders; is in the preferred language; is
+//! unabridged; is m4b (one chaptered file, which Prologue plays best), then
 //! m4a/aac, then mp3, then other audio; has at least three seeders;
 //! is freeleech; and has more seeders. Ebook-only releases are dropped.
 
@@ -30,10 +31,9 @@ pub struct Assessment {
     /// Lowercase, best first.
     pub formats: Vec<String>,
     pub notes: Vec<String>,
-    /// Matches the query, is seeded, in the preferred language, unabridged
-    /// and not VIP.
+    /// Matches the query, is seeded, in the preferred language and unabridged.
     pub good_match: bool,
-    key: (u8, bool, u8, bool, bool, u8, bool, bool, i64),
+    key: (u8, bool, u8, bool, u8, bool, bool, i64),
 }
 
 static MAM_TITLE: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -194,7 +194,10 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
         notes.push("abridged".to_owned());
     }
     if vip {
-        notes.push("VIP torrent: MyAnonamouse lets only VIP members download it".to_owned());
+        notes.push(
+            "VIP torrent: needs MyAnonamouse VIP; Omni holds the grab until VIP is active"
+                .to_owned(),
+        );
     }
     match seeders {
         0 => notes.push("no seeders: will not download".to_owned()),
@@ -209,7 +212,7 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
     }
 
     Some(Assessment {
-        good_match: relevance == 2 && seeders > 0 && language_score == 2 && !abridged && !vip,
+        good_match: relevance == 2 && seeders > 0 && language_score == 2 && !abridged,
         book,
         author,
         language: lang,
@@ -220,7 +223,6 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
             seeders > 0,
             language_score,
             !abridged,
-            !vip,
             best_format,
             seeders >= HEALTHY_SEEDERS,
             candidate.freeleech,
@@ -321,7 +323,7 @@ mod tests {
     /// The live MyAnonamouse result for "Trust the Plan Will Sommer", which
     /// Prowlarr suffixes with ` [VIP]`.
     #[test]
-    fn parses_vip_titles_and_ranks_them_below_downloadable_releases() {
+    fn parses_vip_titles_and_ranks_them_by_quality_alone() {
         let title = "Trust the Plan: The Rise of QAnon and the Conspiracy That Unhinged \
                      America by Will Sommer [ENG / M4B] [VIP]";
         let a =
@@ -333,7 +335,7 @@ mod tests {
         assert_eq!(a.author.as_deref(), Some("Will Sommer"));
         assert_eq!(a.language.as_deref(), Some("ENG"));
         assert_eq!(a.formats, ["m4b"]);
-        assert!(!a.good_match, "a VIP torrent is not recommended");
+        assert!(a.good_match, "VIP alone does not disqualify a release");
         assert!(a.notes.iter().any(|n| n.starts_with("VIP torrent")));
 
         let results = [
@@ -343,8 +345,8 @@ mod tests {
         assert_eq!(
             ranked("Off the Edge Kelly Weill", &results),
             [
-                "Off the Edge by Kelly Weill [ENG / MP3]",
                 "Off the Edge by Kelly Weill [ENG / M4B] [VIP]",
+                "Off the Edge by Kelly Weill [ENG / MP3]",
             ]
         );
     }

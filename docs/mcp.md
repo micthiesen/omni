@@ -381,16 +381,14 @@ Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
   `AUDIOBOOK_INDEXER` (default `MyAnonamouse`). `rank.rs` parses MAM titles
   (`Title by Author [LANG / FORMAT]`, with ` [VIP]` appended by Prowlarr for
   VIP torrents) and orders releases by: every query word matched, seeded,
-  `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged, not VIP, m4b before m4a/aac before mp3 before other audio, at least three seeders,
-  freeleech, then seeders. Ebook-only releases are dropped. Each release has
-  notes explaining its place, and `goodMatch` excludes VIP torrents.
-  MyAnonamouse refuses those to non-VIP members with a 406, which Prowlarr's
-  download proxy reports as a bare HTTP 500; Prowlarr then pauses the indexer
-  (60 s at first), so searches meanwhile fail with HTTP 400 "all selected
-  indexers being unavailable". Grab reasons carry Prowlarr's message (URLs
-  dropped, secrets redacted) and name the likely VIP cause. `alreadyHave`
-  lists matching library albums and open grabs. Releases are named by an opaque `releaseId`; guids and download
-  URLs carry passkeys and never leave the module.
+  `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged, m4b before m4a/aac before
+  mp3 before other audio, at least three seeders, freeleech, then seeders.
+  Ebook-only releases are dropped. VIP releases rank like any other and carry
+  a note. Each release has notes explaining its place; `alreadyHave` lists
+  matching library albums and open grabs. Releases are named by an opaque
+  `releaseId`; guids and download URLs carry passkeys and never leave the
+  module. Search and grab failures carry Prowlarr's message (URLs dropped,
+  secrets redacted).
 - **Grab** checks that the Deluge label (`DELUGE_LABEL`, default `books`)
   moves finished torrents into a folder that is one of the Plex library's
   locations (`not_set_up` otherwise), searches again, refuses a book already
@@ -405,13 +403,35 @@ Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
   reading Deluge; an active grab of the same torrent always blocks another
   add, `force` included. A torrent Deluge already had from elsewhere is
   `already_in_deluge` and is never tracked or cancelled by Omni.
+- **VIP** (`pending.rs`): MyAnonamouse refuses a VIP torrent to a non-VIP
+  account with a 406, which Prowlarr's download proxy reports as a bare HTTP
+  500, then pauses the indexer (60 s at first) so searches meanwhile fail with
+  HTTP 400. Omni treats a 5xx on a VIP release as a VIP refusal only when
+  Prowlarr's `/api/v1/log` holds MyAnonamouse's "not VIP" answer from the time
+  of the request; any other 5xx stays an ordinary `unavailable`. A confirmed
+  refusal is `awaiting_vip`: the request is kept as `media-audiobook-pending`
+  (one row per release; a repeat refusal only counts another attempt) with an
+  action for the owner (buy VIP with bonus points). `AudiobookWatch` retries a
+  waiting request every 6 hours, stopping the run at the first refusal, until
+  it is grabbed, cancelled (`media_audiobook_cancel` with its `pendingId`) or
+  14 days pass; a grab of the same release settles it at once. Omni does not
+  buy VIP itself: that needs its own MyAnonamouse session, which it does not
+  have.
 - **Watch** (`AudiobookWatch`, every five minutes, only while grabs are open)
   advances each grab: `downloading` until Deluge reports it finished and moved
   into the label's folder; then it must contain an audio file (`no_audio`
   otherwise), Plex is asked to scan exactly that folder (`refresh?path=`),
   and the grab is `ready` once Plex has a track for every audio file of the
   download (paths compared by words, since Plex can report characters
-  differently), so a partly scanned book never counts. Ready sends one
+  differently) in an album with a title, so a partly scanned book never
+  counts. Files without tags land as a blank album under "Various Artists";
+  Omni names it (`tagging.rs`) by locked Plex metadata edits on exact ids: the
+  album gets the grab's book title and moves to the author's artist, and each
+  track gets a title and a number (the leading number of its file name when
+  every file has a distinct one, else file name order). The files are never
+  changed, since they are seeding. Without a book and author, or when the edit
+  keeps failing past the 2-hour grace, the grab is `untagged` (notified
+  once). Ready sends one
   "Audiobook ready" notification, reserved as `sending` before the push and
   never resent when uncertain. Problems notify once each: `stalled` (no
   progress for 12 hours), `not_in_plex` (finished 2 hours ago, rescanned every

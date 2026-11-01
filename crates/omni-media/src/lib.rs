@@ -186,6 +186,7 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<MovieSearchData>(),
         EntityDescriptor::of::<DownloadRemovalData>(),
         EntityDescriptor::of::<AudiobookGrabData>(),
+        EntityDescriptor::of::<audiobooks::pending::AudiobookPendingData>(),
     ]
 }
 

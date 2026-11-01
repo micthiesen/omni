@@ -3,10 +3,11 @@
 //! Each run reads Deluge for the open grabs and decides each one's next
 //! stage ([`decide`], pure). A download counts as finished only when Deluge
 //! has moved it into the label's folder; then it must contain audio, Plex is
-//! asked to scan exactly that folder, and the grab is ready once a Plex track
-//! lives under it. Ready sends one notification, reserved as `sending` before
-//! the push and never resent when uncertain; each problem notifies at most
-//! once per grab.
+//! asked to scan exactly that folder, and the grab is ready once Plex holds
+//! every audio file under it in an album with a title. An album without one
+//! (files with no tags) is named first ([`tagging`](super::tagging)). Ready
+//! sends one notification, reserved as `sending` before the push and never
+//! resent when uncertain; each problem notifies at most once per grab.
 
 use futures::future::BoxFuture;
 use omni_alerts::PushoverMessage;
@@ -17,6 +18,7 @@ use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
 use super::deluge::TorrentStatus;
 use super::rank::words;
+use super::tagging::{TrackFile, plan};
 use super::{
     AudiobookGrabData, Audiobooks, HOUR_MS, LOG, Notice, Problem, Stage, has_audio, landed_path,
     ttl,
@@ -184,17 +186,37 @@ fn components(path: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// The Plex album holding the download's files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlbumMatch {
+    pub album: Option<String>,
+    pub artist: Option<String>,
+    pub album_key: Option<String>,
+    pub tracks: Vec<TrackFile>,
+    /// Every file is in this one album and the album holds nothing else, so
+    /// renaming it touches only this book.
+    pub exclusive: bool,
+}
+
+impl AlbumMatch {
+    /// Plex knows the book by name (not a blank album from untagged files).
+    pub fn is_named(&self) -> bool {
+        self.album.as_deref().is_some_and(|a| !a.trim().is_empty())
+    }
+}
+
+/// How often an untagged import is named again after a failed edit.
+pub const RETAG_EVERY_MS: i64 = HOUR_MS;
+
 /// The Plex album holding every one of `files`, or `None` while any is
 /// missing. Paths are compared by words, since Plex can report characters
 /// differently from the torrent.
-pub fn album_with(
-    tracks: &[PlexTrack],
-    files: &[String],
-) -> Option<(Option<String>, Option<String>)> {
+pub fn album_with(tracks: &[PlexTrack], files: &[String]) -> Option<AlbumMatch> {
     if files.is_empty() {
         return None;
     }
-    let mut album = None;
+    let mut album: Option<AlbumMatch> = None;
+    let mut keys = Vec::new();
     for file in files {
         let wanted = components(file);
         if wanted.len() < 2 {
@@ -203,7 +225,30 @@ pub fn album_with(
         let track = tracks
             .iter()
             .find(|t| t.files.iter().any(|f| components(f) == wanted))?;
-        album.get_or_insert((track.album.clone(), track.artist.clone()));
+        keys.push(track.album_rating_key.clone());
+        let found = album.get_or_insert_with(|| AlbumMatch {
+            album: track.album.clone(),
+            artist: track.artist.clone(),
+            album_key: track.album_rating_key.clone(),
+            tracks: Vec::new(),
+            exclusive: false,
+        });
+        if let (Some(key), Some(path)) = (&track.rating_key, track.files.first()) {
+            found.tracks.push(TrackFile {
+                rating_key: key.clone(),
+                file: path.clone(),
+            });
+        }
+    }
+    if let Some(found) = &mut album {
+        let size = tracks
+            .iter()
+            .filter(|t| t.album_rating_key.is_some() && t.album_rating_key == found.album_key)
+            .count();
+        found.exclusive = found.album_key.is_some()
+            && keys.iter().all(|k| *k == found.album_key)
+            && size == files.len()
+            && found.tracks.len() == files.len();
     }
     album
 }
@@ -284,13 +329,23 @@ impl Audiobooks {
                             .as_deref()
                             .and_then(|t| album_with(t, &row.audio_files))
                         {
-                            Some((album, artist)) => {
+                            Some(found) if found.is_named() => {
                                 row.stage = Stage::Ready;
-                                row.plex_album = album;
-                                row.plex_artist = artist;
+                                row.plex_album = found.album;
+                                row.plex_artist = found.artist;
                                 row.problem = None;
                                 row.problem_detail = None;
                                 row.updated_at = now;
+                            }
+                            Some(found) => {
+                                self.name_untagged(
+                                    &section.key,
+                                    &mut row,
+                                    &found,
+                                    now,
+                                    &mut report,
+                                )
+                                .await?;
                             }
                             None if tracks.is_some() => {
                                 let finished = row.finished_at.unwrap_or(now);
@@ -336,6 +391,62 @@ impl Audiobooks {
             }
         }
         Ok(report)
+    }
+
+    /// Names an album Plex imported without tags; the next run sees the name
+    /// and marks it ready. Without a book and author to write, or after a
+    /// failed edit outlasting the Plex grace, it is `untagged` (alerted once).
+    async fn name_untagged(
+        &self,
+        section: &str,
+        row: &mut AudiobookGrabData,
+        found: &AlbumMatch,
+        now: i64,
+        report: &mut WatchReport,
+    ) -> Result<(), StoreError> {
+        let due = row.tagged_at.is_none_or(|at| now - at >= RETAG_EVERY_MS);
+        // Named before, yet Plex still shows a blank album.
+        let ignored = row.tagged_at.is_some();
+        let planned = plan(row.book.as_deref(), row.author.as_deref(), &found.tracks);
+        let failure = match (&found.album_key, planned) {
+            _ if !found.exclusive => Some(
+                "Plex put the files in an untitled album shared with other files; name it in \
+                 Plex"
+                    .to_owned(),
+            ),
+            (Some(key), Some(plan)) if due => {
+                row.tagged_at = Some(now);
+                row.updated_at = now;
+                match self.tag_in_plex(section, key, &plan).await {
+                    Ok(()) if ignored => Some(
+                        "Plex still shows the album without a title after Omni named it".to_owned(),
+                    ),
+                    Ok(()) => {
+                        tracing::info!(target: LOG, "Named untagged audiobook {} in Plex", plan.title);
+                        None
+                    }
+                    Err(error) => Some(format!("Omni could not name the album in Plex: {error}")),
+                }
+            }
+            (Some(_), Some(_)) => None,
+            _ => Some(
+                "Plex imported the files without tags and Omni has no book title and author \
+                 to name the album; name it in Plex"
+                    .to_owned(),
+            ),
+        };
+        let finished = row.finished_at.unwrap_or(now);
+        if let Some(detail) = failure
+            && now - finished > PLEX_GRACE_MS
+            && !row.alerted.contains(&Problem::Untagged)
+        {
+            row.problem = Some(Problem::Untagged);
+            row.problem_detail = Some(detail);
+            row.updated_at = now;
+            self.save(row).await?;
+            self.alert(row, Problem::Untagged, report).await?;
+        }
+        Ok(())
     }
 
     async fn tracks(&self, key: &str, report: &mut WatchReport) -> Option<Vec<PlexTrack>> {
@@ -498,6 +609,10 @@ impl Task for AudiobookWatchTask {
             if let Some(reason) = report.degraded {
                 omni_tasks::report_degraded(reason);
             }
+            self.books
+                .resume_pending(self.clock.now_ms())
+                .await
+                .map_err(TaskError::from_error)?;
             Ok(())
         })
     }
@@ -532,6 +647,7 @@ mod tests {
             alerted: Vec::new(),
             audio_files: Vec::new(),
             missing_since: None,
+            tagged_at: None,
             extra: Extra::default(),
         }
     }
@@ -630,6 +746,7 @@ mod tests {
 
     fn track(file: &str) -> PlexTrack {
         PlexTrack {
+            rating_key: Some(file.to_owned()),
             album_rating_key: Some("1".to_owned()),
             album: Some("#58: The Ties That Bind".to_owned()),
             artist: Some("Adventures in Odyssey".to_owned()),
@@ -646,13 +763,25 @@ mod tests {
         let first = track("/books/#58꞉ The Ties that Bind/01 Part 1.mp3");
         let second = track("/books/#58꞉ The Ties that Bind/02 Part 2.mp3");
         assert_eq!(album_with(std::slice::from_ref(&first), &files), None);
-        assert_eq!(
-            album_with(&[first, second], &files),
-            Some((
-                Some("#58: The Ties That Bind".to_owned()),
-                Some("Adventures in Odyssey".to_owned())
-            ))
-        );
+        let found = album_with(&[first, second], &files).expect("album");
+        assert_eq!(found.album.as_deref(), Some("#58: The Ties That Bind"));
+        assert_eq!(found.artist.as_deref(), Some("Adventures in Odyssey"));
+        assert_eq!(found.album_key.as_deref(), Some("1"));
+        assert_eq!(found.tracks.len(), 2);
+        assert!(found.is_named());
+        assert!(found.exclusive);
+        let mut other = track("/books/Another Book/01.mp3");
+        other.rating_key = Some("other".to_owned());
+        let shared = album_with(
+            &[
+                track("/books/#58꞉ The Ties that Bind/01 Part 1.mp3"),
+                track("/books/#58꞉ The Ties that Bind/02 Part 2.mp3"),
+                other,
+            ],
+            &files,
+        )
+        .expect("album");
+        assert!(!shared.exclusive, "the album also holds another book");
         assert_eq!(album_with(&[track("/books/x.mp3")], &[]), None);
     }
 }

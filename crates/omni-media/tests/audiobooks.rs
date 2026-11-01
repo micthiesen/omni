@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::BoxFuture;
 use omni_http::SideEffectMode;
 use omni_media::audiobooks::deluge::{AddError, Added, DelugeError, TorrentClient, TorrentStatus};
+use omni_media::audiobooks::pending::PendingStage;
 use omni_media::audiobooks::{
     Audiobooks, AudiobooksConfig, CancelOutcome, GrabOutcome, GrabRequest, Problem, Recorded,
     SearchResult, Stage,
@@ -191,6 +192,11 @@ async fn prowlarr() -> MockServer {
 /// Plex with the Audiobooks library at `location` holding `albums` and `tracks`.
 async fn plex(location: &str, albums: Value, tracks: Value) -> MockServer {
     let server = MockServer::start().await;
+    mount_plex(&server, location, albums, tracks).await;
+    server
+}
+
+async fn mount_plex(server: &MockServer, location: &str, albums: Value, tracks: Value) {
     Mock::given(method("GET"))
         .and(path("/library/sections"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"MediaContainer": {
@@ -200,7 +206,7 @@ async fn plex(location: &str, albums: Value, tracks: Value) -> MockServer {
                  "Location": [{"path": "/media/storage/audiobooks"}, {"path": location}]}
             ]
         }})))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/library/sections/4/all"))
@@ -208,7 +214,7 @@ async fn plex(location: &str, albums: Value, tracks: Value) -> MockServer {
         .respond_with(ResponseTemplate::new(200).set_body_json(
             json!({"MediaContainer": {"size": 1, "totalSize": 1, "Metadata": albums}}),
         ))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/library/sections/4/all"))
@@ -216,14 +222,13 @@ async fn plex(location: &str, albums: Value, tracks: Value) -> MockServer {
         .respond_with(ResponseTemplate::new(200).set_body_json(
             json!({"MediaContainer": {"size": 1, "totalSize": 1, "Metadata": tracks}}),
         ))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/library/sections/4/refresh"))
         .respond_with(ResponseTemplate::new(200))
-        .mount(&server)
+        .mount(server)
         .await;
-    server
 }
 
 fn books(
@@ -602,81 +607,263 @@ async fn a_torrent_already_in_deluge_is_left_alone() {
     assert!(status.grabs.is_empty(), "Omni does not track or cancel it");
 }
 
-/// MyAnonamouse refuses a VIP torrent to a non-VIP account (Prowlarr passes
-/// it on as a bare 500), and Prowlarr's failure backoff then rejects the next
-/// search with a 400. Each grab runs exactly one search, so the first two
-/// searches (the listing and the first grab) succeed and the third fails.
-#[tokio::test]
-async fn a_vip_release_is_parsed_and_its_refusals_are_explained() {
-    const VIP_QUERY: &str = "Trust the Plan Will Sommer";
-    let app = TestApp::new().await;
-    let deluge = FakeDeluge::new();
-    let prowlarr = MockServer::start().await;
+const VIP_QUERY: &str = "Trust the Plan Will Sommer";
+const VIP_TITLE: &str = "Trust the Plan: The Rise of QAnon by Will Sommer [ENG / M4B] [VIP]";
+
+/// Prowlarr offering one VIP release whose `.torrent` answers `download`,
+/// and whose log holds MyAnonamouse's VIP refusal when `refusal_logged`.
+async fn vip_prowlarr(download: ResponseTemplate, refusal_logged: bool) -> MockServer {
+    let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/indexer"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
             {"id": 3, "name": "MyAnonamouse", "enable": true}
         ])))
-        .mount(&prowlarr)
+        .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/search"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([mam(
-            "Trust the Plan: The Rise of QAnon by Will Sommer [ENG / M4B] [VIP]",
-            "77",
-            31
-        )])))
-        .up_to_n_times(2)
-        .mount(&prowlarr)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v1/search"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "message": "Search failed due to all selected indexers being unavailable"
-        })))
-        .mount(&prowlarr)
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([mam(VIP_TITLE, "77", 31)])))
+        .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/3/download"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&prowlarr)
+        .respond_with(download)
+        .mount(&server)
         .await;
+    let at = jiff::Timestamp::from_millisecond(TEST_EPOCH_MS)
+        .expect("time")
+        .to_string();
+    let records = if refusal_logged {
+        json!([
+            {"time": at, "level": "error", "logger": "MyAnonamouse",
+             "message": "Downloading for release failed (<url>)"},
+            {"time": at, "level": "warn", "logger": "IndexerHttpClient",
+             "message": "HTTP Error - Res: HTTP/2.0 [GET] <url>: 406.NotAcceptable (218 bytes)\n\
+                 <html><body><h1>Download blocked: VIP torrent and you are not VIP or higher.\
+                 </h1></body></html>"}
+        ])
+    } else {
+        json!([{"time": at, "level": "error", "logger": "MyAnonamouse",
+                "message": "Downloading for release failed (<url>)"}])
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v1/log"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"totalRecords": 2, "records": records})),
+        )
+        .mount(&server)
+        .await;
+    server
+}
+
+fn vip_request(release_id: &str) -> GrabRequest {
+    GrabRequest {
+        query: VIP_QUERY.to_owned(),
+        release_id: release_id.to_owned(),
+        force: false,
+    }
+}
+
+fn downloads(requests: &[wiremock::Request]) -> usize {
+    requests
+        .iter()
+        .filter(|r| r.url.path() == "/3/download")
+        .count()
+}
+
+/// A VIP release ranks on quality; a bare 500 that Prowlarr's log does not
+/// tie to a VIP refusal stays an ordinary failure and holds nothing.
+#[tokio::test]
+async fn a_generic_500_on_a_vip_release_is_not_taken_for_a_vip_refusal() {
+    let app = TestApp::new().await;
+    let deluge = FakeDeluge::new();
+    let prowlarr = vip_prowlarr(ResponseTemplate::new(500), false).await;
     let plex = plex(BOOKS, json!([]), json!([])).await;
     let books = books(&app, &prowlarr, &plex, &deluge, SideEffectMode::Live);
-    let request = |release_id: String| GrabRequest {
-        query: VIP_QUERY.to_owned(),
-        release_id,
-        force: false,
-    };
 
     let search = books.search(VIP_QUERY).await;
     let release = &search.releases[0];
-    let refused = books.grab(request(release.release_id.clone())).await;
-    let backed_off = books.grab(request(release.release_id.clone())).await;
+    let failed = books.grab(vip_request(&release.release_id)).await;
 
     assert_eq!(
         release.book.as_deref(),
         Some("Trust the Plan: The Rise of QAnon")
     );
     assert_eq!(release.author.as_deref(), Some("Will Sommer"));
-    assert_eq!(release.language.as_deref(), Some("ENG"));
-    assert!(!release.good_match);
+    assert!(
+        release.good_match,
+        "VIP alone does not disqualify a release"
+    );
     assert!(release.notes.iter().any(|n| n.starts_with("VIP torrent")));
-    assert_eq!(refused.outcome, GrabOutcome::Unavailable);
+    assert_eq!(failed.outcome, GrabOutcome::Unavailable);
     assert_eq!(
-        refused.reason.as_deref(),
-        Some(
-            "the .torrent download answered HTTP 500; this is a VIP torrent, likely \
-             refused because MyAnonamouse lets only VIP members download those"
-        )
+        failed.reason.as_deref(),
+        Some("the .torrent download answered HTTP 500")
     );
-    assert_eq!(backed_off.outcome, GrabOutcome::Unavailable);
-    assert_eq!(
-        backed_off.reason.as_deref(),
-        Some(
-            "Prowlarr search answered HTTP 400: Search failed due to all selected \
-             indexers being unavailable"
-        )
-    );
+    let status = books.status(None).await.expect("status");
+    assert!(status.pending.is_empty());
     assert!(deluge.state().adds.is_empty());
+}
+
+/// A refusal Prowlarr's log confirms holds the request with an action; a
+/// second refusal does not duplicate it; once the account has VIP the
+/// scheduled retry grabs it exactly once and settles the request.
+#[tokio::test]
+async fn a_confirmed_vip_refusal_is_held_and_resumes_once_vip_is_active() {
+    let app = TestApp::new().await;
+    let deluge = FakeDeluge::new();
+    let refusing = vip_prowlarr(ResponseTemplate::new(500), true).await;
+    let plex = plex(BOOKS, json!([]), json!([])).await;
+    let books = books(&app, &refusing, &plex, &deluge, SideEffectMode::Live);
+    let release_id = books.search(VIP_QUERY).await.releases[0].release_id.clone();
+
+    let refused = books.grab(vip_request(&release_id)).await;
+    let again = books.grab(vip_request(&release_id)).await;
+
+    assert_eq!(refused.outcome, GrabOutcome::AwaitingVip);
+    assert!(
+        refused
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("Buy VIP with bonus points"))
+    );
+    assert_eq!(again.outcome, GrabOutcome::AwaitingVip);
+    let status = books.status(None).await.expect("status");
+    assert_eq!(status.pending.len(), 1, "one held request per release");
+    let held = &status.pending[0];
+    assert_eq!(held.pending_id, release_id);
+    assert_eq!(held.stage, PendingStage::Waiting);
+    assert_eq!(held.attempts, 2);
+    assert!(held.action.is_some());
+    let held_until = held.next_attempt_at.expect("next attempt");
+
+    let early = books.resume_pending(held_until - 1).await.expect("resume");
+    assert_eq!(early.attempted, 0, "not due yet");
+
+    // The account has VIP now: the .torrent downloads.
+    let vip = vip_prowlarr(
+        ResponseTemplate::new(200).set_body_bytes(torrent("Trust the Plan")),
+        false,
+    )
+    .await;
+    let books = self::books(&app, &vip, &plex, &deluge, SideEffectMode::Live);
+    let report = books.resume_pending(held_until).await.expect("resume");
+    let later = books
+        .resume_pending(held_until + 7 * HOUR_MS)
+        .await
+        .expect("resume");
+
+    assert_eq!(report.resumed, 1);
+    assert_eq!(later.attempted, 0, "a resumed request is not retried");
+    let hash = hash_of("Trust the Plan");
+    assert_eq!(deluge.state().adds.len(), 1);
+    assert_eq!(deluge.state().adds[0].0, hash);
+    let status = books.status(None).await.expect("status");
+    assert_eq!(status.pending[0].stage, PendingStage::Resumed);
+    assert_eq!(status.pending[0].grab_id.as_deref(), Some(hash.as_str()));
+    assert!(status.pending[0].action.is_none());
+    let requests = vip.received_requests().await.expect("requests");
+    assert_eq!(downloads(&requests), 1);
+}
+
+/// Cancelling a held request stops its retries; nothing more is downloaded.
+#[tokio::test]
+async fn a_cancelled_vip_request_is_never_retried() {
+    let app = TestApp::new().await;
+    let deluge = FakeDeluge::new();
+    let prowlarr = vip_prowlarr(ResponseTemplate::new(500), true).await;
+    let plex = plex(BOOKS, json!([]), json!([])).await;
+    let books = books(&app, &prowlarr, &plex, &deluge, SideEffectMode::Live);
+    let release_id = books.search(VIP_QUERY).await.releases[0].release_id.clone();
+    books.grab(vip_request(&release_id)).await;
+
+    let cancelled = books.cancel(&release_id).await;
+    let missing = books.cancel(&release_id).await;
+    let report = books
+        .resume_pending(TEST_EPOCH_MS + 30 * 24 * HOUR_MS)
+        .await
+        .expect("resume");
+
+    assert_eq!(cancelled.outcome, CancelOutcome::Cancelled);
+    assert_eq!(missing.outcome, CancelOutcome::NotFound);
+    assert_eq!(report.attempted, 0);
+    let requests = prowlarr.received_requests().await.expect("requests");
+    assert_eq!(downloads(&requests), 1, "only the original refused attempt");
+    let status = books.status(None).await.expect("status");
+    assert_eq!(status.pending[0].stage, PendingStage::Cancelled);
+}
+
+/// Files without tags land in Plex as a blank album. Omni names it (album
+/// title, author, track number) by exact Plex ids and calls the book ready,
+/// once, only after Plex shows the name.
+#[tokio::test]
+async fn an_untagged_import_is_named_in_plex_before_it_is_ready() {
+    let name = "Project Hail Mary";
+    let file = format!("{BOOKS}/{name}/{name}.m4b");
+    let blank = json!([{
+        "type": "track", "ratingKey": "78", "parentRatingKey": "77", "parentTitle": "",
+        "grandparentTitle": "Various Artists",
+        "Media": [{"Part": [{"file": file}]}]
+    }]);
+    let w = world_with(BOOKS, json!([]), blank, SideEffectMode::Live).await;
+    Mock::given(method("PUT"))
+        .and(path("/library/sections/4/all"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&w.plex)
+        .await;
+    let id = best_release(&w.books).await;
+    w.books.grab(grab(id, false)).await;
+    w.deluge.set(&hash_of(name), finished(name));
+
+    w.books.watch(TEST_EPOCH_MS + 60_000).await.expect("watch");
+    w.books.watch(TEST_EPOCH_MS + 120_000).await.expect("watch");
+
+    assert!(w.app.pushes.all().is_empty(), "a blank album is not ready");
+    let edits: Vec<Vec<(String, String)>> = w
+        .plex
+        .received_requests()
+        .await
+        .expect("requests")
+        .into_iter()
+        .filter(|r| r.method.as_str() == "PUT")
+        .map(|r| {
+            r.url
+                .query_pairs()
+                .filter(|(k, _)| k != "X-Plex-Token")
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect()
+        })
+        .collect();
+    let pair = |k: &str, v: &str| (k.to_owned(), v.to_owned());
+    assert_eq!(edits.len(), 2, "one album and one track edit: {edits:?}");
+    // Tracks first; the album title last, since it marks the book ready.
+    assert!(edits[0].contains(&pair("id", "78")) && edits[0].contains(&pair("index.value", "1")));
+    assert!(edits[1].contains(&pair("type", "9")) && edits[1].contains(&pair("id", "77")));
+    assert!(edits[1].contains(&pair("title.value", name)));
+    assert!(edits[1].contains(&pair("artist.title.value", "Andy Weir")));
+
+    // Plex now shows the name.
+    w.plex.reset().await;
+    let named = json!([{
+        "type": "track", "ratingKey": "78", "parentRatingKey": "77", "parentTitle": name,
+        "grandparentTitle": "Andy Weir",
+        "Media": [{"Part": [{"file": file}]}]
+    }]);
+    mount_plex(&w.plex, BOOKS, json!([]), named).await;
+    w.books.watch(TEST_EPOCH_MS + 180_000).await.expect("watch");
+    w.books.watch(TEST_EPOCH_MS + 240_000).await.expect("watch");
+
+    let pushes = w.app.pushes.all();
+    assert_eq!(pushes.len(), 1, "announced exactly once");
+    assert!(
+        pushes[0]
+            .message
+            .message
+            .contains("Project Hail Mary by Andy Weir")
+    );
+    let status = w.books.status(None).await.expect("status");
+    assert_eq!(status.grabs[0].stage, Stage::Ready);
+    assert_eq!(status.grabs[0].plex_album.as_deref(), Some(name));
 }

@@ -134,6 +134,7 @@ pub struct PlexMetadata {
 /// A track in a music library and where its files are.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlexTrack {
+    pub rating_key: Option<String>,
     pub album_rating_key: Option<String>,
     pub album: Option<String>,
     pub artist: Option<String>,
@@ -159,6 +160,8 @@ struct TrackContainer {
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrackMetadata {
+    #[serde(default)]
+    rating_key: Option<String>,
     #[serde(default)]
     parent_rating_key: Option<String>,
     #[serde(default)]
@@ -716,6 +719,7 @@ impl PlexClient {
             let count = container.metadata.len();
             tracks.extend(container.metadata.into_iter().map(|t| {
                 PlexTrack {
+                    rating_key: t.rating_key,
                     album_rating_key: t.parent_rating_key,
                     album: t.parent_title,
                     artist: t.grandparent_title,

@@ -382,7 +382,8 @@ async fn builds_the_production_subsystem_from_the_app_context() {
             "media-season-search",
             "media-movie-search",
             "media-download-removal",
-            "media-audiobook-grab"
+            "media-audiobook-grab",
+            "media-audiobook-pending"
         ]
     );
     assert_eq!(subsystem.managed_entities.len(), 4);

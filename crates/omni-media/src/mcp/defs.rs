@@ -331,7 +331,7 @@ pub static MEDIA_AUDIOBOOKS_SEARCH: ToolDef<
 > = ToolDef::new(ToolInfo {
     name: "media_audiobooks_search",
     title: "Search Audiobooks",
-    description: "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, not VIP (MyAnonamouse lets only VIP members download those), m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+    description: "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
     annotations: Annotations {
         read_only_hint: false,
         destructive_hint: false,
@@ -351,7 +351,7 @@ pub static MEDIA_AUDIOBOOK_GRAB: ToolDef<MediaAudiobookGrabInput, MediaAudiobook
     ToolDef::new(ToolInfo {
         name: "media_audiobook_grab",
         title: "Download an Audiobook",
-        description: "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+        description: "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. awaiting_vip: MyAnonamouse refused a VIP torrent because the account has no VIP (confirmed from Prowlarr's log); Omni holds the request and retries it every 6 hours for 14 days. Tell the user the reason (buy VIP with bonus points on MyAnonamouse) and grab again once they have VIP. force only when the user explicitly asks for a second copy.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: false,
@@ -375,7 +375,7 @@ pub static MEDIA_AUDIOBOOKS_STATUS: ToolDef<
 > = ToolDef::new(ToolInfo {
     name: "media_audiobooks_status",
     title: "Audiobook Download Status",
-    description: "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+    description: "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error, untagged) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled. pending lists requests held for MyAnonamouse VIP, with the action the user needs to take.",
     annotations: Annotations {
         read_only_hint: true,
         destructive_hint: false,
@@ -393,7 +393,7 @@ pub static MEDIA_AUDIOBOOK_CANCEL: ToolDef<MediaAudiobookCancelInput, MediaAudio
     ToolDef::new(ToolInfo {
         name: "media_audiobook_cancel",
         title: "Cancel an Audiobook Download",
-        description: "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+        description: "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, or stop waiting for a request held for VIP (its pendingId), for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,
@@ -2410,6 +2410,7 @@ pub enum AudiobookGrabOutcome {
     AlreadyGrabbed,
     AlreadyInDeluge,
     NotSetUp,
+    AwaitingVip,
     Unavailable,
     Error,
 }
@@ -2418,7 +2419,7 @@ pub enum AudiobookGrabOutcome {
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MediaAudiobookGrabOutput {
     #[schemars(
-        description = "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. release_not_found: search again"
+        description = "grabbed: in Deluge; Omni notifies when it is ready in Prologue. uncertain: may be in Deluge; Omni settles it by reading, never resends. already_have: see alreadyHave. already_grabbed: this torrent was grabbed before. already_in_deluge: Deluge already had it from elsewhere; Omni does not manage it. not_set_up: see reason. awaiting_vip: held until the account has VIP; reason says what to do. release_not_found: search again"
     )]
     pub outcome: AudiobookGrabOutcome,
     #[schemars(
@@ -2461,6 +2462,39 @@ pub enum AudiobookProblem {
     Missing,
     NeverAdded,
     DelugeError,
+    Untagged,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum AudiobookPendingStage {
+    Waiting,
+    Resumed,
+    Cancelled,
+    Expired,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AudiobookPending {
+    #[schemars(description = "The release id; media_audiobook_cancel takes it to stop waiting")]
+    pub pending_id: String,
+    pub title: String,
+    #[schemars(description = "Book and author")]
+    pub book: String,
+    #[schemars(
+        description = "waiting: retried on schedule. resumed: a later grab went through (grabId). expired: still refused after 14 days"
+    )]
+    pub stage: AudiobookPendingStage,
+    pub attempts: u32,
+    #[schemars(description = "Unix ms")]
+    pub created_at: i64,
+    #[schemars(description = "Unix ms; while waiting")]
+    pub next_attempt_at: Option<i64>,
+    pub grab_id: Option<String>,
+    #[schemars(description = "What the user needs to do, while waiting")]
+    pub action: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(JsonSchema)]
@@ -2497,6 +2531,8 @@ pub struct MediaAudiobooksStatusOutput {
     #[schemars(description = "Newest first; at most 30")]
     pub grabs: Vec<AudiobookGrabStatus>,
     pub total: u64,
+    #[schemars(description = "Requests held for MyAnonamouse VIP, newest first")]
+    pub pending: Vec<AudiobookPending>,
     #[schemars(description = "Deluge could not be read; stored progress is shown")]
     pub deluge_unreadable: Option<String>,
 }
@@ -2505,8 +2541,8 @@ pub struct MediaAudiobooksStatusOutput {
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MediaAudiobookCancelInput {
     #[schemars(
-        description = "grabId from media_audiobooks_status",
-        pattern("^[0-9a-fA-F]{40}$")
+        description = "grabId from media_audiobooks_status, or a held request's pendingId",
+        pattern("^([0-9a-fA-F]{40}|[0-9a-f]{32})$")
     )]
     pub grab_id: String,
 }

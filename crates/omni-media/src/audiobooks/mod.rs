@@ -22,7 +22,9 @@
 //! `inspect::redact`.
 
 pub mod deluge;
+pub mod pending;
 pub mod rank;
+pub mod tagging;
 pub mod torrent;
 pub mod watch;
 
@@ -244,6 +246,9 @@ pub enum GrabOutcome {
     /// The Deluge label is missing, does not move finished downloads, or moves
     /// them outside the Plex library.
     NotSetUp,
+    /// MyAnonamouse refused a VIP torrent to a non-VIP account; the request
+    /// is held and retried (see [`pending`]).
+    AwaitingVip,
     Unavailable,
     Error,
 }
@@ -333,6 +338,9 @@ pub enum Problem {
     NeverAdded,
     /// Deluge reports an error for the torrent.
     DelugeError,
+    /// Plex imported the files without a book title (they carry no tags)
+    /// and Omni could not name the album.
+    Untagged,
 }
 
 /// A notification's delivery, reserved as `sending` before the push.
@@ -395,6 +403,9 @@ pub struct AudiobookGrabData {
     /// not enough to fail it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_since: Option<i64>,
+    /// When Omni last named an untagged import in Plex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tagged_at: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -476,6 +487,8 @@ pub struct GrabStatus {
 pub struct AudiobookStatus {
     pub grabs: Vec<GrabStatus>,
     pub total: usize,
+    /// Requests held for MyAnonamouse VIP, newest first.
+    pub pending: Vec<pending::PendingStatus>,
     /// Live Deluge progress could not be read; stored progress is shown.
     pub deluge_unreadable: Option<String>,
 }
@@ -538,9 +551,21 @@ pub enum AudiobookError {
 /// A side effect recorded instead of performed (`SideEffectMode::Record`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Recorded {
-    Add { release_id: String, label: String },
-    Remove { info_hash: String },
-    PlexScan { path: String },
+    Add {
+        release_id: String,
+        label: String,
+    },
+    Remove {
+        info_hash: String,
+    },
+    PlexScan {
+        path: String,
+    },
+    PlexTag {
+        album_key: String,
+        title: String,
+        artist: String,
+    },
 }
 
 enum Reply<T> {
@@ -557,18 +582,18 @@ enum TorrentFailure {
 }
 
 impl TorrentFailure {
-    fn reason(self, vip: bool) -> String {
+    fn reason(self) -> String {
         match self {
-            // Prowlarr turns MyAnonamouse's 406 "you are not VIP" refusal
-            // into a bare 500, so name the likely cause.
-            Self::Http(code) if vip && code >= 500 => format!(
-                "the .torrent download answered HTTP {code}; this is a VIP torrent, likely \
-                 refused because MyAnonamouse lets only VIP members download those"
-            ),
             Self::Http(code) => format!("the .torrent download answered HTTP {code}"),
             Self::Other(reason) => reason,
         }
     }
+}
+
+#[derive(Deserialize)]
+struct LogPage {
+    #[serde(default)]
+    records: Vec<pending::LogRecord>,
 }
 
 /// Prowlarr's error body (`{"message": ...}`).
@@ -802,6 +827,7 @@ impl Audiobooks {
                 ))
                 .await;
             if !have.is_empty() {
+                self.settle_pending(&release.release_id, None).await;
                 return GrabSummary {
                     already_have: have,
                     release: Some(release),
@@ -817,6 +843,7 @@ impl Audiobooks {
                     .iter()
                     .any(|g| g.release_id == release.release_id && g.stage.is_active()) =>
             {
+                self.settle_pending(&release.release_id, None).await;
                 return GrabSummary {
                     release: Some(release),
                     ..GrabSummary::of(GrabOutcome::AlreadyGrabbed)
@@ -838,11 +865,24 @@ impl Audiobooks {
                 ..GrabSummary::of(GrabOutcome::Grabbed)
             };
         }
+        let started = self.store.clock().now_ms();
         let torrent_bytes = match self.download_torrent(connection, &found).await {
             Ok(bytes) => bytes,
             Err(failure) => {
+                // Prowlarr reports MyAnonamouse's 406 "not VIP" refusal as a
+                // bare 500; only its log tells that refusal from other errors.
                 let vip = found.title.as_deref().is_some_and(rank::is_vip);
-                let reason = failure.reason(vip);
+                if vip
+                    && matches!(failure, TorrentFailure::Http(code) if code >= 500)
+                    && self.vip_refused(connection, started).await
+                {
+                    self.hold_for_vip(&request, &release).await;
+                    return GrabSummary {
+                        release: Some(release),
+                        ..GrabSummary::because(GrabOutcome::AwaitingVip, pending::VIP_ACTION)
+                    };
+                }
+                let reason = failure.reason();
                 return GrabSummary {
                     release: Some(release),
                     ..GrabSummary::because(GrabOutcome::Unavailable, reason)
@@ -886,6 +926,7 @@ impl Audiobooks {
             alerted: Vec::new(),
             audio_files: Vec::new(),
             missing_since: None,
+            tagged_at: None,
             extra: Extra::default(),
         };
         let summary = |outcome| GrabSummary {
@@ -957,6 +998,8 @@ impl Audiobooks {
         if outcome == GrabOutcome::Grabbed {
             tracing::info!(target: LOG, "Added audiobook {} to Deluge", release.title);
         }
+        self.settle_pending(&release.release_id, Some(hash.clone()))
+            .await;
         summary(outcome)
     }
 
@@ -1043,7 +1086,12 @@ impl Audiobooks {
             Ok(live) => (live, None),
             Err(error) => (Default::default(), Some(error.to_string())),
         };
+        let pending = self
+            .pending_status(wanted.as_deref())
+            .await
+            .map_err(|e| AudiobookError::Store(e.to_string()))?;
         Ok(AudiobookStatus {
+            pending,
             grabs: grabs
                 .into_iter()
                 .map(|g| {
@@ -1095,6 +1143,13 @@ impl Audiobooks {
             book,
             reason,
         };
+        // A release id names a request held for VIP; nothing is in Deluge.
+        if hash.len() == 32 {
+            return match self.cancel_pending(&hash).await {
+                Some(book) => summary(CancelOutcome::Cancelled, Some(book), None),
+                None => summary(CancelOutcome::NotFound, None, None),
+            };
+        }
         let _writes = self.writes.lock().await;
         let row = match self
             .store
@@ -1348,6 +1403,43 @@ impl Audiobooks {
         }
     }
 
+    /// Whether Prowlarr logged MyAnonamouse's VIP refusal since `started`.
+    /// Prowlarr writes its log asynchronously, so a miss is read again.
+    async fn vip_refused(&self, connection: (&str, &str), started: i64) -> bool {
+        let params = [
+            ("page", "1"),
+            ("pageSize", "50"),
+            ("sortKey", "time"),
+            ("sortDirection", "descending"),
+        ];
+        for attempt in 0..3 {
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            match self
+                .send::<LogPage>(connection, "log", &params, READ_TIMEOUT, READ_MAX_BYTES)
+                .await
+            {
+                Reply::Ok(page)
+                    if pending::vip_refusal(
+                        &page.records,
+                        started,
+                        self.store.clock().now_ms(),
+                    ) =>
+                {
+                    return true;
+                }
+                Reply::Ok(_) => {}
+                Reply::Http(code, _) => {
+                    tracing::debug!(target: LOG, "Prowlarr log answered HTTP {code}");
+                    return false;
+                }
+                Reply::Unavailable => return false,
+            }
+        }
+        false
+    }
+
     /// The `.torrent` through Prowlarr's download proxy. Only the path and
     /// query of Prowlarr's `downloadUrl` are used, against the configured
     /// Prowlarr origin, so the request never goes anywhere else.
@@ -1494,7 +1586,7 @@ fn has_audio(status: &TorrentStatus) -> bool {
 #[cfg(test)]
 mod tests {
     use super::deluge::TorrentStatus;
-    use super::{TorrentFailure, error_message, has_audio, landed_path, scan_folder};
+    use super::{error_message, has_audio, landed_path, scan_folder};
 
     #[test]
     fn prowlarr_error_text_never_carries_urls_or_secrets() {
@@ -1510,16 +1602,6 @@ mod tests {
         assert!(error_message("   ").is_none());
         let long = error_message(&"x".repeat(500)).expect("message");
         assert_eq!(long.chars().count(), 200);
-    }
-
-    #[test]
-    fn names_the_vip_cause_only_for_an_error_answer_on_a_vip_torrent() {
-        assert!(TorrentFailure::Http(500).reason(true).contains("VIP"));
-        assert!(!TorrentFailure::Http(500).reason(false).contains("VIP"));
-        assert_eq!(
-            TorrentFailure::Other("the .torrent download timed out".to_owned()).reason(true),
-            "the .torrent download timed out"
-        );
     }
 
     #[test]

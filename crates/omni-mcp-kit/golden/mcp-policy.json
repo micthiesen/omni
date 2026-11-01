@@ -965,7 +965,7 @@
     {
       "name": "media_audiobook_cancel",
       "title": "Cancel an Audiobook Download",
-      "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
+      "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, or stop waiting for a request held for VIP (its pendingId), for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -981,7 +981,7 @@
     {
       "name": "media_audiobook_grab",
       "title": "Download an Audiobook",
-      "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. force only when the user explicitly asks for a second copy.",
+      "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. awaiting_vip: MyAnonamouse refused a VIP torrent because the account has no VIP (confirmed from Prowlarr's log); Omni holds the request and retries it every 6 hours for 14 days. Tell the user the reason (buy VIP with bonus points on MyAnonamouse) and grab again once they have VIP. force only when the user explicitly asks for a second copy.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1015,7 +1015,7 @@
     {
       "name": "media_audiobooks_search",
       "title": "Search Audiobooks",
-      "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, not VIP (MyAnonamouse lets only VIP members download those), m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+      "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1031,7 +1031,7 @@
     {
       "name": "media_audiobooks_status",
       "title": "Audiobook Download Status",
-      "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled.",
+      "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error, untagged) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled. pending lists requests held for MyAnonamouse VIP, with the action the user needs to take.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

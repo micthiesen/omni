@@ -480,8 +480,13 @@ reserved by info hash before the add, verified by reading Deluge, and an
 uncertain add is settled only by reading; an active grab of the same torrent
 always blocks another, `force` included. Omni touches only torrents it added,
 cancels only unfinished ones, and never removes a finished (seeding)
-download. "Ready" means a Plex track lives in the download's folder; it
-notifies once, and each problem once. Release guids and download URLs carry
+download. "Ready" means Plex holds every audio file of the download in an
+album with a title; an untagged import is named by locked Plex metadata edits
+on exact ids (never by changing the seeding files) before it counts. It
+notifies once, and each problem once. VIP releases rank like any other; a 5xx
+on one is a VIP refusal only when Prowlarr's log confirms it, and then the
+request is held (`media-audiobook-pending`), retried every 6 hours for 14 days
+with at most one refusal per run, and settled by any later grab. Release guids and download URLs carry
 passkeys and never leave the module. Trust in Deluge is the certificate pin
 alone. See "Audiobooks" in `docs/mcp.md`.
 
