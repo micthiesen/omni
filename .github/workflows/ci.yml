@@ -153,6 +153,15 @@ jobs:
         # would skip; add `cargo test --workspace --locked --doc` if that changes.
         run: cargo nextest run --workspace --locked --profile ci
 
+      - name: Drop the linked test executables before saving
+        # Each links the whole dependency graph (4.5 GB together, most of the
+        # cache quota); relinking them costs less than storing them. Proc-macro
+        # libraries (.so) and build scripts stay, or their dependents rebuild.
+        if: success() || failure()
+        run: >-
+          find target/debug/deps -maxdepth 1 -type f -perm -u+x
+          ! -name '*.so' ! -name '*.d' -delete
+
       - name: Save the test build
         # A failing test still leaves a valid build to start the fix from.
         if: success() || failure()

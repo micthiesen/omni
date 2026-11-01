@@ -56,6 +56,8 @@ workspace crates and recompile only what changed:
 6. **Superseded entries are pruned.** `prune` keeps only the newest entry of
    each Cargo cache name, across toolchains. A cache grows with each
    dependency bump until the toolchain changes; check `gh cache list` sizes
-   if the repository nears its 10 GB quota. The Docker layer cache (`type=gha,scope=omni`) is
+   if the repository nears its 10 GB quota. The `test` job deletes its linked
+   test executables before saving (4.5 GB of the cache); relinking them is
+   cheaper than storing them. The Docker layer cache (`type=gha,scope=omni`) is
    left to GitHub's least-recently-used eviction; with the server built
    outside Docker it holds only downloads, the web bundle and the runtime.
