@@ -283,6 +283,12 @@ config_struct! {
     deluge_cert_sha256: Option<String> = "DELUGE_CERT_SHA256",
     /// The Deluge label whose completed folder is in the audiobook library; default "books".
     deluge_label: String = "DELUGE_LABEL",
+    /// Google OAuth "Web application" client for the owner's YouTube account.
+    youtube_client_id: Option<String> = "YOUTUBE_CLIENT_ID",
+    youtube_client_secret: Option<String> = "YOUTUBE_CLIENT_SECRET",
+    /// The registered OAuth redirect URI; default
+    /// `https://omni.syas.ca/api/youtube/oauth/callback` (the LAN-only HTTPS origin).
+    youtube_redirect_uri: String = "YOUTUBE_REDIRECT_URI",
     arr_recovery_local_files: bool = "ARR_RECOVERY_LOCAL_FILES",
     tz: String = "TZ",
     smtp_host: Option<String> = "SMTP_HOST",
@@ -554,6 +560,12 @@ impl Config {
             deluge_password: env.opt("DELUGE_PASSWORD"),
             deluge_cert_sha256: env.opt("DELUGE_CERT_SHA256"),
             deluge_label: env.string("DELUGE_LABEL", "books"),
+            youtube_client_id: env.opt("YOUTUBE_CLIENT_ID"),
+            youtube_client_secret: env.opt("YOUTUBE_CLIENT_SECRET"),
+            youtube_redirect_uri: env.trimmed_url(
+                "YOUTUBE_REDIRECT_URI",
+                "https://omni.syas.ca/api/youtube/oauth/callback",
+            )?,
             arr_recovery_local_files: env.boolean("ARR_RECOVERY_LOCAL_FILES", false)?,
             tz: env.string("TZ", "America/Vancouver"),
             smtp_host: env.opt("SMTP_HOST"),

@@ -57,6 +57,7 @@ omni-presspods.workspace = true
 omni-reminders.workspace = true
 omni-stylist.workspace = true
 omni-testkit.workspace = true
+omni-youtube.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true

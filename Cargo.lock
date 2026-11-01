@@ -3125,6 +3125,7 @@ dependencies = [
  "omni-stylist",
  "omni-tasks",
  "omni-testkit",
+ "omni-youtube",
  "rand 0.10.3",
  "rusqlite",
  "serde",
@@ -3549,6 +3550,7 @@ dependencies = [
  "omni-stylist",
  "omni-tasks",
  "omni-testkit",
+ "omni-youtube",
  "rand 0.10.3",
  "regex",
  "schemars 1.2.2",
@@ -4005,6 +4007,36 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "omni-youtube"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "axum",
+ "base64 0.23.1",
+ "jiff",
+ "omni-config",
+ "omni-core",
+ "omni-http",
+ "omni-mcp-kit",
+ "omni-runtime",
+ "omni-server-kit",
+ "omni-store",
+ "omni-testkit",
+ "rand 0.10.3",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+ "wiremock",
 ]
 
 [[package]]

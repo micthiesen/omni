@@ -24,6 +24,9 @@ const RUST_ONLY: &[&str] = &[
     "DELUGE_PASSWORD",
     "DELUGE_CERT_SHA256",
     "DELUGE_LABEL",
+    "YOUTUBE_CLIENT_ID",
+    "YOUTUBE_CLIENT_SECRET",
+    "YOUTUBE_REDIRECT_URI",
 ];
 
 fn env(case: &Value) -> BTreeMap<String, String> {

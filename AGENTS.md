@@ -167,6 +167,9 @@ change; reuse authorization already given in the conversation.
 - `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, audiobooks
   (MyAnonamouse through Prowlarr and Deluge into the Plex audiobook library,
   `AudiobookWatch`), media recommendations, taste reflection.
+- `omni-youtube`: the owner's YouTube account over the YouTube Data API (Google
+  OAuth with a sealed refresh token, playlists, public search, video and channel
+  details, quota ledger, `youtube_*` tools).
 - `omni-arr`: `ArrRecovery` and `ObserverRepair`.
 - `omni-reminders`: server iCloud Reminders and the shared protected-access
   (PCS) workflow; callers own authenticated requests, encrypted cookie
@@ -489,6 +492,19 @@ request is held (`media-audiobook-pending`), retried every 6 hours for 14 days
 with at most one refusal per run, and settled by any later grab. Release guids and download URLs carry
 passkeys and never leave the module. Trust in Deluge is the certificate pin
 alone. See "Audiobooks" in `docs/mcp.md`.
+
+### YouTube
+
+`omni-youtube` (`docs/youtube.md`) requests only the `youtube` scope (no
+playlist-only scope exists; it is broad "Manage your YouTube account") and
+connects only through the LAN-only `https://omni.syas.ca/api/youtube/oauth/*`
+routes with PKCE and a single-use state. The refresh token is sealed with
+`youtube.key` and never logged; a rejected refresh marks the account
+`reconnect_required` and is not retried. Writes are serialized, touch only the
+connected channel's playlists, check duplicates first (titles, videos already in
+the playlist), reserve playlist creates by idempotency key, require the exact
+title to delete, and settle a lost answer only by reading back, never by
+resending. Never claim Watch Later, history, Home or transcript access.
 
 ### Observer issue repair
 

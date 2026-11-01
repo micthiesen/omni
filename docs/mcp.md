@@ -59,6 +59,11 @@ families cover:
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
 - Amazon search and product pages read through a headless browser
   (`amazon_search`, `amazon_product`, see "Amazon" below)
+- the owner's YouTube playlists (list, create, rename, describe, privacy,
+  delete, add, remove, reorder), public YouTube search and video and channel
+  details through Omni's own Google OAuth client (`youtube_*`, see
+  [YouTube](youtube.md)); Watch Later, history, Home and transcripts are not
+  available through the API
 - agent push notifications to Michael (see "Owner notifications" below)
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
   record queries, measurement comparison, typed records and immutable events,

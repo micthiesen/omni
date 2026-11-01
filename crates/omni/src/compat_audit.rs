@@ -36,6 +36,7 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
         omni_personal::entities(),
         omni_presspods::entities(),
         omni_media::entity_descriptors(),
+        omni_youtube::entities(),
         omni_arr::entities(),
         omni_podcasts::entities(),
         omni_imap::subsystem::entities(),

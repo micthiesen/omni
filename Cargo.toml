@@ -57,6 +57,7 @@ omni-web-kit = { path = "crates/omni-web-kit" }
 omni-web-pages = { path = "crates/omni-web-pages" }
 omni-presspods = { path = "crates/omni-presspods" }
 omni-stylist = { path = "crates/omni-stylist" }
+omni-youtube = { path = "crates/omni-youtube" }
 
 # Exact pins (see AGENTS.md, Rust conventions). Every version was published on or
 # before 2026-09-25 and resolves together (checked with cargo generate-lockfile).

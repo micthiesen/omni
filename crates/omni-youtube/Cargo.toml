@@ -1,0 +1,40 @@
+[package]
+name = "omni-youtube"
+description = "The owner's YouTube account through the YouTube Data API: Google OAuth, playlists, public search and video/channel details, quota accounting and MCP tools."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aes-gcm.workspace = true
+axum.workspace = true
+base64.workspace = true
+jiff.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-mcp-kit.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+rand.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
+wiremock.workspace = true

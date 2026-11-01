@@ -1,0 +1,265 @@
+//! The `youtube_*` MCP tools: thin adapters over [`Youtube`].
+
+pub mod defs;
+
+use std::future::Future;
+
+use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
+
+use crate::error::YoutubeError;
+use crate::ids;
+use crate::model::{Privacy, SearchType};
+use crate::service::{
+    ChannelLookup, CreatePlaylist, PlaylistScope, RemoveTarget, SearchParams, UpdatePlaylist,
+    Youtube,
+};
+
+/// `[code] message`, so clients can tell quota, connection and input failures apart.
+fn tool_error(error: &YoutubeError) -> ToolError {
+    let message = format!("[{}] {error}", error.code());
+    match error {
+        YoutubeError::Invalid(_) => ToolError::input(message),
+        _ => ToolError::execute(message),
+    }
+}
+
+fn input(message: impl Into<String>) -> ToolError {
+    ToolError::input(format!("[invalid_input] {}", message.into()))
+}
+
+fn parse_all(
+    raw: &[String],
+    parse: fn(&str) -> Result<String, YoutubeError>,
+) -> Result<Vec<String>, ToolError> {
+    raw.iter()
+        .map(|r| parse(r).map_err(|e| tool_error(&e)))
+        .collect()
+}
+
+fn rfc3339(field: &str, raw: Option<String>) -> Result<Option<String>, ToolError> {
+    match raw {
+        None => Ok(None),
+        Some(raw) => raw
+            .parse::<jiff::Timestamp>()
+            .map(|t| Some(t.to_string()))
+            .map_err(|_| {
+                input(format!(
+                    "{field}: expected an RFC 3339 time such as 2026-01-01T00:00:00Z"
+                ))
+            }),
+    }
+}
+
+fn tool<I, O, F, Fut>(
+    def: &'static omni_mcp_kit::ToolDef<I, O>,
+    youtube: &Youtube,
+    f: F,
+) -> Result<McpTool, ToolMetaError>
+where
+    I: schemars::JsonSchema + serde::de::DeserializeOwned + Send + 'static,
+    O: schemars::JsonSchema + serde::Serialize + Send + 'static,
+    F: Fn(Youtube, I) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<O, ToolError>> + Send + 'static,
+{
+    let youtube = youtube.clone();
+    typed_tool(def, move |input: I, _cx: ToolContext| {
+        f(youtube.clone(), input)
+    })
+}
+
+pub fn tools(youtube: &Youtube) -> Result<Vec<McpTool>, ToolMetaError> {
+    Ok(vec![
+        tool(
+            &defs::YOUTUBE_STATUS,
+            youtube,
+            |yt, _: defs::StatusInput| async move { yt.status().await.map_err(|e| tool_error(&e)) },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLISTS_LIST,
+            youtube,
+            |yt, i: defs::PlaylistsListInput| async move {
+                let scope = match (i.channel_id, i.playlist_ids) {
+                    (Some(_), Some(_)) => {
+                        return Err(input("give channelId or playlistIds, not both"));
+                    }
+                    (Some(channel), None) => PlaylistScope::Channel(
+                        ids::channel_id(&channel).map_err(|e| tool_error(&e))?,
+                    ),
+                    (None, Some(list)) => PlaylistScope::Ids(parse_all(&list, ids::playlist_id)?),
+                    (None, None) => PlaylistScope::Mine,
+                };
+                yt.playlists(scope, i.page_token, i.limit.unwrap_or(25))
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_ITEMS_LIST,
+            youtube,
+            |yt, i: defs::PlaylistItemsListInput| async move {
+                let id = ids::playlist_id(&i.playlist_id).map_err(|e| tool_error(&e))?;
+                yt.playlist_items(&id, i.page_token, i.limit.unwrap_or(50))
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_CREATE,
+            youtube,
+            |yt, i: defs::PlaylistCreateInput| async move {
+                let title = i.title.trim().to_owned();
+                if title.is_empty() {
+                    return Err(input("title: must not be blank"));
+                }
+                yt.create_playlist(CreatePlaylist {
+                    title,
+                    description: i.description.unwrap_or_default(),
+                    privacy: i.privacy.unwrap_or(Privacy::Private),
+                    idempotency_key: i.idempotency_key,
+                    allow_duplicate_title: i.allow_duplicate_title.unwrap_or(false),
+                })
+                .await
+                .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_UPDATE,
+            youtube,
+            |yt, i: defs::PlaylistUpdateInput| async move {
+                let playlist_id = ids::playlist_id(&i.playlist_id).map_err(|e| tool_error(&e))?;
+                let title = i.title.map(|t| t.trim().to_owned());
+                if title.as_deref() == Some("") {
+                    return Err(input("title: must not be blank"));
+                }
+                if title.is_none() && i.description.is_none() && i.privacy.is_none() {
+                    return Err(input("give at least one of title, description or privacy"));
+                }
+                yt.update_playlist(UpdatePlaylist {
+                    playlist_id,
+                    title,
+                    description: i.description,
+                    privacy: i.privacy,
+                })
+                .await
+                .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_DELETE,
+            youtube,
+            |yt, i: defs::PlaylistDeleteInput| async move {
+                let id = ids::playlist_id(&i.playlist_id).map_err(|e| tool_error(&e))?;
+                yt.delete_playlist(&id, &i.confirm_title)
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_ITEMS_ADD,
+            youtube,
+            |yt, i: defs::PlaylistItemsAddInput| async move {
+                let playlist = ids::playlist_id(&i.playlist_id).map_err(|e| tool_error(&e))?;
+                let videos = parse_all(&i.video_ids, ids::video_id)?;
+                yt.add_items(&playlist, videos, i.position.map(u64::from))
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_ITEMS_REMOVE,
+            youtube,
+            |yt, i: defs::PlaylistItemsRemoveInput| async move {
+                let playlist = ids::playlist_id(&i.playlist_id).map_err(|e| tool_error(&e))?;
+                let target = match (i.playlist_item_ids, i.video_ids) {
+                    (Some(items), None) => {
+                        RemoveTarget::Items(parse_all(&items, ids::playlist_item_id)?)
+                    }
+                    (None, Some(videos)) => {
+                        RemoveTarget::Videos(parse_all(&videos, ids::video_id)?)
+                    }
+                    _ => return Err(input("give exactly one of playlistItemIds or videoIds")),
+                };
+                yt.remove_items(&playlist, target)
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_PLAYLIST_ITEM_MOVE,
+            youtube,
+            |yt, i: defs::PlaylistItemMoveInput| async move {
+                let id = ids::playlist_item_id(&i.playlist_item_id).map_err(|e| tool_error(&e))?;
+                yt.move_item(&id, u64::from(i.position))
+                    .await
+                    .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_SEARCH,
+            youtube,
+            |yt, i: defs::SearchInput| async move {
+                let query = i.query.trim().to_owned();
+                if query.is_empty() {
+                    return Err(input("query: must not be blank"));
+                }
+                let kind = i.kind.unwrap_or(SearchType::Video);
+                if i.duration.is_some() && kind != SearchType::Video {
+                    return Err(input("duration applies only to type video"));
+                }
+                let channel_id = match i.channel_id {
+                    Some(raw) => Some(ids::channel_id(&raw).map_err(|e| tool_error(&e))?),
+                    None => None,
+                };
+                yt.search(SearchParams {
+                    query,
+                    kind,
+                    order: i.order.map(|o| o.as_str().to_owned()),
+                    channel_id,
+                    published_after: rfc3339("publishedAfter", i.published_after)?,
+                    published_before: rfc3339("publishedBefore", i.published_before)?,
+                    duration: i.duration.map(|d| d.as_str().to_owned()),
+                    region_code: i.region_code.map(|r| r.to_ascii_uppercase()),
+                    relevance_language: i.relevance_language,
+                    limit: i.limit.unwrap_or(10),
+                    page_token: i.page_token,
+                })
+                .await
+                .map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_VIDEOS_GET,
+            youtube,
+            |yt, i: defs::VideosGetInput| async move {
+                let mut videos = Vec::new();
+                for id in parse_all(&i.video_ids, ids::video_id)? {
+                    if !videos.contains(&id) {
+                        videos.push(id);
+                    }
+                }
+                yt.videos(videos).await.map_err(|e| tool_error(&e))
+            },
+        )?,
+        tool(
+            &defs::YOUTUBE_CHANNELS_GET,
+            youtube,
+            |yt, i: defs::ChannelsGetInput| async move {
+                let lookup = match (i.channel_ids, i.handle, i.mine.unwrap_or(false)) {
+                    (Some(list), None, false) => {
+                        ChannelLookup::Ids(parse_all(&list, ids::channel_id)?)
+                    }
+                    (None, Some(handle), false) => {
+                        ChannelLookup::Handle(ids::handle(&handle).map_err(|e| tool_error(&e))?)
+                    }
+                    (None, None, true) => ChannelLookup::Mine,
+                    _ => {
+                        return Err(input(
+                            "give exactly one of channelIds, handle or mine: true",
+                        ));
+                    }
+                };
+                yt.channels(lookup).await.map_err(|e| tool_error(&e))
+            },
+        )?,
+    ])
+}
