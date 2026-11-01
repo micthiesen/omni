@@ -64,12 +64,7 @@ families cover:
   record queries, measurement comparison, typed records and immutable events,
   private evidence, export, restore and fixture purge (see [Stylist](stylist.md))
 
-`shell` runs a bash script in a sandboxed in-process shell whose commands and
-`/omni` files are the read-only tools above, and `shell_usage` measures it
-against direct calls; see [Shell](shell.md). The shell reaches no host process,
-file or network.
-
-The server does not expose arbitrary host shell or filesystem access, environment
+The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, arbitrary attachment or audio
 bytes, or caller-selected SMTP identities. A bounded private PDF attachment read is
 available through `email_attachment_get`, and sends and drafts can attach those
@@ -522,8 +517,7 @@ MiB, so it is read under `Limits::LIBRARY` (48 MiB, 30 s).
   download link or magnet carrying an API key or passkey, so it never leaves
   Omni: each release is named by `releaseId`, the first 32 hex digits of
   SHA-256 of `<indexerId>\n<guid>`. Download and info URLs are dropped. It grabs
-  nothing but queries every indexer, so it is not read-only and stays out of
-  `shell`.
+  nothing but queries every indexer, so it is not read-only.
 - `media_movie_release_grab` grabs one release by `releaseId`. It searches
   again first (outside the write lock, since that can take minutes) and grabs
   only when the same release is still offered and Radarr approves it (approved,
@@ -659,9 +653,7 @@ for the link protocol, project allowlist, and failure semantics.
 Omni records every MCP tool call: tool, timing, status, error, and a bounded
 copy of the input. Strings are capped at 300 characters (4,000 for `claude_*`
 tools), arrays at 20 items, and keys that look like secrets are redacted. Only
-`claude_*` calls also keep a bounded copy of their output. A successful call
-also records its result size (`resultBytes` for the text content,
-`structuredBytes` for `structuredContent`). The newest 2,000 calls
+`claude_*` calls also keep a bounded copy of their output. The newest 2,000 calls
 are kept; calls left running by a restart are marked `interrupted` at boot.
 
 The LAN UI shows this history at `/mcp-activity`, and `/claude` organizes Claude session

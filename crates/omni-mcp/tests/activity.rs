@@ -43,8 +43,6 @@ fn call(id: &str, overrides: impl FnOnce(&mut McpCallData)) -> McpCallData {
         error: None,
         input: JsValue::Object(Default::default()),
         output: JsValue::Null,
-        result_bytes: None,
-        structured_bytes: None,
         extra: Extra::default(),
     };
     overrides(&mut call);

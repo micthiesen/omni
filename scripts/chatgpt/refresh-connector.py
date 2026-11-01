@@ -12,7 +12,7 @@ The endpoints are ChatGPT's internal web API, not a published one, and may
 change without notice; a failure here never affects Omni itself.
 
   python3 -I scripts/chatgpt/refresh-connector.py
-  python3 -I scripts/chatgpt/refresh-connector.py --expect shell,shell_usage --wait 15
+  python3 -I scripts/chatgpt/refresh-connector.py --expect email_search,calendar_events_list --wait 15
 
 `--expect` names tools or events that must be present after the refresh;
 `--wait` retries for that many minutes (for a deploy that is still rolling
