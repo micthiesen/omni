@@ -20637,7 +20637,7 @@
     {
       "name": "media_audiobooks_search",
       "title": "Search Audiobooks",
-      "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+      "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, not VIP (MyAnonamouse lets only VIP members download those), m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -20803,7 +20803,7 @@
                 },
                 "goodMatch": {
                   "type": "boolean",
-                  "description": "Matches every query word, seeded, English, unabridged"
+                  "description": "Matches every query word, seeded, English, unabridged, not VIP"
                 },
                 "notes": {
                   "type": "array",
@@ -21104,7 +21104,7 @@
                   },
                   "goodMatch": {
                     "type": "boolean",
-                    "description": "Matches every query word, seeded, English, unabridged"
+                    "description": "Matches every query word, seeded, English, unabridged, not VIP"
                   },
                   "notes": {
                     "type": "array",

@@ -26,7 +26,7 @@ pub mod rank;
 pub mod torrent;
 pub mod watch;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use omni_alerts::Pushover;
@@ -35,6 +35,7 @@ use omni_http::{HttpClient, Method, SideEffectMode, Url};
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{DocOps as _, Store, StoreError};
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -151,7 +152,7 @@ pub struct AudiobookRelease {
     pub grabs: Option<i64>,
     pub freeleech: bool,
     pub published_at: Option<String>,
-    /// Matches the query, seeded, preferred language, unabridged.
+    /// Matches the query, seeded, preferred language, unabridged, not VIP.
     pub good_match: bool,
     /// Why it ranks where it does.
     pub notes: Vec<String>,
@@ -544,8 +545,60 @@ pub enum Recorded {
 
 enum Reply<T> {
     Ok(T),
-    Http(u16),
+    /// The status and Prowlarr's own `message`, when it sent one.
+    Http(u16, Option<String>),
     Unavailable,
+}
+
+/// Why the `.torrent` could not be downloaded.
+enum TorrentFailure {
+    Http(u16),
+    Other(String),
+}
+
+impl TorrentFailure {
+    fn reason(self, vip: bool) -> String {
+        match self {
+            // Prowlarr turns MyAnonamouse's 406 "you are not VIP" refusal
+            // into a bare 500, so name the likely cause.
+            Self::Http(code) if vip && code >= 500 => format!(
+                "the .torrent download answered HTTP {code}; this is a VIP torrent, likely \
+                 refused because MyAnonamouse lets only VIP members download those"
+            ),
+            Self::Http(code) => format!("the .torrent download answered HTTP {code}"),
+            Self::Other(reason) => reason,
+        }
+    }
+}
+
+/// Prowlarr's error body (`{"message": ...}`).
+#[derive(Deserialize)]
+struct ProwlarrError {
+    message: Option<String>,
+}
+
+/// Prowlarr's error text made safe to return: URLs (which can carry
+/// passkeys in their path) are dropped, secrets redacted, whitespace
+/// collapsed, and the result bounded.
+fn error_message(raw: &str) -> Option<String> {
+    static URL: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"(?i)\b[a-z][a-z0-9+.-]*://\S+").ok());
+    let without_urls = URL.as_ref().map_or_else(
+        || raw.to_owned(),
+        |re| re.replace_all(raw, "<url>").into_owned(),
+    );
+    let redacted = redact(&without_urls);
+    let text = redacted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let bounded: String = text.chars().take(200).collect();
+    (!bounded.is_empty()).then_some(bounded)
+}
+
+/// `HTTP <code>`, plus Prowlarr's explanation when it gave one.
+fn http_failure(what: &str, code: u16, message: Option<&str>) -> String {
+    match message {
+        Some(message) => format!("{what} answered HTTP {code}: {message}"),
+        None => format!("{what} answered HTTP {code}"),
+    }
 }
 
 pub struct AudiobooksConfig {
@@ -787,7 +840,9 @@ impl Audiobooks {
         }
         let torrent_bytes = match self.download_torrent(connection, &found).await {
             Ok(bytes) => bytes,
-            Err(reason) => {
+            Err(failure) => {
+                let vip = found.title.as_deref().is_some_and(rank::is_vip);
+                let reason = failure.reason(vip);
                 return GrabSummary {
                     release: Some(release),
                     ..GrabSummary::because(GrabOutcome::Unavailable, reason)
@@ -1254,7 +1309,9 @@ impl Audiobooks {
                 })
                 .and_then(|i| i.id)
                 .ok_or_else(|| format!("Prowlarr has no enabled indexer named {}", self.indexer)),
-            Reply::Http(code) => Err(format!("Prowlarr indexers answered HTTP {code}")),
+            Reply::Http(code, message) => {
+                Err(http_failure("Prowlarr indexers", code, message.as_deref()))
+            }
             Reply::Unavailable => Err("Prowlarr could not be reached".to_owned()),
         }
     }
@@ -1284,7 +1341,9 @@ impl Audiobooks {
             .await
         {
             Reply::Ok(raw) => Ok(lenient_releases(raw)),
-            Reply::Http(code) => Err(format!("Prowlarr search answered HTTP {code}")),
+            Reply::Http(code, message) => {
+                Err(http_failure("Prowlarr search", code, message.as_deref()))
+            }
             Reply::Unavailable => Err("Prowlarr search failed or timed out".to_owned()),
         }
     }
@@ -1296,14 +1355,14 @@ impl Audiobooks {
         &self,
         (base, api_key): (&str, &str),
         release: &ProwlarrRelease,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, TorrentFailure> {
         let source = release
             .download_url
             .as_deref()
             .and_then(|u| Url::parse(u).ok())
-            .ok_or("the release has no download link")?;
+            .ok_or_else(|| TorrentFailure::Other("the release has no download link".to_owned()))?;
         let mut url = Url::parse(&format!("{}/", base.trim_end_matches('/')))
-            .map_err(|_| "invalid PROWLARR_URL")?;
+            .map_err(|_| TorrentFailure::Other("invalid PROWLARR_URL".to_owned()))?;
         url.set_path(source.path());
         url.set_query(source.query());
         let request = self
@@ -1312,16 +1371,13 @@ impl Audiobooks {
             .header("X-Api-Key", api_key);
         let response = tokio::time::timeout(READ_TIMEOUT, request.send_bounded(TORRENT_MAX_BYTES))
             .await
-            .map_err(|_| "the .torrent download timed out".to_owned())?
+            .map_err(|_| TorrentFailure::Other("the .torrent download timed out".to_owned()))?
             .map_err(|e| {
                 tracing::debug!(target: LOG, "Torrent download failed: {}", redact(&e.to_string()));
-                "the .torrent download failed".to_owned()
+                TorrentFailure::Other("the .torrent download failed".to_owned())
             })?;
         if !response.status.is_success() {
-            return Err(format!(
-                "the .torrent download answered HTTP {}",
-                response.status.as_u16()
-            ));
+            return Err(TorrentFailure::Http(response.status.as_u16()));
         }
         Ok(response.body.to_vec())
     }
@@ -1360,7 +1416,11 @@ impl Audiobooks {
             }
         };
         if !response.status.is_success() {
-            return Reply::Http(response.status.as_u16());
+            let message = serde_json::from_slice::<ProwlarrError>(&response.body)
+                .ok()
+                .and_then(|e| e.message)
+                .and_then(|m| error_message(&m));
+            return Reply::Http(response.status.as_u16(), message);
         }
         match serde_json::from_slice::<T>(&response.body) {
             Ok(value) => Reply::Ok(value),
@@ -1434,7 +1494,33 @@ fn has_audio(status: &TorrentStatus) -> bool {
 #[cfg(test)]
 mod tests {
     use super::deluge::TorrentStatus;
-    use super::{has_audio, landed_path, scan_folder};
+    use super::{TorrentFailure, error_message, has_audio, landed_path, scan_folder};
+
+    #[test]
+    fn prowlarr_error_text_never_carries_urls_or_secrets() {
+        let message = error_message(
+            "Failed\n  for https://www.myanonamouse.net/tor/download.php?tid=1&passkey=SECRET \
+             and /3/download?apikey=KEY",
+        )
+        .expect("message");
+        assert_eq!(
+            message,
+            "Failed for <url> and /3/download?apikey=<redacted>"
+        );
+        assert!(error_message("   ").is_none());
+        let long = error_message(&"x".repeat(500)).expect("message");
+        assert_eq!(long.chars().count(), 200);
+    }
+
+    #[test]
+    fn names_the_vip_cause_only_for_an_error_answer_on_a_vip_torrent() {
+        assert!(TorrentFailure::Http(500).reason(true).contains("VIP"));
+        assert!(!TorrentFailure::Http(500).reason(false).contains("VIP"));
+        assert_eq!(
+            TorrentFailure::Other("the .torrent download timed out".to_owned()).reason(true),
+            "the .torrent download timed out"
+        );
+    }
 
     #[test]
     fn finds_where_a_download_landed_and_whether_it_has_audio() {

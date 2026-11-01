@@ -331,7 +331,7 @@ pub static MEDIA_AUDIOBOOKS_SEARCH: ToolDef<
 > = ToolDef::new(ToolInfo {
     name: "media_audiobooks_search",
     title: "Search Audiobooks",
-    description: "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
+    description: "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, not VIP (MyAnonamouse lets only VIP members download those), m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
     annotations: Annotations {
         read_only_hint: false,
         destructive_hint: false,
@@ -2351,7 +2351,7 @@ pub struct AudiobookRelease {
     #[schemars(description = "Downloading it does not count against tracker ratio")]
     pub freeleech: bool,
     pub published_at: Option<String>,
-    #[schemars(description = "Matches every query word, seeded, English, unabridged")]
+    #[schemars(description = "Matches every query word, seeded, English, unabridged, not VIP")]
     pub good_match: bool,
     #[schemars(description = "Why it ranks where it does")]
     pub notes: Vec<String>,

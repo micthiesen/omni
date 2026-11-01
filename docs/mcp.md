@@ -379,12 +379,17 @@ Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
 - **Search** queries Prowlarr (`PROWLARR_URL`, `PROWLARR_API_KEY`) in the
   audiobook category (3030) on the one enabled indexer named
   `AUDIOBOOK_INDEXER` (default `MyAnonamouse`). `rank.rs` parses MAM titles
-  (`Title by Author [LANG / FORMAT]`) and orders releases by: every query
-  word matched, seeded, `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged,
-  m4b before m4a/aac before mp3 before other audio, at least three seeders,
+  (`Title by Author [LANG / FORMAT]`, with ` [VIP]` appended by Prowlarr for
+  VIP torrents) and orders releases by: every query word matched, seeded,
+  `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged, not VIP, m4b before m4a/aac before mp3 before other audio, at least three seeders,
   freeleech, then seeders. Ebook-only releases are dropped. Each release has
-  notes explaining its place; `alreadyHave` lists matching library albums and
-  open grabs. Releases are named by an opaque `releaseId`; guids and download
+  notes explaining its place, and `goodMatch` excludes VIP torrents.
+  MyAnonamouse refuses those to non-VIP members with a 406, which Prowlarr's
+  download proxy reports as a bare HTTP 500; Prowlarr then pauses the indexer
+  (60 s at first), so searches meanwhile fail with HTTP 400 "all selected
+  indexers being unavailable". Grab reasons carry Prowlarr's message (URLs
+  dropped, secrets redacted) and name the likely VIP cause. `alreadyHave`
+  lists matching library albums and open grabs. Releases are named by an opaque `releaseId`; guids and download
   URLs carry passkeys and never leave the module.
 - **Grab** checks that the Deluge label (`DELUGE_LABEL`, default `books`)
   moves finished torrents into a folder that is one of the Plex library's

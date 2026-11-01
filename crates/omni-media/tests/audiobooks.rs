@@ -601,3 +601,82 @@ async fn a_torrent_already_in_deluge_is_left_alone() {
     let status = w.books.status(None).await.expect("status");
     assert!(status.grabs.is_empty(), "Omni does not track or cancel it");
 }
+
+/// MyAnonamouse refuses a VIP torrent to a non-VIP account (Prowlarr passes
+/// it on as a bare 500), and Prowlarr's failure backoff then rejects the next
+/// search with a 400. Each grab runs exactly one search, so the first two
+/// searches (the listing and the first grab) succeed and the third fails.
+#[tokio::test]
+async fn a_vip_release_is_parsed_and_its_refusals_are_explained() {
+    const VIP_QUERY: &str = "Trust the Plan Will Sommer";
+    let app = TestApp::new().await;
+    let deluge = FakeDeluge::new();
+    let prowlarr = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/indexer"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id": 3, "name": "MyAnonamouse", "enable": true}
+        ])))
+        .mount(&prowlarr)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([mam(
+            "Trust the Plan: The Rise of QAnon by Will Sommer [ENG / M4B] [VIP]",
+            "77",
+            31
+        )])))
+        .up_to_n_times(2)
+        .mount(&prowlarr)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "message": "Search failed due to all selected indexers being unavailable"
+        })))
+        .mount(&prowlarr)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/3/download"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&prowlarr)
+        .await;
+    let plex = plex(BOOKS, json!([]), json!([])).await;
+    let books = books(&app, &prowlarr, &plex, &deluge, SideEffectMode::Live);
+    let request = |release_id: String| GrabRequest {
+        query: VIP_QUERY.to_owned(),
+        release_id,
+        force: false,
+    };
+
+    let search = books.search(VIP_QUERY).await;
+    let release = &search.releases[0];
+    let refused = books.grab(request(release.release_id.clone())).await;
+    let backed_off = books.grab(request(release.release_id.clone())).await;
+
+    assert_eq!(
+        release.book.as_deref(),
+        Some("Trust the Plan: The Rise of QAnon")
+    );
+    assert_eq!(release.author.as_deref(), Some("Will Sommer"));
+    assert_eq!(release.language.as_deref(), Some("ENG"));
+    assert!(!release.good_match);
+    assert!(release.notes.iter().any(|n| n.starts_with("VIP torrent")));
+    assert_eq!(refused.outcome, GrabOutcome::Unavailable);
+    assert_eq!(
+        refused.reason.as_deref(),
+        Some(
+            "the .torrent download answered HTTP 500; this is a VIP torrent, likely \
+             refused because MyAnonamouse lets only VIP members download those"
+        )
+    );
+    assert_eq!(backed_off.outcome, GrabOutcome::Unavailable);
+    assert_eq!(
+        backed_off.reason.as_deref(),
+        Some(
+            "Prowlarr search answered HTTP 400: Search failed due to all selected \
+             indexers being unavailable"
+        )
+    );
+    assert!(deluge.state().adds.is_empty());
+}

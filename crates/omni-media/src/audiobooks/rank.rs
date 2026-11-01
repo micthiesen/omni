@@ -1,9 +1,10 @@
 //! Ranks audiobook releases for Prologue.
 //!
 //! MyAnonamouse titles read `Title by Author [LANG / FORMAT]` (formats can be
-//! several, `MP3 M4B`). In order, a release ranks higher when it: matches
-//! every word of the query; has seeders; is in the preferred language; is
-//! unabridged; is m4b (one chaptered file, which Prologue plays best), then
+//! several, `MP3 M4B`), with ` [VIP]` appended by Prowlarr for VIP torrents.
+//! In order, a release ranks higher when it: matches every word of the query;
+//! has seeders; is in the preferred language; is unabridged; is not VIP
+//! (MyAnonamouse lets only VIP members download those); is m4b (one chaptered file, which Prologue plays best), then
 //! m4a/aac, then mp3, then other audio; has at least three seeders;
 //! is freeleech; and has more seeders. Ebook-only releases are dropped.
 
@@ -29,14 +30,16 @@ pub struct Assessment {
     /// Lowercase, best first.
     pub formats: Vec<String>,
     pub notes: Vec<String>,
-    /// Matches the query, is seeded, in the preferred language and unabridged.
+    /// Matches the query, is seeded, in the preferred language, unabridged
+    /// and not VIP.
     pub good_match: bool,
-    key: (u8, bool, u8, bool, u8, bool, bool, i64),
+    key: (u8, bool, u8, bool, bool, u8, bool, bool, i64),
 }
 
 static MAM_TITLE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r"^(?P<book>.+?) by (?P<author>.+?)\s*\[(?P<lang>[A-Za-z]{2,3})\s*/\s*(?P<fmt>[^\]]+)\]\s*$").ok()
+    Regex::new(r"^(?P<book>.+?) by (?P<author>.+?)\s*\[(?P<lang>[A-Za-z]{2,3})\s*/\s*(?P<fmt>[^\]]+)\](?:\s*\[VIP\])?\s*$").ok()
 });
+static VIP_SUFFIX: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"\[VIP\]\s*$").ok());
 static FORMAT_WORD: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(m4b|m4a|aac|mp3|flac|ogg|opus|wma|epub|mobi|azw3|pdf|cbz|cbr)\b").ok()
 });
@@ -110,6 +113,11 @@ fn language_name(code: &str) -> String {
     .to_owned()
 }
 
+/// Whether Prowlarr marked the release as a MyAnonamouse VIP torrent.
+pub fn is_vip(title: &str) -> bool {
+    VIP_SUFFIX.as_ref().is_some_and(|re| re.is_match(title))
+}
+
 /// `None` for a release that is not an audiobook (ebook formats only).
 pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Assessment> {
     let parsed = MAM_TITLE
@@ -164,6 +172,7 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
         Some(_) => 0,
     };
     let abridged = have.iter().any(|w| w == "abridged");
+    let vip = is_vip(&candidate.title);
     let best_format = formats.first().map_or(0, |f| format_rank(f));
 
     let mut notes = Vec::new();
@@ -184,6 +193,9 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
     if abridged {
         notes.push("abridged".to_owned());
     }
+    if vip {
+        notes.push("VIP torrent: MyAnonamouse lets only VIP members download it".to_owned());
+    }
     match seeders {
         0 => notes.push("no seeders: will not download".to_owned()),
         n if n < HEALTHY_SEEDERS => notes.push(format!("only {n} seeder(s): may be slow")),
@@ -197,7 +209,7 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
     }
 
     Some(Assessment {
-        good_match: relevance == 2 && seeders > 0 && language_score == 2 && !abridged,
+        good_match: relevance == 2 && seeders > 0 && language_score == 2 && !abridged && !vip,
         book,
         author,
         language: lang,
@@ -208,6 +220,7 @@ pub fn assess(query: &str, language: &str, candidate: &Candidate) -> Option<Asse
             seeders > 0,
             language_score,
             !abridged,
+            !vip,
             best_format,
             seeders >= HEALTHY_SEEDERS,
             candidate.freeleech,
@@ -302,6 +315,37 @@ mod tests {
                 &candidate("The Wager by David Grann [ENG / EPUB]", 9)
             )
             .is_none()
+        );
+    }
+
+    /// The live MyAnonamouse result for "Trust the Plan Will Sommer", which
+    /// Prowlarr suffixes with ` [VIP]`.
+    #[test]
+    fn parses_vip_titles_and_ranks_them_below_downloadable_releases() {
+        let title = "Trust the Plan: The Rise of QAnon and the Conspiracy That Unhinged \
+                     America by Will Sommer [ENG / M4B] [VIP]";
+        let a =
+            assess("Trust the Plan Will Sommer", "ENG", &candidate(title, 31)).expect("audiobook");
+        assert_eq!(
+            a.book.as_deref(),
+            Some("Trust the Plan: The Rise of QAnon and the Conspiracy That Unhinged America")
+        );
+        assert_eq!(a.author.as_deref(), Some("Will Sommer"));
+        assert_eq!(a.language.as_deref(), Some("ENG"));
+        assert_eq!(a.formats, ["m4b"]);
+        assert!(!a.good_match, "a VIP torrent is not recommended");
+        assert!(a.notes.iter().any(|n| n.starts_with("VIP torrent")));
+
+        let results = [
+            candidate("Off the Edge by Kelly Weill [ENG / M4B] [VIP]", 14),
+            candidate("Off the Edge by Kelly Weill [ENG / MP3]", 5),
+        ];
+        assert_eq!(
+            ranked("Off the Edge Kelly Weill", &results),
+            [
+                "Off the Edge by Kelly Weill [ENG / MP3]",
+                "Off the Edge by Kelly Weill [ENG / M4B] [VIP]",
+            ]
         );
     }
 }
