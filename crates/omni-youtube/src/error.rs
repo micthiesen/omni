@@ -61,7 +61,7 @@ impl ApiFailure {
     fn hint(&self) -> &'static str {
         match (self.kind(), self.reason.as_deref()) {
             (FailureKind::QuotaExceeded, _) => {
-                "The Google Cloud project's daily YouTube quota is used up; it resets at midnight Pacific time. Do not retry before then."
+                "A daily YouTube quota of the Google Cloud project is used up (search has its own bucket; other methods share one pool); it resets at midnight Pacific time. Do not retry this kind of request before then."
             }
             (FailureKind::RateLimited, _) => "Rate limited; retry in a minute.",
             (FailureKind::ApiDisabled, _) => {

@@ -46,8 +46,12 @@ pub const SCOPE: &str = "https://www.googleapis.com/auth/youtube";
 pub const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
-/// Google's default daily quota for a project.
-pub const DEFAULT_DAILY_LIMIT: u64 = 10_000;
+/// Google's default daily units for every method except `search.list` and
+/// `videos.insert`, which have their own buckets.
+pub const DEFAULT_DAILY_UNITS: u64 = 10_000;
+/// Google's default daily `search.list` calls (the Search Queries bucket).
+pub const DEFAULT_DAILY_SEARCHES: u64 = 100;
+const SEARCH_METHOD: &str = "search.list";
 /// YouTube's quota day starts at midnight Pacific time.
 const QUOTA_TZ: &str = "America/Los_Angeles";
 
@@ -72,9 +76,30 @@ pub const NOT_AVAILABLE: [&str; 4] = [
     "Transcripts or caption text",
 ];
 
-const COST_READ: u64 = 1;
-const COST_SEARCH: u64 = 100;
-const COST_WRITE: u64 = 50;
+/// Units a counted request takes from the shared 10,000-unit pool: reads 1,
+/// writes 50 (Google's table for every method Omni calls). `search.list`
+/// draws on its own bucket instead.
+fn pool_cost(method: &str) -> u64 {
+    if method == SEARCH_METHOD {
+        0
+    } else if method.ends_with(".insert")
+        || method.ends_with(".update")
+        || method.ends_with(".delete")
+    {
+        50
+    } else {
+        1
+    }
+}
+
+/// The pool units of a day's per-method counts. Derived from the counts, so
+/// rows written while search was costed at 100 units read correctly.
+pub fn pool_units(calls: &std::collections::BTreeMap<String, u64>) -> u64 {
+    calls
+        .iter()
+        .map(|(method, count)| pool_cost(method).saturating_mul(*count))
+        .fold(0, u64::saturating_add)
+}
 
 /// The OAuth client and callback, from `YOUTUBE_*`.
 #[derive(Clone, Debug)]
@@ -140,7 +165,6 @@ struct Req {
     method: Method,
     path: &'static str,
     name: &'static str,
-    cost: u64,
     query: Vec<(&'static str, String)>,
     body: Option<Value>,
 }
@@ -151,7 +175,6 @@ impl Req {
             method: Method::GET,
             path,
             name,
-            cost: COST_READ,
             query: Vec::new(),
             body: None,
         }
@@ -159,7 +182,6 @@ impl Req {
 
     fn write(method: Method, path: &'static str, name: &'static str) -> Self {
         Self {
-            cost: COST_WRITE,
             method,
             ..Self::get(path, name)
         }
@@ -679,7 +701,7 @@ impl Youtube {
             tracing::debug!(target: LOG, "YouTube {} failed: {error}", req.name);
         }
         let response = response.map_err(YoutubeError::Http)?;
-        self.count(req.name, req.cost).await;
+        self.count(req.name).await;
         if response.status.is_success() {
             if response.body.is_empty() {
                 return Ok(Value::Null);
@@ -697,14 +719,14 @@ impl Youtube {
         };
         let error = YoutubeError::Api(failure.clone());
         if error.is_quota() {
-            failure.quota_note = Some(self.quota_exceeded().await);
+            failure.quota_note = Some(self.quota_exceeded(req.name == SEARCH_METHOD).await);
             tracing::warn!(target: LOG, "YouTube daily quota exhausted ({})", req.name);
             return Err(YoutubeError::Api(failure));
         }
         Err(error)
     }
 
-    async fn count(&self, name: &'static str, cost: u64) {
+    async fn count(&self, name: &'static str) {
         let (day, _) = quota_day(self.now());
         let counted = self
             .inner
@@ -717,10 +739,11 @@ impl Youtube {
                         units: 0,
                         calls: Default::default(),
                         quota_exceeded_at: None,
+                        search_quota_exceeded_at: None,
                         extra: Extra::default(),
                     });
-                row.units = row.units.saturating_add(cost);
                 *row.calls.entry(name.to_owned()).or_default() += 1;
+                row.units = pool_units(&row.calls);
                 tx.upsert(
                     &row,
                     UpsertOpts {
@@ -735,20 +758,25 @@ impl Youtube {
         }
     }
 
-    /// Records the exhaustion and describes today's usage.
-    async fn quota_exceeded(&self) -> String {
+    /// Records the exhaustion of the search bucket or the shared pool and
+    /// describes what Omni itself sent today.
+    async fn quota_exceeded(&self, search: bool) -> String {
         let now = self.now();
         let (day, resets) = quota_day(now);
         let key = day.clone();
-        let units = self
+        let calls = self
             .inner
             .store
             .write(move |tx| {
                 let Some(mut row) = tx.get::<YoutubeQuotaData>(&key)? else {
-                    return Ok::<_, StoreError>(0);
+                    return Ok::<_, StoreError>(Default::default());
                 };
-                row.quota_exceeded_at = Some(now);
-                let units = row.units;
+                if search {
+                    row.search_quota_exceeded_at = Some(now);
+                } else {
+                    row.quota_exceeded_at = Some(now);
+                }
+                let calls = row.calls.clone();
                 tx.upsert(
                     &row,
                     UpsertOpts {
@@ -756,12 +784,23 @@ impl Youtube {
                         ..UpsertOpts::default()
                     },
                 )?;
-                Ok(units)
+                Ok(calls)
             })
             .await
-            .unwrap_or(0);
+            .unwrap_or_default();
+        let used = if search {
+            format!(
+                "the search bucket (default {DEFAULT_DAILY_SEARCHES} searches a day); Omni sent {} searches",
+                calls.get(SEARCH_METHOD).copied().unwrap_or(0)
+            )
+        } else {
+            format!(
+                "the shared pool (default {DEFAULT_DAILY_UNITS} units a day); Omni's requests came to about {} units",
+                pool_units(&calls)
+            )
+        };
         format!(
-            "Omni estimates it used {units} of the default {DEFAULT_DAILY_LIMIT} units on {day} (Pacific); quota resets at {}.",
+            "Exhausted: {used} on {day} (Pacific). Omni counts only its own requests; other apps of the same Google Cloud project also count. Quota resets at {}.",
             iso(resets)
         )
     }
@@ -774,13 +813,17 @@ impl Youtube {
             .store
             .read(move |tx| tx.get::<YoutubeQuotaData>(&key))
             .await?;
+        let calls = row.as_ref().map(|r| r.calls.clone()).unwrap_or_default();
         Ok(QuotaStatus {
             day,
-            estimated_units_used: row.as_ref().map_or(0, |r| r.units),
-            default_daily_limit: DEFAULT_DAILY_LIMIT,
+            estimated_units_used: pool_units(&calls),
+            default_daily_units: DEFAULT_DAILY_UNITS,
+            search_calls: calls.get(SEARCH_METHOD).copied().unwrap_or(0),
+            default_daily_searches: DEFAULT_DAILY_SEARCHES,
             resets_at: iso(resets),
-            calls: row.as_ref().map(|r| r.calls.clone()).unwrap_or_default(),
-            quota_exceeded_at: row.and_then(|r| r.quota_exceeded_at).map(iso),
+            calls,
+            quota_exceeded_at: row.as_ref().and_then(|r| r.quota_exceeded_at).map(iso),
+            search_quota_exceeded_at: row.and_then(|r| r.search_quota_exceeded_at).map(iso),
         })
     }
 
@@ -1057,10 +1100,9 @@ impl Youtube {
         if params.kind == SearchType::Video {
             req = req.q_opt("videoDuration", params.duration);
         }
-        req.cost = COST_SEARCH;
         let list: ListResponse<SearchRes> = decode(req.name, self.send(&req).await?)?;
         let mut results: Vec<_> = list.items.iter().filter_map(SearchRes::to_model).collect();
-        let mut units = COST_SEARCH;
+        let mut units = 0;
         let video_ids: Vec<String> = results
             .iter()
             .filter(|r| r.kind == SearchType::Video)
@@ -1072,7 +1114,7 @@ impl Youtube {
                 .await
             {
                 Ok(details) => {
-                    units += COST_READ;
+                    units += pool_cost("videos.list");
                     for result in &mut results {
                         if let Some(video) = details.iter().find(|v| v.id == result.id) {
                             result.duration_seconds = video.duration_seconds();
@@ -1091,7 +1133,8 @@ impl Youtube {
             results,
             next_page_token: list.next_page_token,
             total_results: list.page_info.and_then(|p| p.total_results),
-            quota_units: units,
+            search_calls: 1,
+            pool_units: units,
         })
     }
 
@@ -1780,5 +1823,42 @@ mod tests {
         let (day, resets) = quota_day(1_772_436_600_000);
         assert_eq!(day, "2026-03-01");
         assert_eq!(iso(resets), "2026-03-02T08:00:00Z");
+    }
+
+    #[test]
+    fn the_quota_day_follows_daylight_saving() {
+        // Daylight saving ends 2026-11-01: that day starts at 07:00Z (PDT)
+        // and ends at 08:00Z on November 2 (PST), 25 hours later.
+        let ms = |t: &str| t.parse::<jiff::Timestamp>().unwrap().as_millisecond();
+        let (day, resets) = quota_day(ms("2026-11-01T06:59:59Z"));
+        assert_eq!(
+            (day.as_str(), iso(resets).as_str()),
+            ("2026-10-31", "2026-11-01T07:00:00Z")
+        );
+        let (day, resets) = quota_day(ms("2026-11-01T07:00:00Z"));
+        assert_eq!(
+            (day.as_str(), iso(resets).as_str()),
+            ("2026-11-01", "2026-11-02T08:00:00Z")
+        );
+        // Daylight saving starts 2026-03-08: a 23-hour day.
+        let (day, resets) = quota_day(ms("2026-03-08T12:00:00Z"));
+        assert_eq!(
+            (day.as_str(), iso(resets).as_str()),
+            ("2026-03-08", "2026-03-09T07:00:00Z")
+        );
+    }
+
+    #[test]
+    fn searches_draw_on_their_own_bucket_not_the_unit_pool() {
+        let calls: std::collections::BTreeMap<String, u64> = [
+            ("search.list", 3),
+            ("videos.list", 2),
+            ("playlists.insert", 1),
+            ("playlistItems.delete", 2),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+        assert_eq!(pool_units(&calls), 2 + 50 + 100);
     }
 }

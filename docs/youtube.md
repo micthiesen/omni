@@ -77,14 +77,30 @@ the row. To disconnect, remove Omni at https://myaccount.google.com/connections.
 
 ## Quota
 
-The project's default quota is 10,000 units per day, resetting at midnight
-Pacific. Reads cost 1, writes 50, `search.list` 100. Omni records an estimate
-per Pacific day and method (`youtube-quota`, kept eight days) for every request
-that got a response, and `youtube_status` shows it. A `quotaExceeded` answer
-becomes a `[quota_exceeded]` error with the day's estimate and reset time;
-other apps using the same project also count against the real quota, which
-only the Cloud console shows. A disabled API is `[api_disabled]`, rate limits
-`[rate_limited]`.
+Google's default allocation per project and day
+([quota costs](https://developers.google.com/youtube/v3/determine_quota_cost),
+checked 2026-11-01): 100 `search.list` calls in their own Search Queries
+bucket (1 unit each there), 100 `videos.insert` calls in theirs (unused here),
+and 10,000 units shared by every other method: lists cost 1, inserts, updates
+and deletes 50, and every request, invalid ones included, at least 1. Quotas
+reset at midnight Pacific time, so a quota day is 23 or 25 hours long when
+daylight saving starts or ends (`service::quota_day`).
+
+Omni counts every request of its own that got a response, per Pacific day and
+method (`youtube-quota`, kept eight days), and `youtube_status` derives the
+search calls and the pool units from those counts. Rows written before
+2026-11-01 stored searches as 100 units in `units`; deriving from the counts
+reads them correctly. These are estimates of what Omni sent, not the
+project's usage: other apps of the same project count too, and only the Cloud
+console shows the real figures. A `quotaExceeded` answer becomes a
+`[quota_exceeded]` error naming the bucket (search or the shared pool),
+Omni's count for it and the reset time. A disabled API is `[api_disabled]`,
+rate limits `[rate_limited]`.
+
+`playlists.list` reports a `totalResults` that can exceed what it returns
+across all pages (9 reported, 6 returned with no further page for the owner on
+2026-11-01). `youtube_playlists_list` passes it through as YouTube's figure;
+the listed playlists are the ones the API serves.
 
 ## Writes
 

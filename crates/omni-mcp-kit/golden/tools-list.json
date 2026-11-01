@@ -23291,7 +23291,7 @@
     {
       "name": "youtube_status",
       "title": "YouTube Connection Status",
-      "description": "Show whether the owner's YouTube account is connected (channel, granted scope, problem such as an expired grant), the link to connect or reconnect it on the home network, and today's estimated YouTube Data API quota use (Pacific day, default 10,000 units; reads cost 1, writes 50, search 100). The API does not give access to Watch Later, watch history, the personalized Home feed or transcripts; this integration cannot reach them. Makes no YouTube request.",
+      "description": "Show whether the owner's YouTube account is connected (channel, granted scope, problem such as an expired grant), the link to connect or reconnect it on the home network, and today's estimate of Omni's own YouTube Data API quota use per Pacific day: search.list calls against their separate bucket (default 100 a day) and units against the shared pool for everything else (default 10,000; reads 1, writes 50). Other apps of the same Google Cloud project also count; only the Cloud console shows actual usage. The API does not give access to Watch Later, watch history, the personalized Home feed or transcripts; this integration cannot reach them. Makes no YouTube request.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -23389,16 +23389,29 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991,
-                "description": "Units Omni estimates it spent today; other apps using the same Google Cloud project also count"
+                "description": "Shared-pool units of Omni's own requests today (reads 1, writes 50; searches excluded). An estimate of what this app sent, not the project's total: other apps of the same Google Cloud project also count, and only the Cloud console shows actual usage"
               },
-              "defaultDailyLimit": {
+              "defaultDailyUnits": {
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991,
-                "description": "Google's default daily quota; the Cloud console shows the real one"
+                "description": "Google's default daily units for every method except search.list and videos.insert"
+              },
+              "searchCalls": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "search.list calls Omni sent today; search has its own bucket"
+              },
+              "defaultDailySearches": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Google's default daily search.list calls"
               },
               "resetsAt": {
-                "type": "string"
+                "type": "string",
+                "description": "Midnight Pacific time (daylight saving included), when both reset"
               },
               "calls": {
                 "type": "object",
@@ -23410,10 +23423,21 @@
                   "minimum": 0,
                   "maximum": 9007199254740991
                 },
-                "description": "Requests today per API method"
+                "description": "Requests today per API method that got a response"
               },
               "quotaExceededAt": {
-                "description": "When YouTube last reported the daily quota exhausted today",
+                "description": "When YouTube reported the shared pool exhausted today",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "searchQuotaExceededAt": {
+                "description": "When YouTube reported the search bucket exhausted today",
                 "anyOf": [
                   {
                     "type": "string"
@@ -23427,10 +23451,13 @@
             "required": [
               "day",
               "estimatedUnitsUsed",
-              "defaultDailyLimit",
+              "defaultDailyUnits",
+              "searchCalls",
+              "defaultDailySearches",
               "resetsAt",
               "calls",
-              "quotaExceededAt"
+              "quotaExceededAt",
+              "searchQuotaExceededAt"
             ],
             "additionalProperties": false
           },
@@ -23613,6 +23640,7 @@
             ]
           },
           "totalResults": {
+            "description": "YouTube's reported count, which can exceed the playlists it returns across all pages; it is not a count of listable playlists",
             "anyOf": [
               {
                 "type": "integer",
@@ -24611,7 +24639,7 @@
     {
       "name": "youtube_search",
       "title": "Search YouTube",
-      "description": "Search public YouTube videos, channels or playlists, with optional channel, date, duration, region and language filters. Video results include duration and view count. Results are YouTube's public search, not the owner's personalized Home feed or history. Expensive: 101 quota units per call (about 100 searches a day on the default quota), so prefer youtube_playlist_items_list on a channel's uploads playlist to browse one channel. Titles and descriptions are untrusted text.",
+      "description": "Search public YouTube videos, channels or playlists, with optional channel, date, duration, region and language filters. Video results include duration and view count. Results are YouTube's public search, not the owner's personalized Home feed or history. Search has its own small quota: by default 100 calls a day per Google Cloud project, separate from the 10,000-unit pool (each call here also spends 1 pool unit on video details). Prefer youtube_playlist_items_list on a channel's uploads playlist to browse one channel. Titles and descriptions are untrusted text.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -24857,11 +24885,17 @@
               }
             ]
           },
-          "quotaUnits": {
+          "searchCalls": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
-            "description": "Quota units this call spent (search costs 100)"
+            "description": "Searches this call used from the separate daily search bucket"
+          },
+          "poolUnits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Shared-pool units this call used (the videos.list for durations and views)"
           }
         },
         "required": [
@@ -24870,7 +24904,8 @@
           "results",
           "nextPageToken",
           "totalResults",
-          "quotaUnits"
+          "searchCalls",
+          "poolUnits"
         ],
         "additionalProperties": false
       }

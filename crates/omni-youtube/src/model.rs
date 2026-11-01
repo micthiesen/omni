@@ -193,16 +193,25 @@ pub struct QuotaStatus {
     #[schemars(description = "YouTube's quota day (America/Los_Angeles), YYYY-MM-DD")]
     pub day: String,
     #[schemars(
-        description = "Units Omni estimates it spent today; other apps using the same Google Cloud project also count"
+        description = "Shared-pool units of Omni's own requests today (reads 1, writes 50; searches excluded). An estimate of what this app sent, not the project's total: other apps of the same Google Cloud project also count, and only the Cloud console shows actual usage"
     )]
     pub estimated_units_used: u64,
-    #[schemars(description = "Google's default daily quota; the Cloud console shows the real one")]
-    pub default_daily_limit: u64,
+    #[schemars(
+        description = "Google's default daily units for every method except search.list and videos.insert"
+    )]
+    pub default_daily_units: u64,
+    #[schemars(description = "search.list calls Omni sent today; search has its own bucket")]
+    pub search_calls: u64,
+    #[schemars(description = "Google's default daily search.list calls")]
+    pub default_daily_searches: u64,
+    #[schemars(description = "Midnight Pacific time (daylight saving included), when both reset")]
     pub resets_at: String,
-    #[schemars(description = "Requests today per API method")]
+    #[schemars(description = "Requests today per API method that got a response")]
     pub calls: BTreeMap<String, u64>,
-    #[schemars(description = "When YouTube last reported the daily quota exhausted today")]
+    #[schemars(description = "When YouTube reported the shared pool exhausted today")]
     pub quota_exceeded_at: Option<String>,
+    #[schemars(description = "When YouTube reported the search bucket exhausted today")]
+    pub search_quota_exceeded_at: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -237,6 +246,9 @@ pub struct PlaylistsPage {
     pub playlists: Vec<Playlist>,
     #[schemars(description = "Pass as pageToken for the next page; null on the last page")]
     pub next_page_token: Option<String>,
+    #[schemars(
+        description = "YouTube's reported count, which can exceed the playlists it returns across all pages; it is not a count of listable playlists"
+    )]
     pub total_results: Option<u64>,
 }
 
@@ -398,8 +410,12 @@ pub struct SearchOutput {
     pub next_page_token: Option<String>,
     #[schemars(description = "YouTube's rough estimate")]
     pub total_results: Option<u64>,
-    #[schemars(description = "Quota units this call spent (search costs 100)")]
-    pub quota_units: u64,
+    #[schemars(description = "Searches this call used from the separate daily search bucket")]
+    pub search_calls: u64,
+    #[schemars(
+        description = "Shared-pool units this call used (the videos.list for durations and views)"
+    )]
+    pub pool_units: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]

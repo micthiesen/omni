@@ -288,13 +288,90 @@ async fn an_exhausted_quota_is_reported_with_todays_usage() {
     let text = error.to_string();
     assert!(text.contains("midnight Pacific"), "{text}");
     assert!(
-        text.contains("estimates it used 1 of the default 10000"),
+        text.contains(
+            "the shared pool (default 10000 units a day); Omni's requests came to about 1 units"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("other apps of the same Google Cloud project also count"),
         "{text}"
     );
     let quota = f.youtube.status().await.unwrap().quota;
     assert_eq!(quota.estimated_units_used, 1);
     assert_eq!(quota.calls.get("playlists.list"), Some(&1));
     assert!(quota.quota_exceeded_at.is_some());
+    assert!(quota.search_quota_exceeded_at.is_none());
+}
+
+#[tokio::test]
+async fn an_exhausted_search_bucket_is_reported_separately_from_the_pool() {
+    let f = connected(SideEffectMode::Live).await;
+    Mock::given(method("GET"))
+        .and(path("/youtube/v3/search"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+            "error": {"code": 403, "message": "quota", "errors": [{"reason": "quotaExceeded"}]}
+        })))
+        .mount(&f.server)
+        .await;
+    let error = f
+        .youtube
+        .search(omni_youtube::service::SearchParams {
+            query: "x".into(),
+            kind: omni_youtube::model::SearchType::Video,
+            order: None,
+            channel_id: None,
+            published_after: None,
+            published_before: None,
+            duration: None,
+            region_code: None,
+            relevance_language: None,
+            limit: 1,
+            page_token: None,
+        })
+        .await
+        .unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains("the search bucket (default 100 searches a day); Omni sent 1 searches"),
+        "{text}"
+    );
+    let quota = f.youtube.quota_status().await.unwrap();
+    assert_eq!(quota.search_calls, 1);
+    assert_eq!(quota.estimated_units_used, 0);
+    assert!(quota.search_quota_exceeded_at.is_some());
+    assert!(quota.quota_exceeded_at.is_none());
+}
+
+#[tokio::test]
+async fn rows_counted_under_the_old_search_cost_read_with_the_bucket_model() {
+    let f = connected(SideEffectMode::Live).await;
+    let (day, _) = omni_youtube::service::quota_day(TEST_EPOCH_MS);
+    let row = omni_youtube::records::YoutubeQuotaData {
+        day,
+        units: 106,
+        calls: [
+            ("search.list", 1),
+            ("videos.list", 2),
+            ("channels.list", 2),
+            ("playlists.list", 1),
+            ("playlistItems.list", 1),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect(),
+        quota_exceeded_at: None,
+        search_quota_exceeded_at: None,
+        extra: Extra::default(),
+    };
+    f.store
+        .store
+        .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+        .await
+        .unwrap();
+    let quota = f.youtube.quota_status().await.unwrap();
+    assert_eq!(quota.estimated_units_used, 6);
+    assert_eq!(quota.search_calls, 1);
 }
 
 #[tokio::test]
@@ -572,11 +649,9 @@ async fn search_unescapes_titles_adds_video_details_and_counts_quota() {
     assert_eq!(out.results[0].title, "Rock & Roll");
     assert_eq!(out.results[0].duration_seconds, Some(242));
     assert_eq!(out.results[0].view_count, Some(42));
-    assert_eq!(out.quota_units, 101);
-    assert_eq!(
-        f.youtube.quota_status().await.unwrap().estimated_units_used,
-        101
-    );
+    assert_eq!((out.search_calls, out.pool_units), (1, 1));
+    let quota = f.youtube.quota_status().await.unwrap();
+    assert_eq!((quota.search_calls, quota.estimated_units_used), (1, 1));
 }
 
 #[tokio::test]

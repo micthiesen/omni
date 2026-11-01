@@ -73,12 +73,19 @@ impl Entity for YoutubeOauthStateData {
 pub struct YoutubeQuotaData {
     /// `YYYY-MM-DD` in America/Los_Angeles.
     pub day: String,
+    /// Shared-pool units, recomputed from `calls` on every write (rows from
+    /// before 2026-11-01 counted each search as 100 here; readers derive
+    /// the figures from `calls` instead).
     pub units: u64,
     /// Requests per API method, such as `search.list`.
     #[serde(default)]
     pub calls: BTreeMap<String, u64>,
+    /// When YouTube reported the shared pool exhausted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota_exceeded_at: Option<i64>,
+    /// When YouTube reported the search bucket exhausted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_quota_exceeded_at: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
