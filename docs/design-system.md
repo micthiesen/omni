@@ -326,13 +326,16 @@ The active tab gets a Signal 2 px top tick and `--text`; inactive tabs are
   field, the phone search button and the Go tab.
 - Sources, all from data the SPA already loads: routes; streamers from the
   snapshot (live first, with counts); tasks from the snapshot. No new endpoint.
-- Groups: Live now, Pages, Streamers, Tasks. Choosing a task opens it in
+- Groups: Live now, Pages, Streamers, Tasks. With no query only Pages show;
+  the other groups appear as matches once you type. Choosing a task opens it in
   the Operations inspector (`/operations#inspect=<Task>`); the palette never runs
   anything directly.
 - `role="dialog"` with a `listbox`; arrow keys move `aria-selected`; Enter opens;
   Escape closes and restores focus. Empty state "No matches for "…"".
-- Desktop: centered 640 px modal at 15vh. Phone: full-height sheet with the input
-  pinned at the top.
+- Desktop: centered 640 px modal at 15vh with the input focused. Phone:
+  full-height sheet with the input pinned at the top; opening it focuses the
+  close button, not the input, so the keyboard stays down until the input is
+  tapped.
 
 ### 5.5 Keyboard *(from C)*
 

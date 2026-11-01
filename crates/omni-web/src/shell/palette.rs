@@ -8,7 +8,7 @@ use omni_api::common::encode_uri_component;
 use omni_api::streamers::StreamerView;
 use omni_web_kit::components::streamers::streamer_path;
 use omni_web_kit::components::{Glyph, Icon, IconSize};
-use omni_web_kit::hooks::use_modal;
+use omni_web_kit::hooks::{use_is_phone, use_modal};
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::navigate;
 use omni_web_kit::utils::format::{format_compact_number, task_label};
@@ -43,8 +43,8 @@ pub fn matches(entry: &Entry, query: &str) -> bool {
         .all(|word| haystack.contains(word))
 }
 
-/// Filters and orders entries by group. With no query only live channels
-/// and pages show.
+/// Filters and orders entries by group. With no query only pages show; live
+/// channels, streamers and tasks need a query.
 pub fn filter_entries(entries: &[Entry], query: &str) -> Vec<Entry> {
     let query = query.trim();
     GROUP_ORDER
@@ -55,7 +55,7 @@ pub fn filter_entries(entries: &[Entry], query: &str) -> Vec<Entry> {
                 .filter(move |e| e.group == *group)
                 .filter(|e| {
                     if query.is_empty() {
-                        matches!(e.group, "Live now" | "Pages")
+                        e.group == "Pages"
                     } else {
                         matches(e, query)
                     }
@@ -97,7 +97,7 @@ fn page_entries() -> Vec<Entry> {
         Entry {
             group: "Pages",
             label: "Manage streamers".to_owned(),
-            hint: Some("Live · add, edit, reorder".to_owned()),
+            hint: Some("Live".to_owned()),
             href: STREAMER_CONFIG_HREF.to_owned(),
             icon: Icon::Pencil,
         },
@@ -112,8 +112,13 @@ pub fn Palette(on_close: Callback<()>) -> impl IntoView {
     let selected = RwSignal::new(0usize);
     let input = NodeRef::<Input>::new();
     let panel = use_modal(move || on_close.run(()));
+    let phone = use_is_phone();
+    // On a phone, focusing the input would raise the keyboard over the list;
+    // `use_modal` focuses the close button there instead.
     Effect::new(move |_| {
-        if let Some(input) = input.get() {
+        if let Some(input) = input.get()
+            && !phone.get_untracked()
+        {
             let _ = input.focus();
         }
     });
@@ -280,7 +285,7 @@ pub fn Palette(on_close: Callback<()>) -> impl IntoView {
                     />
                     <button
                         type="button"
-                        class="btn ghost icon-only only-phone palette-close-btn"
+                        class="btn ghost icon-only only-phone palette-close"
                         aria-label="Close"
                         on:click=move |_| on_close.run(())
                     >
@@ -315,17 +320,23 @@ mod tests {
     }
 
     #[test]
-    fn empty_query_shows_live_and_pages_in_group_order() {
+    fn empty_query_shows_only_pages_and_search_still_finds_live_channels() {
         let entries = [
             entry("Tasks", "Live check"),
             entry("Pages", "Home"),
             entry("Live now", "Hutch"),
+            entry("Streamers", "Destiny"),
         ];
         let shown: Vec<_> = filter_entries(&entries, "")
             .into_iter()
             .map(|e| e.label)
             .collect();
-        assert_eq!(shown, ["Hutch", "Home"]);
+        assert_eq!(shown, ["Home"]);
+        let shown: Vec<_> = filter_entries(&entries, "hutch")
+            .into_iter()
+            .map(|e| e.label)
+            .collect();
+        assert_eq!(shown, ["Hutch"]);
         let shown: Vec<_> = filter_entries(&entries, "live CHE")
             .into_iter()
             .map(|e| e.label)
