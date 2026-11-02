@@ -120,6 +120,31 @@ fn parses_live_subscription_queue_and_playback_state_snapshots() {
 }
 
 #[test]
+fn an_episode_with_a_malformed_link_still_decodes() {
+    let episode: omni_podcasts::castro::protocol::CastroEpisode = decode(json!({
+        "guid": "guid-1",
+        "public_id": EPISODE_ID,
+        "short_id": "s",
+        "title": "Episode",
+        "media_size": null,
+        "media_url": "https://cdn.example.com/ep.mp3",
+        "artwork_url": null,
+        "author_name": null,
+        "link_url": "www.example.com/episode without scheme",
+        "duration": {"seconds": 100.0},
+        "description": "",
+        "published_at": "2026-07-16T17:30:00.000Z",
+        "predecessor_public_id": null,
+        "season_number": null,
+        "episode_number": null,
+        "episode_type": "full",
+        "people": [],
+    }))
+    .unwrap();
+    assert_eq!(episode.guid, "guid-1");
+}
+
+#[test]
 fn parses_captured_podcast_and_episode_search_results() {
     let shows: Vec<CastroPodcastSearchResult> = decode(json!([{
         "artwork_url": {

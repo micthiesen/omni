@@ -377,7 +377,9 @@ impl Validate for CastroEpisode {
         }
         check(is_url(&self.media_url), "media_url")?;
         check_opt_url(self.artwork_url.as_deref(), "artwork_url")?;
-        check_opt_url(self.link_url.as_deref(), "link_url")?;
+        // `link_url` is the feed's free-form item link and Omni never follows
+        // it; one malformed value used to fail the whole podcast, so its
+        // episodes could not be matched or queued.
         if let Some(predecessor) = &self.predecessor_public_id {
             check(is_uuid(predecessor), "predecessor_public_id")?;
         }
