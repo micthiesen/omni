@@ -9,6 +9,7 @@ use std::sync::Arc;
 use omni_api::podcasts::{js_number, js_number_opt};
 use omni_core::clock::SharedClock;
 use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool};
+use omni_runtime::chat_record::{ChatRecordError, ChatRecordView, DeliveryReport, origin_label};
 use omni_store::Store;
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +22,16 @@ use crate::persistence::{
     get_all_podcast_recommendations, get_podcast_recommendation,
     set_podcast_recommendation_feedback,
 };
+use crate::pipeline::feedback_url;
+use crate::record::{
+    self, ClientMapping, DeliveryOutcome, EpisodeRef, PrepareInput, PrepareResult, Preview,
+    RecordDeps,
+};
 use crate::reflection::store::{get_all_podcast_taste_evidence, get_latest_podcast_taste_profile};
 use crate::reflection::types::{
     PodcastTasteClaim, PodcastTasteEvidenceKind, PodcastTasteProfileData,
 };
+use crate::sources::ShowDirectory;
 
 const DAY_MS: i64 = 86_400_000;
 
@@ -34,6 +41,10 @@ pub struct McpState {
     pub store: Store,
     pub clock: SharedClock,
     pub accounts: Arc<dyn AccountProvider>,
+    /// Show feeds, for exact episode identity.
+    pub directory: Arc<dyn ShowDirectory>,
+    /// `RECS_PUBLIC_URL`, for feedback links.
+    pub public_url: String,
 }
 
 fn require_account(state: &McpState) -> Result<Arc<dyn PodcastAccount>, ToolError> {
@@ -384,6 +395,8 @@ struct McpRecommendation {
     feedback: Option<PodcastFeedback>,
     feedback_at: Option<i64>,
     feedback_note: Option<String>,
+    origin: &'static str,
+    chat: Option<ChatRecordView>,
 }
 
 fn serialize_mcp_recommendation(rec: &PodcastRecommendationData) -> McpRecommendation {
@@ -413,6 +426,8 @@ fn serialize_mcp_recommendation(rec: &PodcastRecommendationData) -> McpRecommend
         feedback: rec.feedback,
         feedback_at: rec.feedback_at,
         feedback_note: rec.feedback_note.clone(),
+        origin: origin_label(rec.origin),
+        chat: rec.chat_record.as_ref().map(ChatRecordView::from),
     }
 }
 
@@ -655,7 +670,317 @@ async fn taste_read(state: McpState, input: TasteReadInput) -> Result<TasteReadO
     }
 }
 
-/// The seven podcast tools, in serving order.
+fn yes() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum RecordInput {
+    #[serde(rename_all = "camelCase")]
+    Prepare {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        idempotency_key: String,
+        feed_url: String,
+        episode_guid: String,
+        #[serde(default)]
+        enclosure_url: Option<String>,
+        #[serde(default)]
+        itunes_id: Option<i64>,
+        show_title: String,
+        why_for_user: String,
+        #[serde(default)]
+        caveats: Vec<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Finish {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        recommendation_id: String,
+        expected_revision: i64,
+        delivery: DeliveryReport,
+    },
+    #[serde(rename_all = "camelCase")]
+    Withdraw {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        recommendation_id: String,
+        expected_revision: i64,
+        reason: String,
+        not_presented: bool,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordIdentityView {
+    episode_id: String,
+    show_id: String,
+    show_title: String,
+    episode_title: String,
+    feed_url: String,
+    itunes_id: Option<i64>,
+    episode_guid: String,
+    media_url: Option<String>,
+    episode_url: Option<String>,
+    published_at: i64,
+    duration_minutes: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct RecordExclusionView {
+    code: &'static str,
+    detail: String,
+}
+
+#[derive(Serialize)]
+struct RecordUnavailableView {
+    source: &'static str,
+    reason: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClientMappingView {
+    status: &'static str,
+    client_episode_id: Option<String>,
+    matched_by: Option<crate::account::EpisodeMatchKind>,
+    reason: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnqueueArgumentsView {
+    feed_url: String,
+    itunes_id: Option<i64>,
+    episode_guid: String,
+    media_url: Option<String>,
+    show_title: String,
+    episode_title: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordOutput {
+    action: &'static str,
+    dry_run: bool,
+    result: &'static str,
+    identity: Option<RecordIdentityView>,
+    exclusions: Vec<RecordExclusionView>,
+    unavailable: Vec<RecordUnavailableView>,
+    client: Option<ClientMappingView>,
+    enqueue: Option<EnqueueArgumentsView>,
+    recommendation: Option<McpRecommendation>,
+    feedback_url: Option<String>,
+}
+
+fn client_view(mapping: &ClientMapping) -> ClientMappingView {
+    let view = |status, reason: &str| ClientMappingView {
+        status,
+        client_episode_id: None,
+        matched_by: None,
+        reason: Some(reason.to_owned()),
+    };
+    match mapping {
+        ClientMapping::Verified {
+            client_episode_id,
+            matched_by,
+        } => ClientMappingView {
+            status: "verified",
+            client_episode_id: Some(client_episode_id.clone()),
+            matched_by: Some(*matched_by),
+            reason: None,
+        },
+        ClientMapping::Unverified { reason } => view("unverified", reason),
+        ClientMapping::Unsupported { reason } => view("unsupported", reason),
+        ClientMapping::Unavailable { reason } => view("unavailable", reason),
+    }
+}
+
+fn record_output(
+    state: &McpState,
+    action: &'static str,
+    dry_run: bool,
+    result: &'static str,
+    preview: Option<&Preview>,
+    rec: Option<&PodcastRecommendationData>,
+) -> RecordOutput {
+    let identity = preview
+        .and_then(|p| p.identity.as_ref())
+        .map(|i| RecordIdentityView {
+            episode_id: i.episode_id.clone(),
+            show_id: i.show_id.clone(),
+            show_title: i.show_title.clone(),
+            episode_title: i.episode_title.clone(),
+            feed_url: i.feed_url.clone(),
+            itunes_id: i.itunes_id,
+            episode_guid: i.episode_guid.clone(),
+            media_url: i.media_url.clone(),
+            episode_url: i.episode_url.clone(),
+            published_at: i.published_at,
+            duration_minutes: i.duration_minutes,
+        });
+    RecordOutput {
+        action,
+        dry_run,
+        result,
+        identity,
+        exclusions: preview.map_or_else(Vec::new, |p| {
+            p.exclusions
+                .iter()
+                .map(|e| RecordExclusionView {
+                    code: e.code,
+                    detail: e.detail.clone(),
+                })
+                .collect()
+        }),
+        unavailable: preview.map_or_else(Vec::new, |p| {
+            p.unavailable
+                .iter()
+                .map(|u| RecordUnavailableView {
+                    source: u.source,
+                    reason: u.reason.clone(),
+                })
+                .collect()
+        }),
+        client: preview.map(|p| client_view(&p.client)),
+        enqueue: preview
+            .and_then(Preview::enqueue_request)
+            .map(|r| EnqueueArgumentsView {
+                feed_url: r.feed_url,
+                itunes_id: r.itunes_id,
+                episode_guid: r.episode_guid,
+                media_url: r.media_url,
+                show_title: r.show_title,
+                episode_title: r.episode_title,
+            }),
+        recommendation: rec.map(serialize_mcp_recommendation),
+        feedback_url: rec.map(|r| feedback_url(&state.public_url, &r.recommendation_id)),
+    }
+}
+
+fn record_error(error: &record::RecordError) -> ToolError {
+    match error {
+        record::RecordError::Chat(ChatRecordError::Input(message)) => ToolError::input(message),
+        record::RecordError::Store(e) => ToolError::execute_from(e),
+        other => ToolError::execute(other.to_string()),
+    }
+}
+
+fn delivery_output(
+    state: &McpState,
+    action: &'static str,
+    dry_run: bool,
+    outcome: &DeliveryOutcome,
+) -> RecordOutput {
+    let result = match (outcome.changed, dry_run) {
+        (false, _) => "unchanged",
+        (true, true) => "would_change",
+        (true, false) => "changed",
+    };
+    record_output(state, action, dry_run, result, None, Some(&outcome.record))
+}
+
+async fn recommendation_record(
+    state: McpState,
+    input: RecordInput,
+) -> Result<RecordOutput, ToolError> {
+    let now = state.clock.now_ms();
+    match input {
+        RecordInput::Prepare {
+            dry_run,
+            idempotency_key,
+            feed_url,
+            episode_guid,
+            enclosure_url,
+            itunes_id,
+            show_title,
+            why_for_user,
+            caveats,
+        } => {
+            let deps = RecordDeps {
+                store: &state.store,
+                accounts: state.accounts.as_ref(),
+                directory: state.directory.as_ref(),
+                now,
+            };
+            let result = record::prepare(
+                &deps,
+                &PrepareInput {
+                    idempotency_key,
+                    episode: EpisodeRef {
+                        feed_url,
+                        episode_guid,
+                        enclosure_url,
+                        itunes_id,
+                        show_title,
+                    },
+                    why_for_user,
+                    caveats,
+                    dry_run,
+                },
+            )
+            .await
+            .map_err(|e| record_error(&e))?;
+            let out =
+                |result, preview: Option<&Preview>, rec: Option<&PodcastRecommendationData>| {
+                    record_output(&state, "prepare", dry_run, result, preview, rec)
+                };
+            Ok(match &result {
+                PrepareResult::Replayed(rec) => out("replayed", None, Some(rec)),
+                PrepareResult::Unavailable(p) => out("unavailable", Some(p), None),
+                PrepareResult::Ineligible(p) => out("ineligible", Some(p), None),
+                PrepareResult::Eligible(p) => out("eligible", Some(p), None),
+                PrepareResult::Reserved(rec, p) => out("reserved", Some(p), Some(rec)),
+            })
+        }
+        RecordInput::Finish {
+            dry_run,
+            recommendation_id,
+            expected_revision,
+            delivery,
+        } => {
+            let outcome = record::finish(
+                &state.store,
+                now,
+                &recommendation_id,
+                expected_revision,
+                &delivery,
+                dry_run,
+            )
+            .await
+            .map_err(|e| record_error(&e))?;
+            Ok(delivery_output(&state, "finish", dry_run, &outcome))
+        }
+        RecordInput::Withdraw {
+            dry_run,
+            recommendation_id,
+            expected_revision,
+            reason,
+            not_presented,
+        } => {
+            if !not_presented {
+                return Err(ToolError::input(
+                    "notPresented must be true: only a reservation that was never presented can be withdrawn",
+                ));
+            }
+            let outcome = record::withdraw(
+                &state.store,
+                now,
+                &recommendation_id,
+                expected_revision,
+                &reason,
+                dry_run,
+            )
+            .await
+            .map_err(|e| record_error(&e))?;
+            Ok(delivery_output(&state, "withdraw", dry_run, &outcome))
+        }
+    }
+}
+
+/// The eight podcast tools, in serving order.
 pub fn tools(state: McpState) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = state;
     Ok(vec![
@@ -682,6 +1007,10 @@ pub fn tools(state: McpState) -> Result<Vec<McpTool>, ToolMetaError> {
         typed_tool(&defs::PODCAST_RECOMMENDATION_FEEDBACK, {
             let s = s.clone();
             move |input: RecommendationFeedbackInput, _cx| recommendation_feedback(s.clone(), input)
+        })?,
+        typed_tool(&defs::PODCAST_RECOMMENDATION_RECORD, {
+            let s = s.clone();
+            move |input: RecordInput, _cx| recommendation_record(s.clone(), input)
         })?,
         typed_tool(
             &defs::PODCAST_TASTE_READ,

@@ -169,6 +169,29 @@ pub struct EnqueueEpisodeRequest {
     pub position: Option<PodcastQueuePosition>,
 }
 
+/// How a client matched a requested episode to its own episode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EpisodeMatchKind {
+    Guid,
+    Enclosure,
+    /// A unique normalized title: not an exact identity.
+    Title,
+}
+
+/// A read-only episode lookup in the client's catalog.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EpisodeLookup {
+    Found {
+        client_episode_id: String,
+        matched_by: EpisodeMatchKind,
+    },
+    ShowNotFound,
+    EpisodeNotFound,
+    /// The client cannot look episodes up without changing state.
+    Unsupported,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SubscribeToShowRequest {
     pub title: String,
@@ -208,6 +231,13 @@ pub trait PodcastAccount: Send + Sync {
         &self,
         request: SubscribeToShowRequest,
     ) -> BoxFuture<'_, PodcastWriteResult>;
+    /// Finds the client's episode for an enqueue request without queueing it.
+    fn find_episode(
+        &self,
+        _request: EnqueueEpisodeRequest,
+    ) -> BoxFuture<'_, FetchResult<EpisodeLookup>> {
+        Box::pin(async { Ok(EpisodeLookup::Unsupported) })
+    }
 }
 
 /// Resolves the configured account for one run (a fresh client with fresh

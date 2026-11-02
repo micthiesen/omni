@@ -1,27 +1,19 @@
 //! The `TasteReflection` task.
 
-use std::collections::HashSet;
 use std::sync::Mutex;
 
-use futures::StreamExt;
 use futures::future::BoxFuture;
 use omni_ai::ModelRole;
 use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
 use super::reflection::{TasteReflectionInput, TasteReflectionResult, run_taste_reflection};
-use super::types::CanonicalWatchObservation;
 use crate::error::{IntegrationError, RecommendationError};
-use crate::history::completed_watches;
-use crate::identity::resolve_identity;
 use crate::persistence::get_all_recommendations;
 use crate::services::{MediaServices, configured, provider_credential};
-use crate::types::{FetchResult, WatchedItem, canonical_tmdb_id};
+use crate::types::FetchResult;
 
 pub const TASK_NAME: &str = "TasteReflection";
 const LOG: &str = "Main:TasteReflection";
-const MAX_WATCH_EVIDENCE: usize = 160;
-const RESOLVE_CONCURRENCY: usize = 4;
-const METADATA_CONCURRENCY: usize = 6;
 
 /// Missing settings that disable the task.
 pub fn missing_settings(services: &MediaServices) -> Vec<String> {
@@ -132,80 +124,7 @@ impl MediaTasteReflectionTask {
     }
 }
 
-/// Up to 160 distinct completed watches, confidently resolved (network
-/// allowed), each with TMDB details when they load.
-pub async fn build_canonical_watch_evidence(
-    services: &MediaServices,
-    history: &[WatchedItem],
-) -> Result<Vec<CanonicalWatchObservation>, RecommendationError> {
-    let mut seen = HashSet::new();
-    let unique: Vec<WatchedItem> = completed_watches(history)
-        .into_iter()
-        .filter(|item| seen.insert(item.item.guid.clone()))
-        .take(MAX_WATCH_EVIDENCE)
-        .collect();
-    let resolved: Vec<Result<Option<(String, WatchedItem)>, RecommendationError>> =
-        futures::stream::iter(
-            unique
-                .into_iter()
-                .map(|item| async move {
-                    let resolution = resolve_identity(
-                        &services.store,
-                        services.catalog.as_ref(),
-                        &item.item,
-                        true,
-                    )
-                    .await
-                    .map_err(RecommendationError::persistence("resolve media identity"))?;
-                    Ok(resolution
-                        .confident_id()
-                        .map(|id| (id.to_owned(), item.clone())))
-                })
-                .collect::<Vec<_>>(),
-        )
-        .buffered(RESOLVE_CONCURRENCY)
-        .collect()
-        .await;
-    let mut confident = Vec::new();
-    for entry in resolved {
-        if let Some(pair) = entry? {
-            confident.push(pair);
-        }
-    }
-    Ok(futures::stream::iter(
-        confident
-            .into_iter()
-            .map(|(canonical_id, item)| async move {
-                let metadata = match canonical_tmdb_id(&canonical_id) {
-                    Some(tmdb_id) => match services
-                        .catalog
-                        .title_details(item.item.media_type, tmdb_id)
-                        .await
-                    {
-                        Ok(details) => Some(details),
-                        Err(error) => {
-                            tracing::warn!(
-                                target: LOG,
-                                error = error.cause_message(),
-                                "Taste metadata lookup failed for {canonical_id}"
-                            );
-                            None
-                        }
-                    },
-                    None => None,
-                };
-                CanonicalWatchObservation {
-                    canonical_id,
-                    item,
-                    metadata,
-                }
-            })
-            .collect::<Vec<_>>(),
-    )
-    .buffered(METADATA_CONCURRENCY)
-    .collect()
-    .await)
-}
+pub use crate::sync::build_canonical_watch_evidence;
 
 impl Task for MediaTasteReflectionTask {
     fn name(&self) -> &str {

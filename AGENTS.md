@@ -426,6 +426,25 @@ jitter), using durable run history (`omni-podcasts/src/castro/alert_gate.rs`).
 Success resets the incident; isolated HTTP 500 and socket failures must not
 notify.
 
+### Recommendation records
+
+`media_recommendation_record` and `podcast_recommendation_record` write only
+private recommendation rows with `origin: assistant_chat` and a `chatRecord`
+(`omni_runtime::chat_record`); every action defaults to `dryRun: true`. A
+reservation re-checks all rows in one transaction, so one title or episode is
+reserved once across every caller and key. Only a caller-supplied send receipt
+marks a row notified; an unknown send stays pending and Omni never resends,
+withdraws or fails it. The selection pipelines' stale-pending repair (media
+re-notify, podcast one-hour fail) applies only to rows without an origin, and
+`startedAt` and outcome labels apply only to notified rows. Podcast identity
+is the RSS feed and exact GUID, never a Castro id; a client mapping is exposed
+for queueing only when it matched by GUID or enclosure. These tools never
+acquire, queue or notify. The deterministic outcome and evidence sync is in
+each crate's `sync.rs`; its no-model tasks stay unregistered while the legacy
+`Recommendations`, `TasteReflection`, `PodcastRecs` and
+`PodcastTasteReflection` tasks run. See "Recommendation records" in
+`docs/mcp.md`.
+
 ### Arr recovery
 
 `ArrRecovery` requires an unchanged explicit import failure across observations

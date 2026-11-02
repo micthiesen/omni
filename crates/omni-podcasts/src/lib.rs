@@ -32,6 +32,7 @@ pub mod pacing;
 pub mod persistence;
 pub mod pipeline;
 pub mod podcastindex;
+pub mod record;
 pub mod reflection;
 pub mod routes;
 pub mod rss;
@@ -39,6 +40,7 @@ pub mod selection;
 pub mod shortlist;
 pub mod sources;
 pub mod subscriptions;
+pub mod sync;
 pub mod task;
 pub mod taste;
 pub mod titles;
@@ -284,6 +286,11 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, BootError> {
         store: ctx.store.clone(),
         clock: ctx.clock.clone(),
         accounts,
+        directory: Arc::new(HttpDirectory {
+            http: ctx.public_http.clone(),
+            tz: tz.clone(),
+        }),
+        public_url: config.recs_public_url.clone(),
     })
     .map_err(|e| BootError::new("podcast MCP tools", e.to_string()))?;
 

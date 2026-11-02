@@ -40,6 +40,8 @@ pub fn rec() -> PodcastRecommendationData {
         feedback: None,
         feedback_at: None,
         feedback_note: None,
+        origin: None,
+        chat_record: None,
         extra: Extra::default(),
     }
 }
@@ -48,9 +50,9 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use omni_podcasts::account::{
-    AccountProvider, EnqueueEpisodeRequest, FetchResult, InboxEpisode, ListenedEpisode,
-    PodcastAccount, PodcastEpisodeSearchResult, PodcastSearchResult, PodcastSubscription,
-    PodcastWriteResult, QueuedEpisode, SubscribeToShowRequest,
+    AccountProvider, EnqueueEpisodeRequest, EpisodeLookup, FetchResult, InboxEpisode,
+    ListenedEpisode, PodcastAccount, PodcastEpisodeSearchResult, PodcastSearchResult,
+    PodcastSubscription, PodcastWriteResult, QueuedEpisode, SubscribeToShowRequest,
 };
 
 /// A scripted `PodcastAccountClient` that records every call.
@@ -62,6 +64,8 @@ pub struct FakeAccount {
     pub search: FetchResult<Vec<PodcastSearchResult>>,
     pub enqueue_result: PodcastWriteResult,
     pub clear_result: PodcastWriteResult,
+    /// `None` keeps the trait's default (unsupported) lookup.
+    pub episode_lookup: Option<FetchResult<EpisodeLookup>>,
     pub calls: Mutex<Vec<String>>,
     pub enqueued: Mutex<Vec<EnqueueEpisodeRequest>>,
 }
@@ -76,6 +80,7 @@ impl Default for FakeAccount {
             search: Ok(Vec::new()),
             enqueue_result: PodcastWriteResult::Added,
             clear_result: PodcastWriteResult::Removed,
+            episode_lookup: None,
             calls: Mutex::new(Vec::new()),
             enqueued: Mutex::new(Vec::new()),
         }
@@ -155,6 +160,14 @@ impl PodcastAccount for FakeAccount {
     ) -> BoxFuture<'_, PodcastWriteResult> {
         self.record(format!("subscribe_to_show:{}", request.feed_url));
         Box::pin(async { PodcastWriteResult::Added })
+    }
+    fn find_episode(
+        &self,
+        request: EnqueueEpisodeRequest,
+    ) -> BoxFuture<'_, FetchResult<EpisodeLookup>> {
+        self.record(format!("find_episode:{}", request.episode_guid));
+        let scripted = self.episode_lookup.clone();
+        Box::pin(async move { scripted.unwrap_or(Ok(EpisodeLookup::Unsupported)) })
     }
 }
 

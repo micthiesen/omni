@@ -17,6 +17,7 @@ use omni_alerts::{Pushover, PushoverChannel, PushoverMessage};
 use omni_config::Config;
 use omni_core::clock::{SharedClock, utc_date_stamp};
 use omni_store::cbor::Extra;
+use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{Store, StoreError};
 
 use crate::account::{
@@ -30,18 +31,19 @@ use crate::guest_selection::select_guest_appearances;
 use crate::guests::{GuestSources, discover_guest_appearances};
 use crate::log_file::{self, LogFile, LogFileError};
 use crate::models::Models;
-use crate::outcomes::decide_episode_outcomes;
 use crate::persistence::{
     PodcastQueueResult, PodcastRecommendationData, PodcastRecommendationStatus, ShortlistScores,
     advance_voice_cursor, format_recent_recommendations_digest_from,
-    get_all_podcast_recommendations, get_open_podcast_recommendations, get_podcast_exclusions,
-    insert_podcast_recommendation, next_voice_batch, update_podcast_recommendation,
+    get_all_podcast_recommendations, get_podcast_exclusions, next_voice_batch,
+    update_podcast_recommendation,
 };
 use crate::podcastindex::PersonSearch;
+use crate::record::{Identity as RecordIdentity, record_exclusions};
 use crate::selection::{DecisionKind, PodcastSelectionPick, research_finalists, select_episode};
 use crate::shortlist::{FINALIST_COUNT, ScoredEpisode, shortlist_episodes};
 use crate::sources::{ShowDirectory, WebSearcher};
 use crate::subscriptions::resolve_subscriptions;
+use crate::sync::{SyncError, sync_outcomes};
 use crate::taste::{TasteSeedError, build_taste_digest, load_taste_seed};
 use crate::types::EpisodeCandidate;
 use crate::voices::parse_voices;
@@ -51,8 +53,6 @@ const LOG: &str = "PodcastRecsTask";
 const STALE_PENDING_MS: i64 = 60 * 60 * 1000;
 pub const MAX_PODCAST_RECOMMENDATIONS_PER_RUN: i64 = 5;
 const FINALISTS_PER_REQUESTED_PICK: usize = 2;
-/// Cushion before the oldest open delivery, for timestamp skew.
-const LISTEN_HISTORY_BUFFER_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// The message is the cause's message.
 #[derive(Debug, thiserror::Error)]
@@ -72,6 +72,15 @@ pub enum PipelineError {
     },
     #[error("Podcast recommendation notification failed")]
     NotificationFailed,
+}
+
+impl From<SyncError> for PipelineError {
+    fn from(error: SyncError) -> Self {
+        match error {
+            SyncError::Store(e) => PipelineError::Store(e),
+            SyncError::LogFile(e) => PipelineError::LogFile(e),
+        }
+    }
 }
 
 impl PipelineError {
@@ -155,7 +164,7 @@ pub async fn run_podcast_pipeline(
     };
 
     // 2. Outcome sync + stale-pending reconciliation.
-    sync_outcomes(deps, account_ref, log_file).await?;
+    sync_outcomes(store, account_ref, deps.clock.now_ms(), log_file).await?;
     let now = deps.clock.now_ms();
     reconcile_stale_pending(store, now).await?;
 
@@ -251,7 +260,7 @@ pub async fn run_podcast_pipeline(
         )
         .await?;
         for guest in picks {
-            commit_or_collect(
+            if commit_or_collect(
                 deps,
                 account_ref,
                 &guest.candidate,
@@ -259,8 +268,10 @@ pub async fn run_podcast_pipeline(
                 None,
                 options.dry_run,
             )
-            .await?;
-            recommended.push(guest.candidate);
+            .await?
+            {
+                recommended.push(guest.candidate);
+            }
         }
     }
     let guest_count = recommended.len();
@@ -321,7 +332,7 @@ pub async fn run_podcast_pipeline(
                 risks: finalist.risks.clone(),
                 extra: Extra::default(),
             };
-            commit_or_collect(
+            if commit_or_collect(
                 deps,
                 account_ref,
                 &finalist.candidate,
@@ -329,8 +340,10 @@ pub async fn run_podcast_pipeline(
                 Some(scores),
                 options.dry_run,
             )
-            .await?;
-            recommended.push(finalist.candidate.clone());
+            .await?
+            {
+                recommended.push(finalist.candidate.clone());
+            }
         }
     }
 
@@ -366,15 +379,23 @@ async fn commit_or_collect(
     pick: &PodcastSelectionPick,
     scores: Option<ShortlistScores>,
     dry_run: bool,
-) -> Result<(), PipelineError> {
+) -> Result<bool, PipelineError> {
     if dry_run {
-        return Ok(());
+        return Ok(true);
     }
-    if commit(deps, account, candidate, pick, scores).await? {
-        Ok(())
-    } else {
-        Err(PipelineError::NotificationFailed)
+    match commit(deps, account, candidate, pick, scores).await? {
+        Commit::Notified => Ok(true),
+        Commit::ReservedElsewhere => Ok(false),
+        Commit::NotificationFailed => Err(PipelineError::NotificationFailed),
     }
+}
+
+enum Commit {
+    Notified,
+    /// An assistant reserved the episode or its show during this run.
+    ReservedElsewhere,
+    /// The row stays pending.
+    NotificationFailed,
 }
 
 async fn log_filtered(
@@ -399,70 +420,7 @@ async fn log_filtered(
     Ok(result.kept)
 }
 
-async fn sync_outcomes(
-    deps: &PodcastDeps,
-    account: Option<&dyn PodcastAccount>,
-    log_file: Option<&LogFile>,
-) -> Result<(), PipelineError> {
-    let Some(account) = account else {
-        return Ok(());
-    };
-    let open = get_open_podcast_recommendations(&deps.store).await?;
-    // Listen history is only needed to label open recommendations.
-    if open.is_empty() {
-        return Ok(());
-    }
-    let now = deps.clock.now_ms();
-    let history = match account
-        .fetch_listen_history(Some(listen_history_since(&open, now)))
-        .await
-    {
-        Ok(history) => history,
-        Err(e) => {
-            tracing::warn!(target: LOG, "Listen history unavailable ({}); skipping outcomes", e.reason);
-            omni_tasks::report_degraded(format!(
-                "listen history unavailable, outcomes not synced: {}",
-                e.reason
-            ));
-            return Ok(());
-        }
-    };
-    let changes = decide_episode_outcomes(&open, &history, now);
-    for change in &changes {
-        let status = change.status;
-        update_podcast_recommendation(&deps.store, &change.recommendation_id, move |mut rec| {
-            rec.status = status;
-            rec.resolved_at = Some(now);
-            rec
-        })
-        .await?;
-        tracing::info!(
-            target: LOG,
-            "Outcome: {} → {} ({})",
-            change.episode_id,
-            change.status.as_str(),
-            change.reason
-        );
-    }
-    if !changes.is_empty() {
-        let lines = changes
-            .iter()
-            .map(|c| format!("- {} → {} ({})", c.episode_id, c.status.as_str(), c.reason))
-            .collect::<Vec<_>>()
-            .join("\n");
-        log_file::section(log_file, "Outcome Sync", &lines).await?;
-    }
-    Ok(())
-}
-
-/// Look-back cutoff: just before the oldest open delivery, never capped
-/// shorter (that would hide real playback and mislabel it ignored).
-pub fn listen_history_since(open: &[PodcastRecommendationData], now: i64) -> i64 {
-    open.iter()
-        .map(|rec| rec.notified_at.unwrap_or(rec.recommended_at))
-        .min()
-        .map_or(now, |oldest| oldest - LISTEN_HISTORY_BUFFER_MS)
-}
+pub use crate::sync::listen_history_since;
 
 /// Rows left pending by a crash mid-commit become failed (a 24 h retry
 /// exclusion); notification delivery cannot be verified after the fact.
@@ -470,8 +428,11 @@ async fn reconcile_stale_pending(store: &Store, now: i64) -> Result<(), StoreErr
     let stale: Vec<PodcastRecommendationData> = get_all_podcast_recommendations(store)
         .await?
         .into_iter()
+        // Assistant-recorded rows settle only through their own finish or
+        // withdraw: failing one here would erase an unknown chat send.
         .filter(|r| {
-            r.status == PodcastRecommendationStatus::Pending
+            r.is_legacy()
+                && r.status == PodcastRecommendationStatus::Pending
                 && now - r.recommended_at > STALE_PENDING_MS
         })
         .collect();
@@ -492,54 +453,89 @@ async fn reconcile_stale_pending(store: &Store, now: i64) -> Result<(), StoreErr
     Ok(())
 }
 
-/// `true` once notified; `false` when the notification failed (row stays pending).
 async fn commit(
     deps: &PodcastDeps,
     account: Option<&dyn PodcastAccount>,
     candidate: &EpisodeCandidate,
     pick: &PodcastSelectionPick,
     shortlist_scores: Option<ShortlistScores>,
-) -> Result<bool, PipelineError> {
+) -> Result<Commit, PipelineError> {
     let store = &deps.store;
     let recommendation_id = omni_core::ids::uuid_v4();
     let recommended_at = deps.clock.now_ms();
-    insert_podcast_recommendation(
-        store,
-        PodcastRecommendationData {
-            recommendation_id: recommendation_id.clone(),
-            episode_id: candidate.episode_id.clone(),
-            show_id: candidate.show_id.clone(),
-            show_title: candidate.show_title.clone(),
-            episode_title: candidate.episode_title.clone(),
-            feed_url: candidate.feed_url.clone(),
-            itunes_id: candidate.itunes_id,
-            artwork_url: candidate.artwork_url.clone(),
-            episode_guid: candidate.episode_guid.clone(),
-            media_url: candidate.media_url.clone(),
-            episode_url: candidate.episode_url.clone(),
-            published_at: candidate.published_at,
-            duration_minutes: candidate.duration_minutes,
-            status: PodcastRecommendationStatus::Pending,
-            why_for_user: Some(pick.why_for_user.clone()),
-            caveats: Some(pick.caveats.clone()),
-            confidence: Some(pick.confidence),
-            show_genres: Some(candidate.show_genres.clone()),
-            discovered_via: Some(candidate.discovered_via.clone()),
-            source_url: candidate.source_url.clone(),
-            matched_voices: candidate.matched_voices.clone(),
-            shortlist_scores,
-            run_date: utc_date_stamp(recommended_at),
-            recommended_at,
-            notified_at: None,
-            queue_result: None,
-            resolved_at: None,
-            feedback: None,
-            feedback_at: None,
-            feedback_note: None,
-            extra: Extra::default(),
-        },
-    )
-    .await?;
+    let identity = RecordIdentity {
+        episode_id: candidate.episode_id.clone(),
+        show_id: candidate.show_id.clone(),
+        show_title: candidate.show_title.clone(),
+        episode_title: candidate.episode_title.clone(),
+        feed_url: candidate.feed_url.clone(),
+        itunes_id: candidate.itunes_id,
+        episode_guid: candidate.episode_guid.clone(),
+        media_url: candidate.media_url.clone(),
+        episode_url: candidate.episode_url.clone(),
+        published_at: candidate.published_at,
+        duration_minutes: candidate.duration_minutes,
+    };
+    let row = PodcastRecommendationData {
+        recommendation_id: recommendation_id.clone(),
+        episode_id: candidate.episode_id.clone(),
+        show_id: candidate.show_id.clone(),
+        show_title: candidate.show_title.clone(),
+        episode_title: candidate.episode_title.clone(),
+        feed_url: candidate.feed_url.clone(),
+        itunes_id: candidate.itunes_id,
+        artwork_url: candidate.artwork_url.clone(),
+        episode_guid: candidate.episode_guid.clone(),
+        media_url: candidate.media_url.clone(),
+        episode_url: candidate.episode_url.clone(),
+        published_at: candidate.published_at,
+        duration_minutes: candidate.duration_minutes,
+        status: PodcastRecommendationStatus::Pending,
+        why_for_user: Some(pick.why_for_user.clone()),
+        caveats: Some(pick.caveats.clone()),
+        confidence: Some(pick.confidence),
+        show_genres: Some(candidate.show_genres.clone()),
+        discovered_via: Some(candidate.discovered_via.clone()),
+        source_url: candidate.source_url.clone(),
+        matched_voices: candidate.matched_voices.clone(),
+        shortlist_scores,
+        run_date: utc_date_stamp(recommended_at),
+        recommended_at,
+        notified_at: None,
+        queue_result: None,
+        resolved_at: None,
+        feedback: None,
+        feedback_at: None,
+        feedback_note: None,
+        origin: None,
+        chat_record: None,
+        extra: Extra::default(),
+    };
+    // An assistant may have reserved this episode or show since the run read
+    // its exclusions; the check and the insert share one transaction.
+    let inserted = store
+        .write(move |tx| {
+            let assistant: Vec<PodcastRecommendationData> = tx
+                .get_all::<PodcastRecommendationData>()?
+                .into_iter()
+                .filter(|r| !r.is_legacy())
+                .collect();
+            if !record_exclusions(&assistant, &identity, recommended_at).is_empty() {
+                return Ok::<_, StoreError>(false);
+            }
+            tx.upsert(&row, UpsertOpts::default())?;
+            Ok(true)
+        })
+        .await?;
+    if !inserted {
+        tracing::warn!(
+            target: LOG,
+            "{} — {} was reserved by an assistant during this run",
+            candidate.show_title,
+            candidate.episode_title
+        );
+        return Ok(Commit::ReservedElsewhere);
+    }
 
     let enqueue_result = match account {
         // Top of the queue: a curated pick should be one tap to play.
@@ -596,7 +592,7 @@ async fn commit(
     };
     if let Err(error) = deps.notifier.notify(message).await {
         tracing::error!(target: LOG, error = %error, "Notification failed for {}", candidate.episode_title);
-        return Ok(false);
+        return Ok(Commit::NotificationFailed);
     }
 
     let notified_at = deps.clock.now_ms();
@@ -608,7 +604,7 @@ async fn commit(
     })
     .await?;
     tracing::info!(target: LOG, "Recommended {} — {}", candidate.show_title, candidate.episode_title);
-    Ok(true)
+    Ok(Commit::Notified)
 }
 
 /// Records the enqueue outcome durably before notification is attempted.

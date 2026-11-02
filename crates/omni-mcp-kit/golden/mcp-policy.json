@@ -1288,6 +1288,23 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "media_recommendation_record",
+      "title": "Record Media Recommendation",
+      "description": "Preview, reserve and settle one film or series recommendation that an assistant presents in chat. Every action defaults to dryRun true, which writes nothing. prepare checks the exact TMDB id and media type against the media server's watch history and in-progress items, Radarr and Sonarr, and recorded recommendations; with dryRun false it reserves a private pending record, idempotent per idempotencyKey, and at most one reservation per title across all callers. finish records the chat send receipt (proof of sending, not of reading) or an unknown send, which stays pending and is never resent. withdraw fails a reservation the caller knows was never presented, keeping the 24-hour retry exclusion; its idempotencyKey then replays the withdrawn record, so a new attempt needs a new key. This never acquires media, changes Radarr or Sonarr, or sends a notification.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads TMDB, the media server and Radarr/Sonarr",
+        "With dryRun false, writes only Omni's private recommendation record"
+      ],
+      "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "media_recommendations_list",
       "title": "List Media Recommendations",
       "description": "List persisted media recommendation attempts and outcomes, optionally filtered by status or feedback.",
@@ -1582,6 +1599,23 @@
       },
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "podcast_recommendation_record",
+      "title": "Record Podcast Recommendation",
+      "description": "Preview, reserve and settle one podcast episode recommendation that an assistant presents in chat. Every action defaults to dryRun true, which writes nothing. prepare verifies the exact episode in the show's RSS feed by GUID (and enclosure when given), checks subscriptions, listen history, the queue and recorded recommendations, and looks up the podcast client's episode read-only; enqueue lists the exact podcast_account_update enqueue arguments only when that mapping is verified by GUID or enclosure. With dryRun false prepare reserves a private pending record, idempotent per idempotencyKey, and at most one reservation per episode across all callers. finish records the chat send receipt (proof of sending, not of reading) or an unknown send, which stays pending and is never resent. withdraw fails a reservation the caller knows was never presented, keeping the 24-hour retry exclusion; its idempotencyKey then replays the withdrawn record, so a new attempt needs a new key. This never queues, subscribes or sends a notification.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the show's public RSS feed and the configured podcast account",
+        "With dryRun false, writes only Omni's private recommendation record"
+      ],
+      "cost": "No monetary cost; one feed fetch and a few podcast account reads",
       "recommendedPolicy": "allow"
     },
     {

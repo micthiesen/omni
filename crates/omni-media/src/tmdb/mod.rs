@@ -14,9 +14,9 @@ use crate::types::MediaType;
 pub mod types;
 
 use types::{
-    Details, FindResponse, GenreList, MovieDetails, MovieList, TmdbTitle, TmdbTitleDetails,
-    TrendingList, TrendingResult, TvDetails, TvList, normalize_movie, normalize_movie_details,
-    normalize_tv, normalize_tv_details,
+    Details, FindResponse, GenreList, MovieDetails, MovieList, MovieResult, TmdbTitle,
+    TmdbTitleDetails, TrendingList, TrendingResult, TvDetails, TvList, TvResult, normalize_movie,
+    normalize_movie_details, normalize_tv, normalize_tv_details,
 };
 
 pub const BASE_URL: &str = "https://api.themoviedb.org/3";
@@ -97,6 +97,9 @@ pub trait Catalog: Send + Sync {
         tmdb_id: i64,
     ) -> BoxFuture<'_, CatalogResult<TmdbTitleDetails>>;
     fn genre_map(&self, media_type: MediaType) -> BoxFuture<'_, CatalogResult<GenreMap>>;
+    /// One title by its exact TMDB id; adult titles are not found.
+    fn title(&self, media_type: MediaType, tmdb_id: i64)
+    -> BoxFuture<'_, CatalogResult<TmdbTitle>>;
 }
 
 /// The production TMDB client; the genre maps are cached for the process.
@@ -373,6 +376,29 @@ impl Catalog for TmdbClient {
                     Ok(normalize_tv_details(details))
                 }
             }
+        })
+    }
+
+    fn title(
+        &self,
+        media_type: MediaType,
+        tmdb_id: i64,
+    ) -> BoxFuture<'_, CatalogResult<TmdbTitle>> {
+        Box::pin(async move {
+            let path = format!("/{}/{tmdb_id}", media_type.as_str());
+            let title = match media_type {
+                MediaType::Movie => {
+                    let movie: MovieResult = self.get(&path, Vec::new()).await?;
+                    (!movie.adult).then(|| normalize_movie(movie))
+                }
+                MediaType::Tv => {
+                    let tv: TvResult = self.get(&path, Vec::new()).await?;
+                    (!tv.adult).then(|| normalize_tv(tv))
+                }
+            };
+            title.ok_or_else(|| {
+                IntegrationError::new(format!("TMDB GET {path}"), "adult title excluded")
+            })
         })
     }
 

@@ -29,6 +29,7 @@ use omni_podcasts::pipeline::{
 use omni_podcasts::podcastindex::{PersonSearch, PodcastIndexEpisode, PodcastIndexRequestError};
 use omni_podcasts::sources::WebSearcher;
 use omni_podcasts::taste::{TasteSeedFailure, load_taste_seed};
+use omni_runtime::chat_record::{ChatRecord, RecommendationOrigin};
 use omni_testkit::{TEST_EPOCH_MS, TestApp, test_app_env};
 
 #[tokio::test]
@@ -276,6 +277,58 @@ fn include_guest() -> GenerateResponse {
     )
 }
 
+/// Returns the guest episode after an assistant reserves it, i.e. after the
+/// run has already read its exclusions.
+struct ReservedMidRun(omni_store::Store);
+
+impl PersonSearch for ReservedMidRun {
+    fn search_by_person<'a>(
+        &'a self,
+        _name: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<PodcastIndexEpisode>, PodcastIndexRequestError>> {
+        Box::pin(async {
+            insert_podcast_recommendation(
+                &self.0,
+                PodcastRecommendationData {
+                    recommendation_id: "assistant".into(),
+                    episode_id: "itunes:42#guid-abc".into(),
+                    show_id: "itunes:42".into(),
+                    feed_url: "https://feeds.example.com/show".into(),
+                    episode_guid: "guid-abc".into(),
+                    status: PodcastRecommendationStatus::Pending,
+                    recommended_at: TEST_EPOCH_MS,
+                    origin: Some(RecommendationOrigin::AssistantChat),
+                    chat_record: Some(ChatRecord::reserved("k".into(), TEST_EPOCH_MS)),
+                    ..rec()
+                },
+            )
+            .await
+            .unwrap();
+            Ok(vec![guest_episode()])
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_pick_an_assistant_reserved_mid_run_is_not_committed_twice() {
+    let mut h = harness(FakeAccount::default(), RecordingNotifier::default()).await;
+    h.deps.person_search = Some(Arc::new(ReservedMidRun(h.deps.store.clone())));
+    h.app
+        .ai
+        .script(ModelRole::RecsSelection, vec![include_guest()]);
+    let summary = run_podcast_pipeline(&h.deps, None, PodcastPipelineOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(summary, "no eligible picks");
+    let rows = get_all_podcast_recommendations(&h.deps.store)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].recommendation_id, "assistant");
+    assert!(h.account.enqueued.lock().unwrap().is_empty());
+    assert!(h.notifier.sent.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn commits_a_guest_pick_in_order_and_marks_it_notified() {
     let h = harness(FakeAccount::default(), RecordingNotifier::default()).await;
@@ -385,6 +438,53 @@ async fn skips_the_run_when_configured_subscriptions_are_unavailable() {
         vec!["Castro subscriptions unavailable: Castro timed out"]
     );
     assert!(h.app.ai.requests().is_empty());
+    assert!(h.notifier.sent.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn stale_pending_reconciliation_fails_only_legacy_rows() {
+    let h = harness(FakeAccount::default(), RecordingNotifier::default()).await;
+    let two_hours_ago = TEST_EPOCH_MS - 2 * 60 * 60 * 1000;
+    insert_podcast_recommendation(
+        &h.deps.store,
+        PodcastRecommendationData {
+            status: PodcastRecommendationStatus::Pending,
+            recommended_at: two_hours_ago,
+            ..rec()
+        },
+    )
+    .await
+    .unwrap();
+    insert_podcast_recommendation(
+        &h.deps.store,
+        PodcastRecommendationData {
+            recommendation_id: "chat".into(),
+            episode_id: "itunes:9#guid-9".into(),
+            show_id: "itunes:9".into(),
+            episode_guid: "guid-9".into(),
+            status: PodcastRecommendationStatus::Pending,
+            recommended_at: two_hours_ago,
+            origin: Some(RecommendationOrigin::AssistantChat),
+            chat_record: Some(ChatRecord::reserved("k".into(), two_hours_ago)),
+            ..rec()
+        },
+    )
+    .await
+    .unwrap();
+    h.app.ai.script(
+        ModelRole::RecsSelection,
+        vec![GenerateResponse::text(r#"{"decisions":[]}"#)],
+    );
+    run_podcast_pipeline(&h.deps, None, PodcastPipelineOptions::default())
+        .await
+        .unwrap();
+    let rows = get_all_podcast_recommendations(&h.deps.store)
+        .await
+        .unwrap();
+    let by_id = |id: &str| rows.iter().find(|r| r.recommendation_id == id).unwrap();
+    assert_eq!(by_id("r1").status, PodcastRecommendationStatus::Failed);
+    assert_eq!(by_id("chat").status, PodcastRecommendationStatus::Pending);
+    assert_eq!(by_id("chat").resolved_at, None);
     assert!(h.notifier.sent.lock().unwrap().is_empty());
 }
 

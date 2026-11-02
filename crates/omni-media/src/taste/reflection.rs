@@ -14,18 +14,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::evidence::{
-    derive_recommendation_evidence, derive_watch_evidence, fingerprint_evidence,
-};
-use super::persistence::{
-    get_all_taste_evidence, get_latest_taste_profile, insert_taste_evidence, insert_taste_profile,
-};
+use super::evidence::fingerprint_evidence;
+use super::persistence::{get_all_taste_evidence, get_latest_taste_profile, insert_taste_profile};
 use super::stats::compute_behavioral_stats;
 use super::types::{
     CanonicalWatchObservation, TasteEvidenceData, TasteEvidenceKind, TasteProfileData,
 };
 use crate::error::{IntegrationError, RecommendationError};
 use crate::persistence::RecommendationData;
+use crate::sync::capture_taste_evidence;
 
 pub const TASTE_PROMPT_VERSION: &str = "taste-reflection-v1";
 const DEFAULT_MAX_EVIDENCE: usize = 160;
@@ -183,11 +180,8 @@ pub async fn run_taste_reflection(
     ai: &Ai,
     input: TasteReflectionInput<'_>,
 ) -> Result<TasteReflectionResult, RecommendationError> {
-    let mut incoming = derive_watch_evidence(&input.watched);
-    incoming.extend(derive_recommendation_evidence(&input.recommendations));
-    let inserted_evidence = insert_taste_evidence(store, incoming)
-        .await
-        .map_err(RecommendationError::persistence("insert taste evidence"))?;
+    let inserted_evidence =
+        capture_taste_evidence(store, &input.watched, &input.recommendations).await?;
     let all = get_all_taste_evidence(store)
         .await
         .map_err(RecommendationError::persistence("read taste evidence"))?;

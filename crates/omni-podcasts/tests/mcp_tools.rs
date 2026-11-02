@@ -33,6 +33,8 @@ async fn state(account: Option<Arc<FakeAccount>>) -> (TestStore, McpState) {
             Some(account) => Arc::new(FakeAccounts(account)),
             None => Arc::new(NoAccount),
         },
+        directory: Arc::new(omni_podcasts::sources::OfflineDirectory),
+        public_url: "https://recs.example".to_owned(),
     };
     (store, state)
 }
@@ -53,7 +55,7 @@ async fn call(tool: &McpTool, input: Value) -> Result<Map<String, Value>, ToolEr
 }
 
 #[tokio::test]
-async fn registers_the_seven_tools_in_serving_order() {
+async fn registers_the_eight_tools_in_serving_order() {
     let (_store, state) = state(None).await;
     let names: Vec<String> = tools(state)
         .unwrap()
@@ -69,6 +71,7 @@ async fn registers_the_seven_tools_in_serving_order() {
             "podcast_recommendations_list",
             "podcast_recommendation_get",
             "podcast_recommendation_feedback",
+            "podcast_recommendation_record",
             "podcast_taste_read",
         ]
     );

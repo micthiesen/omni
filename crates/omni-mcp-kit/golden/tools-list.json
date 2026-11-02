@@ -21990,6 +21990,121 @@
                       "type": "null"
                     }
                   ]
+                },
+                "origin": {
+                  "type": "string",
+                  "enum": [
+                    "legacy_pipeline",
+                    "assistant_chat"
+                  ]
+                },
+                "chat": {
+                  "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "revision": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Pass as expectedRevision to finish or withdraw"
+                        },
+                        "delivery": {
+                          "type": "string",
+                          "enum": [
+                            "reserved",
+                            "sent",
+                            "unknown",
+                            "withdrawn"
+                          ],
+                          "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                        },
+                        "updatedAt": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "channel": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "messageRef": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sentAt": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "provenance": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unknownReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "withdrawnReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "revision",
+                        "delivery",
+                        "updatedAt",
+                        "channel",
+                        "messageRef",
+                        "sentAt",
+                        "provenance",
+                        "unknownReason",
+                        "withdrawnReason"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -22014,7 +22129,9 @@
                 "watchlistResult",
                 "feedback",
                 "feedbackAt",
-                "feedbackNote"
+                "feedbackNote",
+                "origin",
+                "chat"
               ],
               "additionalProperties": false
             }
@@ -22238,6 +22355,121 @@
                     "type": "null"
                   }
                 ]
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "legacy_pipeline",
+                  "assistant_chat"
+                ]
+              },
+              "chat": {
+                "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "revision": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Pass as expectedRevision to finish or withdraw"
+                      },
+                      "delivery": {
+                        "type": "string",
+                        "enum": [
+                          "reserved",
+                          "sent",
+                          "unknown",
+                          "withdrawn"
+                        ],
+                        "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                      },
+                      "updatedAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "channel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "provenance": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "unknownReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "withdrawnReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "delivery",
+                      "updatedAt",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance",
+                      "unknownReason",
+                      "withdrawnReason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -22262,7 +22494,9 @@
               "watchlistResult",
               "feedback",
               "feedbackAt",
-              "feedbackNote"
+              "feedbackNote",
+              "origin",
+              "chat"
             ],
             "additionalProperties": false
           }
@@ -22495,6 +22729,121 @@
                     "type": "null"
                   }
                 ]
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "legacy_pipeline",
+                  "assistant_chat"
+                ]
+              },
+              "chat": {
+                "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "revision": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Pass as expectedRevision to finish or withdraw"
+                      },
+                      "delivery": {
+                        "type": "string",
+                        "enum": [
+                          "reserved",
+                          "sent",
+                          "unknown",
+                          "withdrawn"
+                        ],
+                        "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                      },
+                      "updatedAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "channel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "provenance": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "unknownReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "withdrawnReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "delivery",
+                      "updatedAt",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance",
+                      "unknownReason",
+                      "withdrawnReason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -22519,13 +22868,714 @@
               "watchlistResult",
               "feedback",
               "feedbackAt",
-              "feedbackNote"
+              "feedbackNote",
+              "origin",
+              "chat"
             ],
             "additionalProperties": false
           }
         },
         "required": [
           "recommendation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "media_recommendation_record",
+      "title": "Record Media Recommendation",
+      "description": "Preview, reserve and settle one film or series recommendation that an assistant presents in chat. Every action defaults to dryRun true, which writes nothing. prepare checks the exact TMDB id and media type against the media server's watch history and in-progress items, Radarr and Sonarr, and recorded recommendations; with dryRun false it reserves a private pending record, idempotent per idempotencyKey, and at most one reservation per title across all callers. finish records the chat send receipt (proof of sending, not of reading) or an unknown send, which stays pending and is never resent. withdraw fails a reservation the caller knows was never presented, keeping the 24-hour retry exclusion; its idempotencyKey then replays the withdrawn record, so a new attempt needs a new key. This never acquires media, changes Radarr or Sonarr, or sends a notification.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "prepare"
+              },
+              "dryRun": {
+                "default": true,
+                "description": "true previews eligibility and writes nothing; false reserves a private pending record",
+                "type": "boolean"
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Stable per intended recommendation; a retry with the same key returns the same record"
+              },
+              "mediaType": {
+                "type": "string",
+                "enum": [
+                  "movie",
+                  "tv"
+                ]
+              },
+              "tmdbId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "whyForUser": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "Why this title fits, as presented to the owner"
+              },
+              "caveats": {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              }
+            },
+            "required": [
+              "action",
+              "idempotencyKey",
+              "mediaType",
+              "tmdbId",
+              "whyForUser"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "finish"
+              },
+              "dryRun": {
+                "default": true,
+                "type": "boolean"
+              },
+              "recommendationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "The record's current chat.revision"
+              },
+              "delivery": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "sent"
+                      },
+                      "channel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "description": "The chat surface the message was sent on"
+                      },
+                      "messageRef": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                        "description": "The sent message's id on that channel"
+                      },
+                      "sentAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Epoch ms the channel reported for the send"
+                      },
+                      "provenance": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "The send call or tool result that produced this receipt"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "action",
+              "recommendationId",
+              "expectedRevision",
+              "delivery"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "withdraw"
+              },
+              "dryRun": {
+                "default": true,
+                "type": "boolean"
+              },
+              "recommendationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "notPresented": {
+                "type": "boolean",
+                "const": true,
+                "description": "Confirms the recommendation was definitely never presented"
+              }
+            },
+            "required": [
+              "action",
+              "recommendationId",
+              "expectedRevision",
+              "reason",
+              "notPresented"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "finish",
+              "withdraw"
+            ]
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "eligible",
+              "ineligible",
+              "unavailable",
+              "reserved",
+              "replayed",
+              "would_change",
+              "changed",
+              "unchanged"
+            ],
+            "description": "prepare: eligible (dry run), ineligible, unavailable (state unreadable), reserved or replayed. finish and withdraw: would_change (dry run), changed or unchanged (already recorded)"
+          },
+          "identity": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "canonicalId": {
+                    "type": "string"
+                  },
+                  "tmdbId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "enum": [
+                      "movie",
+                      "tv"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tmdbUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "canonicalId",
+                  "tmdbId",
+                  "mediaType",
+                  "title",
+                  "year",
+                  "tmdbUrl"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inLibrary": {
+            "description": "Whether the media server already has the title; null when unknown",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unavailable": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "recommendationId": {
+                    "type": "string"
+                  },
+                  "canonicalId": {
+                    "type": "string"
+                  },
+                  "tmdbId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "enum": [
+                      "movie",
+                      "tv"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "notified",
+                      "watched",
+                      "abandoned",
+                      "ignored",
+                      "failed"
+                    ]
+                  },
+                  "whyForUser": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "caveats": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "genres": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "runtimeMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "seasonCount": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeCount": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runDate": {
+                    "type": "string"
+                  },
+                  "recommendedAt": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "notifiedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "watchlistResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "good_pick",
+                          "not_for_me",
+                          "already_watched"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedbackAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedbackNote": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "legacy_pipeline",
+                      "assistant_chat"
+                    ]
+                  },
+                  "chat": {
+                    "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "revision": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Pass as expectedRevision to finish or withdraw"
+                          },
+                          "delivery": {
+                            "type": "string",
+                            "enum": [
+                              "reserved",
+                              "sent",
+                              "unknown",
+                              "withdrawn"
+                            ],
+                            "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                          },
+                          "updatedAt": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "channel": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "messageRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sentAt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provenance": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unknownReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "withdrawnReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "revision",
+                          "delivery",
+                          "updatedAt",
+                          "channel",
+                          "messageRef",
+                          "sentAt",
+                          "provenance",
+                          "unknownReason",
+                          "withdrawnReason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "recommendationId",
+                  "canonicalId",
+                  "tmdbId",
+                  "mediaType",
+                  "title",
+                  "year",
+                  "status",
+                  "whyForUser",
+                  "caveats",
+                  "confidence",
+                  "genres",
+                  "runtimeMinutes",
+                  "seasonCount",
+                  "episodeCount",
+                  "runDate",
+                  "recommendedAt",
+                  "notifiedAt",
+                  "resolvedAt",
+                  "watchlistResult",
+                  "feedback",
+                  "feedbackAt",
+                  "feedbackNote",
+                  "origin",
+                  "chat"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feedbackUrl": {
+            "description": "The owner's one-tap rating page for the recorded recommendation",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "dryRun",
+          "result",
+          "identity",
+          "inLibrary",
+          "exclusions",
+          "unavailable",
+          "recommendation",
+          "feedbackUrl"
         ],
         "additionalProperties": false
       }
@@ -26407,6 +27457,121 @@
                       "type": "null"
                     }
                   ]
+                },
+                "origin": {
+                  "type": "string",
+                  "enum": [
+                    "legacy_pipeline",
+                    "assistant_chat"
+                  ]
+                },
+                "chat": {
+                  "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "revision": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Pass as expectedRevision to finish or withdraw"
+                        },
+                        "delivery": {
+                          "type": "string",
+                          "enum": [
+                            "reserved",
+                            "sent",
+                            "unknown",
+                            "withdrawn"
+                          ],
+                          "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                        },
+                        "updatedAt": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "channel": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "messageRef": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sentAt": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "provenance": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unknownReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "withdrawnReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "revision",
+                        "delivery",
+                        "updatedAt",
+                        "channel",
+                        "messageRef",
+                        "sentAt",
+                        "provenance",
+                        "unknownReason",
+                        "withdrawnReason"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -26434,7 +27599,9 @@
                 "queueResult",
                 "feedback",
                 "feedbackAt",
-                "feedbackNote"
+                "feedbackNote",
+                "origin",
+                "chat"
               ],
               "additionalProperties": false
             }
@@ -26670,6 +27837,121 @@
                     "type": "null"
                   }
                 ]
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "legacy_pipeline",
+                  "assistant_chat"
+                ]
+              },
+              "chat": {
+                "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "revision": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Pass as expectedRevision to finish or withdraw"
+                      },
+                      "delivery": {
+                        "type": "string",
+                        "enum": [
+                          "reserved",
+                          "sent",
+                          "unknown",
+                          "withdrawn"
+                        ],
+                        "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                      },
+                      "updatedAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "channel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "provenance": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "unknownReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "withdrawnReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "delivery",
+                      "updatedAt",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance",
+                      "unknownReason",
+                      "withdrawnReason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -26697,7 +27979,9 @@
               "queueResult",
               "feedback",
               "feedbackAt",
-              "feedbackNote"
+              "feedbackNote",
+              "origin",
+              "chat"
             ],
             "additionalProperties": false
           }
@@ -26941,6 +28225,121 @@
                     "type": "null"
                   }
                 ]
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "legacy_pipeline",
+                  "assistant_chat"
+                ]
+              },
+              "chat": {
+                "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "revision": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Pass as expectedRevision to finish or withdraw"
+                      },
+                      "delivery": {
+                        "type": "string",
+                        "enum": [
+                          "reserved",
+                          "sent",
+                          "unknown",
+                          "withdrawn"
+                        ],
+                        "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                      },
+                      "updatedAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "channel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "messageRef": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sentAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "provenance": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "unknownReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "withdrawnReason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "delivery",
+                      "updatedAt",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance",
+                      "unknownReason",
+                      "withdrawnReason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -26968,13 +28367,895 @@
               "queueResult",
               "feedback",
               "feedbackAt",
-              "feedbackNote"
+              "feedbackNote",
+              "origin",
+              "chat"
             ],
             "additionalProperties": false
           }
         },
         "required": [
           "recommendation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "podcast_recommendation_record",
+      "title": "Record Podcast Recommendation",
+      "description": "Preview, reserve and settle one podcast episode recommendation that an assistant presents in chat. Every action defaults to dryRun true, which writes nothing. prepare verifies the exact episode in the show's RSS feed by GUID (and enclosure when given), checks subscriptions, listen history, the queue and recorded recommendations, and looks up the podcast client's episode read-only; enqueue lists the exact podcast_account_update enqueue arguments only when that mapping is verified by GUID or enclosure. With dryRun false prepare reserves a private pending record, idempotent per idempotencyKey, and at most one reservation per episode across all callers. finish records the chat send receipt (proof of sending, not of reading) or an unknown send, which stays pending and is never resent. withdraw fails a reservation the caller knows was never presented, keeping the 24-hour retry exclusion; its idempotencyKey then replays the withdrawn record, so a new attempt needs a new key. This never queues, subscribes or sends a notification.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "prepare"
+              },
+              "dryRun": {
+                "default": true,
+                "description": "true previews eligibility and writes nothing; false reserves a private pending record",
+                "type": "boolean"
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Stable per intended recommendation; a retry with the same key returns the same record"
+              },
+              "feedUrl": {
+                "type": "string",
+                "format": "uri",
+                "description": "The show's own RSS feed URL"
+              },
+              "episodeGuid": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000,
+                "description": "The episode's exact RSS item GUID"
+              },
+              "enclosureUrl": {
+                "type": "string",
+                "format": "uri",
+                "description": "The episode's enclosure URL; when given it must match the feed item"
+              },
+              "itunesId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "description": "The show's Apple Podcasts id, when known; it becomes part of the canonical show id"
+              },
+              "showTitle": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "description": "Display title of the show"
+              },
+              "whyForUser": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "Why this episode fits, as presented to the owner"
+              },
+              "caveats": {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              }
+            },
+            "required": [
+              "action",
+              "idempotencyKey",
+              "feedUrl",
+              "episodeGuid",
+              "showTitle",
+              "whyForUser"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "finish"
+              },
+              "dryRun": {
+                "default": true,
+                "type": "boolean"
+              },
+              "recommendationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "The record's current chat.revision"
+              },
+              "delivery": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "sent"
+                      },
+                      "channel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "description": "The chat surface the message was sent on"
+                      },
+                      "messageRef": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                        "description": "The sent message's id on that channel"
+                      },
+                      "sentAt": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "description": "Epoch ms the channel reported for the send"
+                      },
+                      "provenance": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "The send call or tool result that produced this receipt"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "channel",
+                      "messageRef",
+                      "sentAt",
+                      "provenance"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "action",
+              "recommendationId",
+              "expectedRevision",
+              "delivery"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "withdraw"
+              },
+              "dryRun": {
+                "default": true,
+                "type": "boolean"
+              },
+              "recommendationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "notPresented": {
+                "type": "boolean",
+                "const": true,
+                "description": "Confirms the recommendation was definitely never presented"
+              }
+            },
+            "required": [
+              "action",
+              "recommendationId",
+              "expectedRevision",
+              "reason",
+              "notPresented"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "finish",
+              "withdraw"
+            ]
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "eligible",
+              "ineligible",
+              "unavailable",
+              "reserved",
+              "replayed",
+              "would_change",
+              "changed",
+              "unchanged"
+            ],
+            "description": "prepare: eligible (dry run), ineligible, unavailable (state unreadable), reserved or replayed. finish and withdraw: would_change (dry run), changed or unchanged (already recorded)"
+          },
+          "identity": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "episodeId": {
+                    "type": "string"
+                  },
+                  "showId": {
+                    "type": "string"
+                  },
+                  "showTitle": {
+                    "type": "string"
+                  },
+                  "episodeTitle": {
+                    "type": "string"
+                  },
+                  "feedUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "itunesId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeGuid": {
+                    "type": "string"
+                  },
+                  "mediaUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "publishedAt": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "durationMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "episodeId",
+                  "showId",
+                  "showTitle",
+                  "episodeTitle",
+                  "feedUrl",
+                  "itunesId",
+                  "episodeGuid",
+                  "mediaUrl",
+                  "episodeUrl",
+                  "publishedAt",
+                  "durationMinutes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unavailable": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "client": {
+            "description": "The podcast client's episode, looked up read-only; null outside prepare",
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "unverified",
+                      "unsupported",
+                      "unavailable"
+                    ]
+                  },
+                  "clientEpisodeId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "matchedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "guid",
+                          "enclosure"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "clientEpisodeId",
+                  "matchedBy",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enqueue": {
+            "description": "Arguments for podcast_account_update action enqueue, present only for a verified mapping; queueing needs the owner's approval",
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "feedUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "itunesId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeGuid": {
+                    "type": "string"
+                  },
+                  "mediaUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "showTitle": {
+                    "type": "string"
+                  },
+                  "episodeTitle": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "feedUrl",
+                  "itunesId",
+                  "episodeGuid",
+                  "mediaUrl",
+                  "showTitle",
+                  "episodeTitle"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "recommendationId": {
+                    "type": "string"
+                  },
+                  "episodeId": {
+                    "type": "string"
+                  },
+                  "showId": {
+                    "type": "string"
+                  },
+                  "showTitle": {
+                    "type": "string"
+                  },
+                  "episodeTitle": {
+                    "type": "string"
+                  },
+                  "feedUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "itunesId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeGuid": {
+                    "type": "string"
+                  },
+                  "mediaUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "episodeUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "publishedAt": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "durationMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "notified",
+                      "listened",
+                      "abandoned",
+                      "ignored",
+                      "failed"
+                    ]
+                  },
+                  "whyForUser": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "caveats": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "discoveredVia": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "matchedVoices": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "recommendedAt": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "notifiedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "queueResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "good_pick",
+                          "not_for_me"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedbackAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedbackNote": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "legacy_pipeline",
+                      "assistant_chat"
+                    ]
+                  },
+                  "chat": {
+                    "description": "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "revision": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Pass as expectedRevision to finish or withdraw"
+                          },
+                          "delivery": {
+                            "type": "string",
+                            "enum": [
+                              "reserved",
+                              "sent",
+                              "unknown",
+                              "withdrawn"
+                            ],
+                            "description": "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+                          },
+                          "updatedAt": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "channel": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "messageRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sentAt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provenance": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unknownReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "withdrawnReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "revision",
+                          "delivery",
+                          "updatedAt",
+                          "channel",
+                          "messageRef",
+                          "sentAt",
+                          "provenance",
+                          "unknownReason",
+                          "withdrawnReason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "recommendationId",
+                  "episodeId",
+                  "showId",
+                  "showTitle",
+                  "episodeTitle",
+                  "feedUrl",
+                  "itunesId",
+                  "episodeGuid",
+                  "mediaUrl",
+                  "episodeUrl",
+                  "publishedAt",
+                  "durationMinutes",
+                  "status",
+                  "whyForUser",
+                  "caveats",
+                  "confidence",
+                  "discoveredVia",
+                  "matchedVoices",
+                  "recommendedAt",
+                  "notifiedAt",
+                  "resolvedAt",
+                  "queueResult",
+                  "feedback",
+                  "feedbackAt",
+                  "feedbackNote",
+                  "origin",
+                  "chat"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feedbackUrl": {
+            "description": "The owner's one-tap rating page for the recorded recommendation",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "dryRun",
+          "result",
+          "identity",
+          "exclusions",
+          "unavailable",
+          "client",
+          "enqueue",
+          "recommendation",
+          "feedbackUrl"
         ],
         "additionalProperties": false
       }

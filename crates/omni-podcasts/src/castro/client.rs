@@ -23,9 +23,10 @@ use super::protocol::{
     CastroQueueItem,
 };
 use crate::account::{
-    EnqueueEpisodeRequest, FetchResult, InboxEpisode, ListenedEpisode, PodcastAccount,
-    PodcastEpisodeSearchResult, PodcastQueuePosition, PodcastSearchResult, PodcastSubscription,
-    PodcastWriteResult, QueuedEpisode, SubscribeToShowRequest, Unavailable,
+    EnqueueEpisodeRequest, EpisodeLookup, EpisodeMatchKind, FetchResult, InboxEpisode,
+    ListenedEpisode, PodcastAccount, PodcastEpisodeSearchResult, PodcastQueuePosition,
+    PodcastSearchResult, PodcastSubscription, PodcastWriteResult, QueuedEpisode,
+    SubscribeToShowRequest, Unavailable,
 };
 use crate::titles::normalize_title;
 use crate::types::normalize_feed_url;
@@ -464,6 +465,26 @@ impl CastroClient {
         Ok(PodcastWriteResult::Added)
     }
 
+    async fn find_episode_impl(
+        &self,
+        request: EnqueueEpisodeRequest,
+    ) -> Result<EpisodeLookup, ClientError> {
+        let Some(resolved) = self
+            .resolve_podcast(&request.feed_url, request.itunes_id)
+            .await?
+        else {
+            return Ok(EpisodeLookup::ShowNotFound);
+        };
+        let podcast = self.fetch_podcast(&resolved.tentacles_id).await?;
+        Ok(match match_episode_with_kind(&podcast.episodes, &request) {
+            Some((episode, matched_by)) => EpisodeLookup::Found {
+                client_episode_id: episode.public_id.clone(),
+                matched_by,
+            },
+            None => EpisodeLookup::EpisodeNotFound,
+        })
+    }
+
     async fn subscribe_impl(
         &self,
         request: SubscribeToShowRequest,
@@ -694,6 +715,16 @@ impl PodcastAccount for CastroClient {
             )
         })
     }
+    fn find_episode(
+        &self,
+        request: EnqueueEpisodeRequest,
+    ) -> BoxFuture<'_, FetchResult<EpisodeLookup>> {
+        Box::pin(async move {
+            self.find_episode_impl(request)
+                .await
+                .map_err(|e| unavailable(&e))
+        })
+    }
 }
 
 /// Matches a requested episode against a Castro podcast's episodes: RSS guid
@@ -703,15 +734,23 @@ pub fn match_episode<'a>(
     episodes: &'a [CastroEpisode],
     request: &EnqueueEpisodeRequest,
 ) -> Option<&'a CastroEpisode> {
+    match_episode_with_kind(episodes, request).map(|(episode, _)| episode)
+}
+
+/// [`match_episode`] plus which key matched.
+pub fn match_episode_with_kind<'a>(
+    episodes: &'a [CastroEpisode],
+    request: &EnqueueEpisodeRequest,
+) -> Option<(&'a CastroEpisode, EpisodeMatchKind)> {
     if let Some(by_guid) = episodes.iter().find(|e| e.guid == request.episode_guid) {
-        return Some(by_guid);
+        return Some((by_guid, EpisodeMatchKind::Guid));
     }
     if let Some(media_key) = normalize_media_url(request.media_url.as_deref())
         && let Some(by_media) = episodes.iter().find(|e| {
             normalize_media_url(Some(&e.media_url)).as_deref() == Some(media_key.as_str())
         })
     {
-        return Some(by_media);
+        return Some((by_media, EpisodeMatchKind::Enclosure));
     }
     let title_key = normalize_title(&request.episode_title);
     if !title_key.is_empty() {
@@ -720,7 +759,7 @@ pub fn match_episode<'a>(
             .filter(|e| normalize_title(&e.title) == title_key)
             .collect();
         if let [only] = by_title.as_slice() {
-            return Some(only);
+            return Some((only, EpisodeMatchKind::Title));
         }
     }
     None

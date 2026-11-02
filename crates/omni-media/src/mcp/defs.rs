@@ -609,6 +609,29 @@ pub static MEDIA_RECOMMENDATION_FEEDBACK: ToolDef<
     },
 });
 
+pub static MEDIA_RECOMMENDATION_RECORD: ToolDef<
+    MediaRecommendationRecordInput,
+    MediaRecommendationRecordOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_recommendation_record",
+    title: "Record Media Recommendation",
+    description: "Preview, reserve and settle one film or series recommendation that an assistant presents in chat. Every action defaults to dryRun true, which writes nothing. prepare checks the exact TMDB id and media type against the media server's watch history and in-progress items, Radarr and Sonarr, and recorded recommendations; with dryRun false it reserves a private pending record, idempotent per idempotencyKey, and at most one reservation per title across all callers. finish records the chat send receipt (proof of sending, not of reading) or an unknown send, which stays pending and is never resent. withdraw fails a reservation the caller knows was never presented, keeping the 24-hour retry exclusion; its idempotencyKey then replays the withdrawn record, so a new attempt needs a new key. This never acquires media, changes Radarr or Sonarr, or sends a notification.",
+    annotations: Annotations {
+        read_only_hint: false,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &[
+            "Reads TMDB, the media server and Radarr/Sonarr",
+            "With dryRun false, writes only Omni's private recommendation record",
+        ],
+        cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
+        recommended: ApprovalPolicy::Allow,
+    },
+});
+
 pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> = ToolDef::new(
     ToolInfo {
         name: "media_taste_read",
@@ -629,7 +652,7 @@ pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> 
 );
 
 /// Every media tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 31] = [
+pub static TOOLS: [&dyn ToolDefinition; 32] = [
     &MEDIA_CATALOG_SEARCH,
     &MEDIA_CATALOG_GET,
     &MEDIA_CATALOG_BROWSE,
@@ -660,6 +683,7 @@ pub static TOOLS: [&dyn ToolDefinition; 31] = [
     &MEDIA_RECOMMENDATIONS_LIST,
     &MEDIA_RECOMMENDATION_GET,
     &MEDIA_RECOMMENDATION_FEEDBACK,
+    &MEDIA_RECOMMENDATION_RECORD,
     &MEDIA_TASTE_READ,
 ];
 
@@ -2074,6 +2098,45 @@ pub struct MediaRecommendationsListItem {
     pub feedback: Option<MediaRecommendationsListItemFeedback>,
     pub feedback_at: Option<f64>,
     pub feedback_note: Option<String>,
+    pub origin: RecommendationOrigin,
+    #[schemars(
+        description = "Delivery bookkeeping of an assistant_chat recommendation; null for legacy_pipeline rows"
+    )]
+    pub chat: Option<ChatRecordView>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum RecommendationOrigin {
+    LegacyPipeline,
+    AssistantChat,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum ChatDelivery {
+    Reserved,
+    Sent,
+    Unknown,
+    Withdrawn,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChatRecordView {
+    #[schemars(description = "Pass as expectedRevision to finish or withdraw")]
+    pub revision: i64,
+    #[schemars(
+        description = "sent means the caller supplied a send receipt (not proof of reading); unknown stays pending until the caller reconciles it"
+    )]
+    pub delivery: ChatDelivery,
+    pub updated_at: i64,
+    pub channel: Option<String>,
+    pub message_ref: Option<String>,
+    pub sent_at: Option<i64>,
+    pub provenance: Option<String>,
+    pub unknown_reason: Option<String>,
+    pub withdrawn_reason: Option<String>,
 }
 
 #[derive(JsonSchema)]
@@ -2108,6 +2171,184 @@ pub struct MediaRecommendationFeedbackInput {
 }
 
 pub type MediaRecommendationFeedbackOutput = MediaRecommendationGetOutput;
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaRecommendationRecordInputPrepare {
+    #[schemars(transform = Literal("prepare"))]
+    pub action: Lit,
+    #[schemars(
+        description = "true previews eligibility and writes nothing; false reserves a private pending record",
+        extend("default" = true)
+    )]
+    pub dry_run: Option<bool>,
+    #[schemars(
+        description = "Stable per intended recommendation; a retry with the same key returns the same record",
+        length(min = 1, max = 200)
+    )]
+    pub idempotency_key: String,
+    pub media_type: MediaType,
+    #[schemars(transform = positive)]
+    pub tmdb_id: u64,
+    #[schemars(
+        description = "Why this title fits, as presented to the owner",
+        length(min = 1, max = 2000)
+    )]
+    pub why_for_user: String,
+    #[schemars(length(max = 5))]
+    pub caveats: Option<Vec<RecordCaveat>>,
+}
+
+#[derive(JsonSchema)]
+pub struct RecordCaveat(#[schemars(length(min = 1, max = 300))] pub String);
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeliverySent {
+    #[schemars(transform = Literal("sent"))]
+    pub state: Lit,
+    #[schemars(
+        description = "The chat surface the message was sent on",
+        length(min = 1, max = 100)
+    )]
+    pub channel: String,
+    #[schemars(
+        description = "The sent message's id on that channel",
+        length(min = 1, max = 300)
+    )]
+    pub message_ref: String,
+    #[schemars(description = "Epoch ms the channel reported for the send")]
+    pub sent_at: i64,
+    #[schemars(
+        description = "The send call or tool result that produced this receipt",
+        length(min = 1, max = 500)
+    )]
+    pub provenance: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeliveryUnknown {
+    #[schemars(transform = Literal("unknown"))]
+    pub state: Lit,
+    #[schemars(length(min = 1, max = 500))]
+    pub reason: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(untagged, transform = one_of)]
+pub enum DeliveryReport {
+    Sent(DeliverySent),
+    Unknown(DeliveryUnknown),
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaRecommendationRecordInputFinish {
+    #[schemars(transform = Literal("finish"))]
+    pub action: Lit,
+    #[schemars(extend("default" = true))]
+    pub dry_run: Option<bool>,
+    #[schemars(length(min = 1, max = 200))]
+    pub recommendation_id: String,
+    #[schemars(description = "The record's current chat.revision")]
+    pub expected_revision: i64,
+    pub delivery: DeliveryReport,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaRecommendationRecordInputWithdraw {
+    #[schemars(transform = Literal("withdraw"))]
+    pub action: Lit,
+    #[schemars(extend("default" = true))]
+    pub dry_run: Option<bool>,
+    #[schemars(length(min = 1, max = 200))]
+    pub recommendation_id: String,
+    pub expected_revision: i64,
+    #[schemars(length(min = 1, max = 500))]
+    pub reason: String,
+    #[schemars(
+        description = "Confirms the recommendation was definitely never presented",
+        transform = Literal(true)
+    )]
+    pub not_presented: Lit,
+}
+
+#[derive(JsonSchema)]
+#[schemars(untagged, transform = one_of)]
+pub enum MediaRecommendationRecordInput {
+    Prepare(MediaRecommendationRecordInputPrepare),
+    Finish(MediaRecommendationRecordInputFinish),
+    Withdraw(MediaRecommendationRecordInputWithdraw),
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum RecordAction {
+    Prepare,
+    Finish,
+    Withdraw,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum RecordResult {
+    Eligible,
+    Ineligible,
+    Unavailable,
+    Reserved,
+    Replayed,
+    WouldChange,
+    Changed,
+    Unchanged,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecordIdentity {
+    pub canonical_id: String,
+    #[schemars(transform = positive)]
+    pub tmdb_id: u64,
+    pub media_type: MediaType,
+    pub title: String,
+    pub year: Option<i64>,
+    #[schemars(url)]
+    pub tmdb_url: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct RecordExclusion {
+    pub code: String,
+    pub detail: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct RecordUnavailable {
+    pub source: String,
+    pub reason: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaRecommendationRecordOutput {
+    pub action: RecordAction,
+    pub dry_run: bool,
+    #[schemars(
+        description = "prepare: eligible (dry run), ineligible, unavailable (state unreadable), reserved or replayed. finish and withdraw: would_change (dry run), changed or unchanged (already recorded)"
+    )]
+    pub result: RecordResult,
+    pub identity: Option<RecordIdentity>,
+    #[schemars(description = "Whether the media server already has the title; null when unknown")]
+    pub in_library: Option<bool>,
+    pub exclusions: Vec<RecordExclusion>,
+    pub unavailable: Vec<RecordUnavailable>,
+    pub recommendation: Option<MediaRecommendationsListItem>,
+    #[schemars(description = "The owner's one-tap rating page for the recorded recommendation")]
+    pub feedback_url: Option<String>,
+}
 
 #[derive(JsonSchema)]
 pub struct MediaTasteReadInputProfile {

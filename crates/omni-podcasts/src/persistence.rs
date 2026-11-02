@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use omni_core::clock::utc_date_stamp;
+use omni_runtime::chat_record::{ChatRecord, RecommendationOrigin};
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, ModifyOpts, UpsertOpts};
 use omni_store::{Store, StoreError};
@@ -125,8 +126,21 @@ pub struct PodcastRecommendationData {
     pub feedback_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback_note: Option<String>,
+    /// Absent on rows the legacy selection pipeline wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<RecommendationOrigin>,
+    /// Delivery bookkeeping of an assistant-recorded recommendation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_record: Option<ChatRecord>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl PodcastRecommendationData {
+    /// Written by the legacy selection pipeline, whose reconciler may repair it.
+    pub fn is_legacy(&self) -> bool {
+        self.origin.is_none()
+    }
 }
 
 impl Entity for PodcastRecommendationData {
@@ -157,8 +171,8 @@ impl Entity for PodcastRunState {
 
 const RUN_STATE_ID: &str = "singleton";
 /// Same-show cooldown; episodes themselves are excluded permanently.
-const SHOW_COOLDOWN_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-const FAILED_RETRY_MS: i64 = 24 * 60 * 60 * 1000;
+pub const SHOW_COOLDOWN_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+pub const FAILED_RETRY_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// Newest first by `recommendedAt` (stable).
 pub fn sort_newest_first(records: &mut [PodcastRecommendationData]) {

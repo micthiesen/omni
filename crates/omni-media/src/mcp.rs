@@ -10,6 +10,7 @@ use omni_api::media::{
 };
 use omni_core::js::trim;
 use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool};
+use omni_runtime::chat_record::{ChatRecordError, ChatRecordView, DeliveryReport, origin_label};
 use serde::{Deserialize, Serialize};
 
 use crate::arr::inspect::{ArrService, Download, InspectError, ProfileSummary};
@@ -27,6 +28,7 @@ use crate::persistence::{
     FeedbackInput, RecommendationData, get_all_recommendations, get_recommendation,
     set_recommendation_feedback,
 };
+use crate::record::{self, DeliveryOutcome, Exclusion, PrepareInput, PrepareResult, Preview};
 use crate::services::MediaServices;
 use crate::taste::{get_all_taste_evidence, get_latest_taste_profile};
 use crate::tmdb::types::{TmdbTitle, TmdbTitleDetails};
@@ -230,6 +232,8 @@ struct ToolRecommendation {
     #[serde(serialize_with = "js_number_opt")]
     feedback_at: Option<f64>,
     feedback_note: Option<String>,
+    origin: &'static str,
+    chat: Option<ChatRecordView>,
 }
 
 fn serialize_recommendation(rec: &RecommendationData) -> ToolRecommendation {
@@ -256,6 +260,8 @@ fn serialize_recommendation(rec: &RecommendationData) -> ToolRecommendation {
         feedback: rec.feedback,
         feedback_at: rec.feedback_at.map(num),
         feedback_note: rec.feedback_note.clone(),
+        origin: origin_label(rec.origin),
+        chat: rec.chat_record.as_ref().map(ChatRecordView::from),
     }
 }
 
@@ -737,6 +743,222 @@ enum TasteReadOutput {
         #[serde(flatten)]
         page: Page<EvidenceItem>,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum RecordInput {
+    #[serde(rename_all = "camelCase")]
+    Prepare {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        idempotency_key: String,
+        media_type: MediaType,
+        tmdb_id: i64,
+        why_for_user: String,
+        #[serde(default)]
+        caveats: Vec<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Finish {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        recommendation_id: String,
+        expected_revision: i64,
+        delivery: DeliveryReport,
+    },
+    #[serde(rename_all = "camelCase")]
+    Withdraw {
+        #[serde(default = "yes")]
+        dry_run: bool,
+        recommendation_id: String,
+        expected_revision: i64,
+        reason: String,
+        not_presented: bool,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordIdentityView {
+    canonical_id: String,
+    tmdb_id: i64,
+    media_type: MediaType,
+    title: String,
+    year: Option<i64>,
+    tmdb_url: String,
+}
+
+#[derive(Serialize)]
+struct RecordExclusionView {
+    code: &'static str,
+    detail: String,
+}
+
+#[derive(Serialize)]
+struct RecordUnavailableView {
+    source: &'static str,
+    reason: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordOutput {
+    action: &'static str,
+    dry_run: bool,
+    result: &'static str,
+    identity: Option<RecordIdentityView>,
+    in_library: Option<bool>,
+    exclusions: Vec<RecordExclusionView>,
+    unavailable: Vec<RecordUnavailableView>,
+    recommendation: Option<ToolRecommendation>,
+    feedback_url: Option<String>,
+}
+
+fn exclusion_views(exclusions: &[Exclusion]) -> Vec<RecordExclusionView> {
+    exclusions
+        .iter()
+        .map(|e| RecordExclusionView {
+            code: e.code,
+            detail: e.detail.clone(),
+        })
+        .collect()
+}
+
+fn record_output(
+    s: &MediaServices,
+    action: &'static str,
+    dry_run: bool,
+    result: &'static str,
+    preview: Option<&Preview>,
+    rec: Option<&RecommendationData>,
+) -> RecordOutput {
+    let identity = preview
+        .and_then(|p| p.identity.as_ref())
+        .map(|i| RecordIdentityView {
+            canonical_id: i.canonical_id.clone(),
+            tmdb_id: i.tmdb_id,
+            media_type: i.media_type,
+            title: i.title.clone(),
+            year: i.year,
+            tmdb_url: i.tmdb_url.clone(),
+        });
+    RecordOutput {
+        action,
+        dry_run,
+        result,
+        identity,
+        in_library: preview.and_then(|p| p.in_library),
+        exclusions: preview.map_or_else(Vec::new, |p| exclusion_views(&p.exclusions)),
+        unavailable: preview.map_or_else(Vec::new, |p| {
+            p.unavailable
+                .iter()
+                .map(|u| RecordUnavailableView {
+                    source: u.source,
+                    reason: u.reason.clone(),
+                })
+                .collect()
+        }),
+        recommendation: rec.map(serialize_recommendation),
+        feedback_url: rec.map(|r| s.feedback_url(&r.recommendation_id)),
+    }
+}
+
+fn record_error(error: &record::RecordError) -> ToolError {
+    match error {
+        record::RecordError::Chat(ChatRecordError::Input(message)) => ToolError::input(message),
+        record::RecordError::Store(e) => store_error(e),
+        other => ToolError::execute(other.to_string()),
+    }
+}
+
+fn delivery_output(
+    s: &MediaServices,
+    action: &'static str,
+    dry_run: bool,
+    outcome: &DeliveryOutcome,
+) -> RecordOutput {
+    let result = match (outcome.changed, dry_run) {
+        (false, _) => "unchanged",
+        (true, true) => "would_change",
+        (true, false) => "changed",
+    };
+    record_output(s, action, dry_run, result, None, Some(&outcome.record))
+}
+
+async fn recommendation_record(
+    s: Arc<MediaServices>,
+    input: RecordInput,
+) -> Result<RecordOutput, ToolError> {
+    match input {
+        RecordInput::Prepare {
+            dry_run,
+            idempotency_key,
+            media_type,
+            tmdb_id,
+            why_for_user,
+            caveats,
+        } => {
+            let result = record::prepare(
+                &s,
+                &PrepareInput {
+                    idempotency_key,
+                    media_type,
+                    tmdb_id,
+                    why_for_user,
+                    caveats,
+                    dry_run,
+                },
+            )
+            .await
+            .map_err(|e| record_error(&e))?;
+            let out = |result, preview: Option<&Preview>, rec: Option<&RecommendationData>| {
+                record_output(&s, "prepare", dry_run, result, preview, rec)
+            };
+            Ok(match &result {
+                PrepareResult::Replayed(rec) => out("replayed", None, Some(rec)),
+                PrepareResult::Unavailable(p) => out("unavailable", Some(p), None),
+                PrepareResult::Ineligible(p) => out("ineligible", Some(p), None),
+                PrepareResult::Eligible(p) => out("eligible", Some(p), None),
+                PrepareResult::Reserved(rec, p) => out("reserved", Some(p), Some(rec)),
+            })
+        }
+        RecordInput::Finish {
+            dry_run,
+            recommendation_id,
+            expected_revision,
+            delivery,
+        } => {
+            let outcome = record::finish(
+                &s,
+                &recommendation_id,
+                expected_revision,
+                &delivery,
+                dry_run,
+            )
+            .await
+            .map_err(|e| record_error(&e))?;
+            Ok(delivery_output(&s, "finish", dry_run, &outcome))
+        }
+        RecordInput::Withdraw {
+            dry_run,
+            recommendation_id,
+            expected_revision,
+            reason,
+            not_presented,
+        } => {
+            if !not_presented {
+                return Err(ToolError::input(
+                    "notPresented must be true: only a reservation that was never presented can be withdrawn",
+                ));
+            }
+            let outcome =
+                record::withdraw(&s, &recommendation_id, expected_revision, &reason, dry_run)
+                    .await
+                    .map_err(|e| record_error(&e))?;
+            Ok(delivery_output(&s, "withdraw", dry_run, &outcome))
+        }
+    }
 }
 
 /// The media tools in serving order.
@@ -1307,6 +1529,10 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                     })
                 }
             }
+        })?,
+        typed_tool(&defs::MEDIA_RECOMMENDATION_RECORD, {
+            let s = s.clone();
+            move |input: RecordInput, _cx| recommendation_record(s.clone(), input)
         })?,
         typed_tool(&defs::MEDIA_TASTE_READ, {
             let s = s.clone();

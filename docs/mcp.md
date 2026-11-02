@@ -50,7 +50,8 @@ families cover:
   (`media_downloads_remove`) and NZBGet status (`media_nzbget_status`, see
   "Downloads and NZBGet" below), audiobooks (`media_audiobook*`, see
   "Audiobooks" below), recommendations, podcast
-  accounts, and podcast recommendations
+  accounts, and podcast recommendations, including assistant-recorded
+  recommendations (`*_recommendation_record`, see "Recommendation records" below)
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
 - Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
@@ -582,6 +583,56 @@ id at the time of the request, and `upgrade.state` compares it with Radarr now:
 scanned), `verified` (file changed, exactly one managed file and no other video
 file in the folder), `extra_files` (anything else remains, so the upgrade is not
 complete) or `file_missing`.
+
+### Recommendation records
+
+`media_recommendation_record` and `podcast_recommendation_record` let an
+assistant record a film, series or podcast episode it recommends in chat. They
+write only Omni's private recommendation rows (the same
+`recs-recommendation-attempt` and `podcast-recommendation-attempt` entities the
+selection pipelines write) and never acquire media, queue, subscribe or notify.
+Every action takes `dryRun`, default `true`, which writes nothing.
+
+- `prepare` checks one exact identity: a TMDB id and media type, or a show's
+  RSS feed URL plus the episode's exact item GUID (and enclosure, when given).
+  It reads watch history, in-progress items and Radarr/Sonarr (media), or
+  subscriptions, listen history and the queue (podcasts), and every recorded
+  recommendation. Media items without a resolvable TMDB id that share the
+  title are reported as `possible_title_match` rather than assumed unseen; the
+  preview reads only cached identity aliases and writes none. Any unreadable
+  source returns `unavailable` and blocks reservation. Podcasts also look the
+  episode up in the podcast client read-only: `client.status` is `verified`
+  only for a GUID or enclosure match, and only then does `enqueue` carry the
+  `podcast_account_update` arguments (queueing still needs the owner's
+  approval). The canonical podcast identity is the feed, never the client id.
+- With `dryRun: false`, `prepare` reserves a pending row with
+  `origin: assistant_chat` in one store transaction that re-reads every row:
+  one reservation per title or episode across all callers and keys (podcast
+  episodes match by canonical id, feed URL and GUID, or enclosure), and a
+  repeated `idempotencyKey` returns the same row. No confidence or candidate
+  source is invented; both stay null.
+- `finish` takes the record's `chat.revision` as `expectedRevision` and either
+  a send receipt (`channel`, `messageRef`, `sentAt`, `provenance`), which
+  marks the row `notified` at `sentAt`, or an unknown send, which keeps it
+  pending. A receipt proves sending, not reading. Repeating the same report is
+  `unchanged` whatever revision it names; a different receipt is a conflict.
+- `withdraw` (with `notPresented: true`) fails a reservation the caller knows
+  was never presented, keeping the 24-hour retry exclusion. A sent row cannot
+  be withdrawn.
+
+Omni never resends, withdraws or fails an assistant row by itself: the
+selection pipelines' one-hour stale-pending repair applies only to rows
+without an origin, and passive playback (`startedAt`) and outcome labels
+apply only to notified rows. The read tools report `origin`
+(`legacy_pipeline` or `assistant_chat`) and the `chat` bookkeeping, and the
+feedback tools and `/feedback/...` links work on both.
+
+The deterministic outcome and evidence sync lives in `omni-media/src/sync.rs`
+and `omni-podcasts/src/sync.rs`. The live `Recommendations`,
+`TasteReflection`, `PodcastRecs` and `PodcastTasteReflection` tasks call it;
+`RecommendationSync` and `PodcastRecommendationSync` run the same steps
+without a model but are not registered, so nothing syncs twice while the
+legacy tasks run.
 
 ### Browser history
 

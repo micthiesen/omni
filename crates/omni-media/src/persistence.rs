@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use omni_api::media::{RecommendationFeedback, RecommendationStatus, WatchlistResult};
+use omni_runtime::chat_record::{ChatRecord, RecommendationOrigin};
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, JsObjectPatch, ModifyOpts};
 use omni_store::{Store, StoreError, Tx};
@@ -11,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::types::{CandidateSource, MediaType};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-const COOLDOWN_MS: i64 = 180 * DAY_MS;
-const FAILED_RETRY_MS: i64 = DAY_MS;
+pub const COOLDOWN_MS: i64 = 180 * DAY_MS;
+pub const FAILED_RETRY_MS: i64 = DAY_MS;
 pub const ON_DECK_LIMIT: usize = 4;
 
 /// Durable notification attempt state. `reserved` means delivery was
@@ -127,11 +128,22 @@ pub struct RecommendationData {
     /// Free-form note alongside (or instead of) the rating.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback_note: Option<String>,
+    /// Absent on rows the legacy selection pipeline wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<RecommendationOrigin>,
+    /// Delivery bookkeeping of an assistant-recorded recommendation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_record: Option<ChatRecord>,
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl RecommendationData {
+    /// Written by the legacy selection pipeline, whose reconciler may repair it.
+    pub fn is_legacy(&self) -> bool {
+        self.origin.is_none()
+    }
+
     pub fn status(&self) -> RecommendationStatus {
         self.status
     }

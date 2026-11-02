@@ -15,7 +15,7 @@ async fn disables_every_task_without_configuration_but_keeps_routes_tools_and_ga
     let built = subsystem(&app.ctx).unwrap();
     assert_eq!(built.name, "podcasts");
     assert!(built.tasks.is_empty());
-    assert_eq!(built.mcp_tools.len(), 7);
+    assert_eq!(built.mcp_tools.len(), 8);
     let names: Vec<&str> = built.entities.iter().map(|e| e.name).collect();
     assert_eq!(
         names,

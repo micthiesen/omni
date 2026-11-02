@@ -9,7 +9,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use futures::StreamExt;
 use indexmap::IndexMap;
 use omni_ai::ModelRole;
 use omni_api::media::{RecommendationStatus, WatchlistResult};
@@ -22,17 +21,17 @@ use crate::candidates::{
 use crate::error::{IntegrationError, RecommendationError, max_recommendations_message};
 use crate::filters::{FilterContext, filter_eligible};
 use crate::history::{completed_watches, format_history_digest};
-use crate::identity::resolve_identity;
 use crate::js::slice_utf16;
-use crate::outcomes::{OutcomeInputs, ProgressState, WatchedState, decide_outcomes};
 use crate::persistence::{
     NotificationState, Patch, RecommendationData, ShortlistScoresData, format_feedback_digest,
-    get_excluded_canonical_ids, get_open_recommendations, patch_recommendation_in,
+    get_excluded_canonical_ids, patch_recommendation_in,
 };
+use crate::record::record_exclusions;
 use crate::run_log::{self, RunLogFile};
 use crate::selection::{Decision, SelectionPick, research_finalists, select_recommendation};
 use crate::services::{MediaServices, RecommendationPush};
 use crate::shortlist::{FINALIST_COUNT, ScoredCandidate, shortlist_candidates};
+use crate::sync::{FULL_RESOLUTION_HISTORY_LIMIT, outcome_inputs, resolve_many, sync_outcomes};
 use crate::taste::{format_taste_profile_digest, get_latest_taste_profile};
 use crate::types::{
     AddToWatchlistResult, Candidate, ExternalIds, FetchResult, MediaItem, WatchedItem,
@@ -41,9 +40,6 @@ use crate::types::{
 use crate::watchlist::WatchlistAddRequest;
 
 const LOG: &str = "Main:RecsTask";
-const RESOLVE_CONCURRENCY: usize = 4;
-/// Full (network-fallback) resolution is reserved for the most recent watches.
-const FULL_RESOLUTION_HISTORY_LIMIT: usize = 60;
 /// A pending row older than this from a previous run needs reconciliation.
 const STALE_PENDING_MS: i64 = 60 * 60 * 1000;
 pub const MAX_RECOMMENDATIONS_PER_RUN: u32 = 10;
@@ -141,35 +137,8 @@ pub async fn run_recommendation_pipeline(
     .await?;
 
     // 3. Outcome bookkeeping for open recommendations.
-    let mut watched_by_id: HashMap<String, WatchedState> = HashMap::new();
-    for item in &history {
-        let Some(id) = canonical_by_guid.get(&item.item.guid) else {
-            continue;
-        };
-        let prior = watched_by_id.get(id).copied();
-        if prior.is_none_or(|p| p.last_viewed_at.is_none_or(|at| item.viewed_at > at)) {
-            watched_by_id.insert(
-                id.clone(),
-                WatchedState {
-                    completion: item.completion,
-                    view_count: prior.map_or(0, |p| p.view_count).max(item.view_count),
-                    last_viewed_at: Some(item.viewed_at),
-                },
-            );
-        }
-    }
-    let mut in_progress_by_id: HashMap<String, ProgressState> = HashMap::new();
-    for item in &in_progress {
-        if let Some(id) = canonical_by_guid.get(&item.item.guid) {
-            in_progress_by_id.insert(
-                id.clone(),
-                ProgressState {
-                    progress: item.progress,
-                    last_viewed_at: Some(item.last_viewed_at),
-                },
-            );
-        }
-    }
+    let outcome_sync_now = services.now();
+    let inputs = outcome_inputs(&history, &in_progress, &canonical_by_guid, outcome_sync_now);
     let mut watchlist_ids: HashSet<String> = HashSet::new();
     let mut watchlist_unresolved = 0usize;
     for item in &watchlist {
@@ -188,18 +157,7 @@ pub async fn run_recommendation_pipeline(
             "{watchlist_unresolved} watchlist item(s) unresolved; skipping absence-based outcome labels"
         );
     }
-    let outcome_sync_now = services.now();
-    sync_outcomes(
-        services,
-        OutcomeInputs {
-            watched: watched_by_id,
-            in_progress: in_progress_by_id.clone(),
-            in_progress_available: true,
-            now: outcome_sync_now,
-        },
-        log_file,
-    )
-    .await?;
+    sync_outcomes(&services.store, &inputs, log_file).await?;
     reconcile_stale_pending(services, &watchlist_ids, watchlist_complete).await?;
 
     // 4. Taste inputs: ground-truth history plus explicit feedback.
@@ -237,7 +195,7 @@ pub async fn run_recommendation_pipeline(
         &pool,
         &FilterContext {
             watched_ids,
-            in_progress_ids: in_progress_by_id.keys().cloned().collect(),
+            in_progress_ids: inputs.in_progress.keys().cloned().collect(),
             watchlist_ids,
             excluded_recommendation_ids: excluded,
         },
@@ -390,123 +348,6 @@ fn commit_failed() -> RecommendationError {
     RecommendationError::Commit("Recommendation acquisition or notification failed".to_owned())
 }
 
-/// Resolves each distinct GUID once; only confident resolutions map.
-async fn resolve_many(
-    services: &MediaServices,
-    items: &[&MediaItem],
-    full_resolution: &HashSet<&str>,
-) -> Result<HashMap<String, String>, RecommendationError> {
-    let mut seen = HashSet::new();
-    let unique: Vec<&MediaItem> = items
-        .iter()
-        .copied()
-        .filter(|item| seen.insert(item.guid.as_str()))
-        .collect();
-    let resolutions: Vec<Result<Option<(String, String)>, RecommendationError>> =
-        futures::stream::iter(
-            unique
-                .into_iter()
-                .map(|item| async move {
-                    let resolution = resolve_identity(
-                        &services.store,
-                        services.catalog.as_ref(),
-                        item,
-                        full_resolution.contains(item.guid.as_str()),
-                    )
-                    .await
-                    .map_err(persistence("resolve media identity"))?;
-                    Ok(resolution
-                        .confident_id()
-                        .map(|id| (item.guid.clone(), id.to_owned())))
-                })
-                .collect::<Vec<_>>(),
-        )
-        .buffer_unordered(RESOLVE_CONCURRENCY)
-        .collect()
-        .await;
-    let mut resolved = HashMap::new();
-    for resolution in resolutions {
-        if let Some((guid, id)) = resolution? {
-            resolved.insert(guid, id);
-        }
-    }
-    Ok(resolved)
-}
-
-/// Records the first passive playback signal, then applies outcome labels.
-async fn sync_outcomes(
-    services: &MediaServices,
-    inputs: OutcomeInputs,
-    log_file: Option<&RunLogFile>,
-) -> Result<(), RecommendationError> {
-    let map_err = persistence("sync recommendation outcomes");
-    let mut open = match get_open_recommendations(&services.store).await {
-        Ok(open) => open,
-        Err(e) => return Err(map_err(e)),
-    };
-    let now = inputs.now;
-    for rec in &mut open {
-        let delivered_at = rec.delivered_at();
-        let history = inputs.watched.get(&rec.canonical_id);
-        let watched_after =
-            history.is_some_and(|h| h.last_viewed_at.is_none_or(|at| at >= delivered_at));
-        let progress = inputs.in_progress.get(&rec.canonical_id);
-        let progress_after =
-            progress.is_some_and(|p| p.last_viewed_at.is_none_or(|at| at >= delivered_at));
-        if rec.started_at.is_none_or(|at| at == 0) && (watched_after || progress_after) {
-            let observed_at = if watched_after {
-                history.and_then(|h| h.last_viewed_at)
-            } else {
-                progress.and_then(|p| p.last_viewed_at)
-            };
-            let started_at = delivered_at.max(observed_at.unwrap_or(now));
-            patch_recommendation_in(
-                &services.store,
-                &rec.recommendation_id,
-                Patch::new().int("startedAt", started_at),
-            )
-            .await
-            .map_err(persistence("sync recommendation outcomes"))?;
-            rec.started_at = Some(started_at);
-        }
-    }
-    let changes = decide_outcomes(&open, &inputs);
-    for change in &changes {
-        patch_recommendation_in(
-            &services.store,
-            &change.recommendation_id,
-            Patch::new()
-                .str("status", change.status.as_str())
-                .int("resolvedAt", now),
-        )
-        .await
-        .map_err(persistence("sync recommendation outcomes"))?;
-        tracing::info!(
-            target: LOG,
-            "Outcome: {} → {} ({})",
-            change.canonical_id,
-            change.status.as_str(),
-            change.reason
-        );
-    }
-    if !changes.is_empty() {
-        let lines = changes
-            .iter()
-            .map(|c| {
-                format!(
-                    "- {} → {} ({})",
-                    c.canonical_id,
-                    c.status.as_str(),
-                    c.reason
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        run_log::section(log_file, "Outcome Sync", &lines).await?;
-    }
-    Ok(())
-}
-
 fn push_title(rec: &RecommendationData) -> String {
     let year = rec
         .year
@@ -532,8 +373,12 @@ async fn reconcile_stale_pending(
         .await
         .map_err(persistence("read stale recommendations"))?
         .into_iter()
+        // Assistant-recorded rows settle only through their own finish or
+        // withdraw: this repair would fail or re-notify an unknown chat send.
         .filter(|r| {
-            r.status() == RecommendationStatus::Pending && now - r.recommended_at > STALE_PENDING_MS
+            r.is_legacy()
+                && r.status() == RecommendationStatus::Pending
+                && now - r.recommended_at > STALE_PENDING_MS
         })
         .collect();
     for rec in stale {
@@ -750,11 +595,32 @@ async fn commit_recommendation(
         was_backup: Some(was_backup),
         ..RecommendationData::default()
     };
-    services
+    // An assistant may have reserved this title since the run read its
+    // exclusions; the check and the insert share one transaction.
+    let inserted = services
         .store
-        .write(move |tx| tx.upsert(&pending, UpsertOpts::default()))
+        .write(move |tx| {
+            let assistant: Vec<RecommendationData> = tx
+                .get_all::<RecommendationData>()?
+                .into_iter()
+                .filter(|r| !r.is_legacy())
+                .collect();
+            if !record_exclusions(&assistant, &pending.canonical_id, now).is_empty() {
+                return Ok(false);
+            }
+            tx.upsert(&pending, UpsertOpts::default())?;
+            Ok(true)
+        })
         .await
         .map_err(persistence("insert pending recommendation"))?;
+    if !inserted {
+        tracing::warn!(
+            target: LOG,
+            "{} was reserved by an assistant during this run",
+            candidate.title
+        );
+        return Ok(CommitResult::AlreadyExists);
+    }
 
     let (add_result, manager_slug) = if candidate.in_library {
         (None, None)

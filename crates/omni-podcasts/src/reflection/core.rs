@@ -13,13 +13,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::evidence::{
-    derive_listen_evidence, derive_recommendation_evidence, fingerprint_evidence,
-};
+use super::evidence::fingerprint_evidence;
 use super::stats::compute_podcast_behavioral_stats;
 use super::store::{
-    get_all_podcast_taste_evidence, get_latest_podcast_taste_profile,
-    insert_podcast_taste_evidence, insert_podcast_taste_profile,
+    get_all_podcast_taste_evidence, get_latest_podcast_taste_profile, insert_podcast_taste_profile,
 };
 use super::types::{
     PodcastBehavioralStats, PodcastTasteClaim, PodcastTasteEvidenceData, PodcastTasteEvidenceKind,
@@ -28,6 +25,7 @@ use super::types::{
 use crate::account::ListenedEpisode;
 use crate::models::{Models, Refine, in_range};
 use crate::persistence::{PodcastFeedback, PodcastRecommendationData, PodcastRecommendationStatus};
+use crate::sync::capture_taste_evidence;
 
 pub const PODCAST_TASTE_PROMPT_VERSION: &str = "podcast-taste-reflection-v1";
 pub const DEFAULT_MAX_EVIDENCE: usize = 160;
@@ -137,9 +135,7 @@ pub async fn run_podcast_taste_reflection(
     models: &Models,
     input: PodcastTasteReflectionInput,
 ) -> Result<PodcastTasteReflectionResult, PodcastReflectionError> {
-    let mut incoming = derive_listen_evidence(&input.listened);
-    incoming.extend(derive_recommendation_evidence(&input.recommendations));
-    let inserted_evidence = insert_podcast_taste_evidence(store, incoming)
+    let inserted_evidence = capture_taste_evidence(store, &input.listened, &input.recommendations)
         .await
         .map_err(PodcastReflectionError::store(
             "insert podcast taste evidence",

@@ -70,3 +70,23 @@ impl ShowDirectory for HttpDirectory {
         })
     }
 }
+
+/// A directory that reads nothing (tests and offline audits).
+pub struct OfflineDirectory;
+
+impl ShowDirectory for OfflineDirectory {
+    fn search_itunes<'a>(
+        &'a self,
+        _term: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<ItunesShow>, String>> {
+        Box::pin(async { Err("show directory is offline".to_owned()) })
+    }
+
+    fn fetch_feed<'a>(
+        &'a self,
+        _feed_url: &'a str,
+        _max_episodes: usize,
+    ) -> BoxFuture<'a, Result<Vec<FeedEpisode>, String>> {
+        Box::pin(async { Err("show directory is offline".to_owned()) })
+    }
+}

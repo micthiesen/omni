@@ -83,6 +83,7 @@ async fn registers_the_media_tools_in_serving_order() {
             "media_recommendations_list",
             "media_recommendation_get",
             "media_recommendation_feedback",
+            "media_recommendation_record",
             "media_taste_read",
         ]
     );

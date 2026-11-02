@@ -26,6 +26,7 @@ use omni_tasks::{EventBus, Task, TaskRegistry};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+pub mod chat_record;
 pub mod ports;
 
 pub use ports::Ports;

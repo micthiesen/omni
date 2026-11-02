@@ -367,7 +367,7 @@ async fn builds_the_production_subsystem_from_the_app_context() {
         subsystem.tasks.is_empty(),
         "unconfigured tasks stay disabled"
     );
-    assert_eq!(subsystem.mcp_tools.len(), 31);
+    assert_eq!(subsystem.mcp_tools.len(), 32);
     assert_eq!(
         subsystem
             .entities

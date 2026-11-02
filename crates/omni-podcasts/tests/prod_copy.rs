@@ -221,6 +221,8 @@ async fn production_evidence_ids_fingerprint_and_serializers_round_trip() {
         store: store.clone(),
         clock,
         accounts: Arc::new(FixedAccount(None)),
+        directory: Arc::new(omni_podcasts::sources::OfflineDirectory),
+        public_url: "https://recs.example".to_owned(),
     })
     .unwrap();
     let cx = || ToolContext {

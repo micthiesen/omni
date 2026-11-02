@@ -124,6 +124,8 @@ pub struct FakeCatalog {
     pub details: Arc<Mutex<Option<Arc<DetailsFn>>>>,
     pub genre_names: Arc<Mutex<HashMap<i64, String>>>,
     pub trending: Arc<Mutex<Vec<TmdbTitle>>>,
+    /// Exact-id lookups; a missing id fails like a TMDB 404.
+    pub titles: Arc<Mutex<HashMap<(MediaType, i64), TmdbTitle>>>,
     pub calls: Arc<Mutex<Vec<String>>>,
 }
 
@@ -209,6 +211,18 @@ impl Catalog for FakeCatalog {
     fn genre_map(&self, _media_type: MediaType) -> BoxFuture<'_, CatalogResult<GenreMap>> {
         let map = Arc::new(lock(&self.genre_names).clone());
         Box::pin(async move { Ok(map) })
+    }
+    fn title(
+        &self,
+        media_type: MediaType,
+        tmdb_id: i64,
+    ) -> BoxFuture<'_, CatalogResult<TmdbTitle>> {
+        self.record(format!("title:{}:{tmdb_id}", media_type.as_str()));
+        let value = lock(&self.titles)
+            .get(&(media_type, tmdb_id))
+            .cloned()
+            .ok_or_else(|| failure("TMDB GET title", "HTTP 404"));
+        Box::pin(async move { value })
     }
 }
 
