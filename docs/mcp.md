@@ -49,7 +49,8 @@ families cover:
   queues (`media_arr_*`, `media_downloads_list`), queue removal
   (`media_downloads_remove`) and NZBGet status (`media_nzbget_status`, see
   "Downloads and NZBGet" below), audiobooks (`media_audiobook*`, see
-  "Audiobooks" below), recommendations, podcast
+  "Audiobooks" below), Apple Music link and id resolution
+  (`media_apple_music_resolve`, see "Apple Music links" below), recommendations, podcast
   accounts, and podcast recommendations, including assistant-recorded
   recommendations (`*_recommendation_record`, see "Recommendation records" below)
 - PressPods jobs and episodes, pet weights and weekly health trends
@@ -702,6 +703,41 @@ logged-out ones. Obscura keeps its default private-network block, so pages
 cannot reach the LAN. The extraction scripts (`omni-personal/src/amazon/js/`)
 follow Amazon's markup and need updating when it changes; results come back
 empty or partial rather than wrong-typed.
+
+### Apple Music links
+
+`media_apple_music_resolve` identifies music shared in a conversation. It takes
+a music.apple.com link or a bare catalog id and returns compact metadata (name,
+artist, album, track and disc number, duration, release date, genre, explicit,
+streamable) with canonical music.apple.com links stripped of tracking
+parameters. It needs no account or credentials: the only request is
+`GET https://itunes.apple.com/lookup?id=<id>&country=<storefront>`, Apple's
+public iTunes Lookup API, through the SSRF-guarded public client. The caller's
+link is parsed locally and never fetched, so no input chooses a host.
+
+- Links: `music.apple.com` (and its `geo.`, `embed.`, `beta.` and
+  `classical.` hosts) and legacy `itunes.apple.com` and `geo.itunes.apple.com` paths of the form
+  `[/<storefront>]/<album|song|artist|music-video>/[<slug>/]<id>`. An album link
+  with `?i=<id>` names that song; `type: "album"` resolves the album instead.
+  Other hosts, credentials, ports and malformed ids are input errors.
+- Storefront: the `storefront` input wins, then the link's, then `ca` (Michael
+  is in Canada). Catalog availability differs by storefront (many Japanese
+  releases are absent from North American storefronts), so `not_found` means absent from that storefront, and the message says
+  so. Apple rejects unknown storefronts with HTTP 400, reported as an input error
+  that names where the storefront came from.
+- Type: ids are unique across kinds, so a bare id resolves on its own. The
+  top-level `type` is the expected kind and `item.type` the actual one. A `type`
+  input that contradicts the id returns `type_mismatch` with the item; one that
+  contradicts the link's kind is an input error.
+- `unsupported`, answered without a request: playlists (`pl.` ids need the
+  authenticated Apple Music API), stations, curators, library links and
+  `apple.co` short links (following them would mean fetching a caller URL).
+  A bare id of an app, podcast or another non-music catalog kind costs one
+  lookup and returns `unsupported` with Apple's own label.
+- Provider failures (network, timeout, 5xx, an unreadable body) are errors,
+  never empty results; HTTP 403 or 429 is reported as Apple rate limiting.
+  Nothing is cached. Previews, lyrics, playback, library and account access
+  are out of scope.
 
 ### Owner notifications
 

@@ -9,6 +9,7 @@ use omni_config::Config;
 use omni_core::clock::SharedClock;
 use omni_store::Store;
 
+use crate::apple_music::AppleMusic;
 use crate::arr::inspect::ArrInspect;
 use crate::arr::movies::RadarrMovies;
 use crate::arr::queue::ArrQueue;
@@ -83,6 +84,8 @@ pub struct MediaServices {
     pub audiobooks: Audiobooks,
     /// Read-only NZBGet status.
     pub nzbget: NzbGet,
+    /// Keyless Apple Music catalog lookups.
+    pub apple_music: AppleMusic,
     pub catalog: Arc<dyn Catalog>,
     pub research: Arc<dyn Research>,
     pub notifier: Arc<dyn Notifier>,

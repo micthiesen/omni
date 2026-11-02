@@ -931,6 +931,22 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "media_apple_music_resolve",
+      "title": "Resolve Apple Music Link",
+      "description": "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads Apple's public iTunes catalog lookup"
+      ],
+      "cost": "No credentials or monetary cost; at most one public request per call",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "media_arr_profiles",
       "title": "List Radarr or Sonarr Quality Profiles",
       "description": "List the quality profiles configured in Radarr or Sonarr, read live: id, name, whether upgrades are allowed, the cutoff quality, allowed qualities from least to most preferred, the highest allowed resolution, custom-format score thresholds and nonzero custom-format scores. isDefault marks the profile Omni uses when it adds a title. Use the ids with media_movies_profile_set or media_series_profile_set.",

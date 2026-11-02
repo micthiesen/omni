@@ -65,6 +65,26 @@ pub static MEDIA_CATALOG_BROWSE: ToolDef<MediaCatalogBrowseInput, MediaCatalogBr
         },
     });
 
+pub static MEDIA_APPLE_MUSIC_RESOLVE: ToolDef<
+    MediaAppleMusicResolveInput,
+    MediaAppleMusicResolveOutput,
+> = ToolDef::new(ToolInfo {
+    name: "media_apple_music_resolve",
+    title: "Resolve Apple Music Link",
+    description: "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+    annotations: Annotations {
+        read_only_hint: true,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &["Reads Apple's public iTunes catalog lookup"],
+        cost: "No credentials or monetary cost; at most one public request per call",
+        recommended: ApprovalPolicy::Allow,
+    },
+});
+
 pub static MEDIA_LIBRARY_LIST: ToolDef<MediaLibraryListInput, MediaLibraryListOutput> =
     ToolDef::new(ToolInfo {
         name: "media_library_list",
@@ -652,10 +672,11 @@ pub static MEDIA_TASTE_READ: ToolDef<MediaTasteReadInput, MediaTasteReadOutput> 
 );
 
 /// Every media tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 32] = [
+pub static TOOLS: [&dyn ToolDefinition; 33] = [
     &MEDIA_CATALOG_SEARCH,
     &MEDIA_CATALOG_GET,
     &MEDIA_CATALOG_BROWSE,
+    &MEDIA_APPLE_MUSIC_RESOLVE,
     &MEDIA_LIBRARY_LIST,
     &MEDIA_WATCHLIST_LIST,
     &MEDIA_WATCHLIST_ADD,
@@ -2842,4 +2863,107 @@ pub struct MediaAudiobooksListOutput {
     pub total: u64,
     #[schemars(description = "Audiobooks, newest first")]
     pub items: Vec<LibraryAudiobook>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum AppleMusicType {
+    Song,
+    Album,
+    Artist,
+    MusicVideo,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum AppleMusicStatus {
+    Found,
+    NotFound,
+    TypeMismatch,
+    Unsupported,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum AppleMusicStorefrontSource {
+    Input,
+    Link,
+    Default,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaAppleMusicResolveInput {
+    /// A music.apple.com link or a numeric Apple Music catalog id.
+    #[schemars(length(min = 1, max = 2048))]
+    pub reference: String,
+    /// The expected kind; `album` on an album?i= song link selects the album.
+    #[schemars(rename = "type")]
+    pub kind: Option<AppleMusicType>,
+    /// Two-letter storefront (country) code; overrides the link's.
+    #[schemars(pattern(r"^[A-Za-z]{2}$"))]
+    pub storefront: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AppleMusicItem {
+    #[schemars(rename = "type")]
+    pub kind: AppleMusicType,
+    #[schemars(transform = positive)]
+    pub id: u64,
+    pub name: String,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub artist_name: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub artist_id: Option<u64>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub album_name: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub album_id: Option<u64>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub track_number: Option<u64>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub disc_number: Option<u64>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub track_count: Option<u64>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// YYYY-MM-DD.
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub release_date: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub explicit: Option<bool>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub streamable: Option<bool>,
+    #[schemars(skip_serializing_if = "Option::is_none", url)]
+    pub url: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none", url)]
+    pub artist_url: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none", url)]
+    pub album_url: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none", url)]
+    pub artwork_url: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaAppleMusicResolveOutput {
+    pub status: AppleMusicStatus,
+    /// The catalog id looked up; absent for unsupported links.
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
+    /// The kind the id must be (from the link or the type input).
+    #[schemars(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AppleMusicType>,
+    pub storefront: String,
+    pub storefront_source: AppleMusicStorefrontSource,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub item: Option<AppleMusicItem>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub unsupported_kind: Option<String>,
+    #[schemars(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }

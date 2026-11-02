@@ -13,6 +13,7 @@ use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool
 use omni_runtime::chat_record::{ChatRecordError, ChatRecordView, DeliveryReport, origin_label};
 use serde::{Deserialize, Serialize};
 
+use crate::apple_music::{MusicType, ResolveRequest};
 use crate::arr::inspect::{ArrService, Download, InspectError, ProfileSummary};
 use crate::arr::movies::{
     GrabRequest, MovieSearchRequest, MoviesQuery, ProfileRef, ProfileSetRequest, SearchPurpose,
@@ -280,6 +281,15 @@ struct CatalogSearchInput {
     cursor: usize,
     #[serde(default = "default_catalog_limit")]
     limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppleMusicResolveInput {
+    reference: String,
+    #[serde(rename = "type")]
+    kind: Option<MusicType>,
+    storefront: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1042,6 +1052,28 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                         cursor,
                         limit,
                     ))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_APPLE_MUSIC_RESOLVE, {
+            let s = s.clone();
+            move |input: AppleMusicResolveInput, _cx| {
+                let s = s.clone();
+                async move {
+                    s.apple_music
+                        .resolve(ResolveRequest {
+                            reference: input.reference,
+                            kind: input.kind,
+                            storefront: input.storefront,
+                        })
+                        .await
+                        .map_err(|e| {
+                            if e.is_input() {
+                                ToolError::input(e.to_string())
+                            } else {
+                                ToolError::execute(e.to_string())
+                            }
+                        })
                 }
             }
         })?,

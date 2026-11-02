@@ -164,7 +164,8 @@ change; reuse authorization already given in the conversation.
   RSS.
 - `omni-podcasts`: podcast recommendations, taste reflection, Castro bridge and
   Inbox cleanup.
-- `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, audiobooks
+- `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, keyless Apple
+  Music link and id resolution (`apple_music`), audiobooks
   (MyAnonamouse through Prowlarr and Deluge into the Plex audiobook library,
   `AudiobookWatch`), media recommendations, taste reflection.
 - `omni-youtube`: the owner's YouTube account over the YouTube Data API (Google

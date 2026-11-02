@@ -316,6 +316,9 @@ impl Harness {
             queue: arr_queue(&app, ArrConfig::default(), ArrConfig::default()),
             audiobooks: audiobooks(&app),
             nzbget: omni_media::nzbget::NzbGet::new(omni_testkit::no_network(), None),
+            apple_music: omni_media::apple_music::AppleMusic::new(
+                omni_http::public::PublicHttpClient::new(&omni_testkit::no_network()),
+            ),
             catalog: Arc::new(catalog.clone()),
             research: Arc::new(research.clone()),
             notifier: Arc::new(notifier.clone()),

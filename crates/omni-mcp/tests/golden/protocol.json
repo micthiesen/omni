@@ -13472,6 +13472,195 @@
                   }
                 },
                 {
+                  "name": "media_apple_music_resolve",
+                  "title": "Resolve Apple Music Link",
+                  "description": "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "description": "A music.apple.com link or a numeric Apple Music catalog id."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The expected kind; `album` on an album?i= song link selects the album."
+                      },
+                      "storefront": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "Two-letter storefront (country) code; overrides the link's."
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "found",
+                          "not_found",
+                          "type_mismatch",
+                          "unsupported"
+                        ]
+                      },
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The catalog id looked up; absent for unsupported links."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The kind the id must be (from the link or the type input)."
+                      },
+                      "storefront": {
+                        "type": "string"
+                      },
+                      "storefrontSource": {
+                        "type": "string",
+                        "enum": [
+                          "input",
+                          "link",
+                          "default"
+                        ]
+                      },
+                      "item": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "song",
+                              "album",
+                              "artist",
+                              "music_video"
+                            ]
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "artistName": {
+                            "type": "string"
+                          },
+                          "artistId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "albumName": {
+                            "type": "string"
+                          },
+                          "albumId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "discNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "durationMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "releaseDate": {
+                            "type": "string",
+                            "description": "YYYY-MM-DD."
+                          },
+                          "genre": {
+                            "type": "string"
+                          },
+                          "explicit": {
+                            "type": "boolean"
+                          },
+                          "streamable": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artistUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "albumUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artworkUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "unsupportedKind": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "storefront",
+                      "storefrontSource"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "media_library_list",
                   "title": "List Plex Media",
                   "description": "List the configured Plex library, recent watch history, or in-progress items. An unavailable Plex server is reported as an error, never as an empty library.",
@@ -57669,6 +57858,195 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_apple_music_resolve",
+                  "title": "Resolve Apple Music Link",
+                  "description": "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "description": "A music.apple.com link or a numeric Apple Music catalog id."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The expected kind; `album` on an album?i= song link selects the album."
+                      },
+                      "storefront": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "Two-letter storefront (country) code; overrides the link's."
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "found",
+                          "not_found",
+                          "type_mismatch",
+                          "unsupported"
+                        ]
+                      },
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The catalog id looked up; absent for unsupported links."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The kind the id must be (from the link or the type input)."
+                      },
+                      "storefront": {
+                        "type": "string"
+                      },
+                      "storefrontSource": {
+                        "type": "string",
+                        "enum": [
+                          "input",
+                          "link",
+                          "default"
+                        ]
+                      },
+                      "item": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "song",
+                              "album",
+                              "artist",
+                              "music_video"
+                            ]
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "artistName": {
+                            "type": "string"
+                          },
+                          "artistId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "albumName": {
+                            "type": "string"
+                          },
+                          "albumId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "discNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "durationMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "releaseDate": {
+                            "type": "string",
+                            "description": "YYYY-MM-DD."
+                          },
+                          "genre": {
+                            "type": "string"
+                          },
+                          "explicit": {
+                            "type": "boolean"
+                          },
+                          "streamable": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artistUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "albumUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artworkUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "unsupportedKind": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "storefront",
+                      "storefrontSource"
                     ],
                     "additionalProperties": false
                   }
@@ -102067,6 +102445,195 @@
                   }
                 },
                 {
+                  "name": "media_apple_music_resolve",
+                  "title": "Resolve Apple Music Link",
+                  "description": "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "description": "A music.apple.com link or a numeric Apple Music catalog id."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The expected kind; `album` on an album?i= song link selects the album."
+                      },
+                      "storefront": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "Two-letter storefront (country) code; overrides the link's."
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "found",
+                          "not_found",
+                          "type_mismatch",
+                          "unsupported"
+                        ]
+                      },
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The catalog id looked up; absent for unsupported links."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The kind the id must be (from the link or the type input)."
+                      },
+                      "storefront": {
+                        "type": "string"
+                      },
+                      "storefrontSource": {
+                        "type": "string",
+                        "enum": [
+                          "input",
+                          "link",
+                          "default"
+                        ]
+                      },
+                      "item": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "song",
+                              "album",
+                              "artist",
+                              "music_video"
+                            ]
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "artistName": {
+                            "type": "string"
+                          },
+                          "artistId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "albumName": {
+                            "type": "string"
+                          },
+                          "albumId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "discNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "durationMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "releaseDate": {
+                            "type": "string",
+                            "description": "YYYY-MM-DD."
+                          },
+                          "genre": {
+                            "type": "string"
+                          },
+                          "explicit": {
+                            "type": "boolean"
+                          },
+                          "streamable": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artistUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "albumUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artworkUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "unsupportedKind": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "storefront",
+                      "storefrontSource"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
                   "name": "media_library_list",
                   "title": "List Plex Media",
                   "description": "List the configured Plex library, recent watch history, or in-progress items. An unavailable Plex server is reported as an error, never as an empty library.",
@@ -145716,6 +146283,195 @@
                       "nextCursor",
                       "total",
                       "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "name": "media_apple_music_resolve",
+                  "title": "Resolve Apple Music Link",
+                  "description": "Identify music shared in a conversation: resolve an Apple Music link (music.apple.com album, song, artist or music-video URL; an album link with ?i= names that song) or a bare catalog id into compact metadata (name, artist, album, track number, duration, release date, genre, explicit) and canonical music.apple.com links, through Apple's public iTunes Lookup API. The link is parsed, never fetched. Catalog availability differs by storefront: the storefront input wins, then the link's, then ca (Canada); not_found means absent from that storefront. Pass type to check a bare id's kind (a different kind returns type_mismatch with the item), or type album to resolve the album of an album?i= song link. Playlists, stations, library and apple.co short links, and ids of apps, podcasts or books, return unsupported. No playback, previews, lyrics, library or account access.",
+                  "inputSchema": {
+                    "type": "object",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "properties": {
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "description": "A music.apple.com link or a numeric Apple Music catalog id."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The expected kind; `album` on an album?i= song link selects the album."
+                      },
+                      "storefront": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "Two-letter storefront (country) code; overrides the link's."
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": true
+                  },
+                  "outputSchema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "found",
+                          "not_found",
+                          "type_mismatch",
+                          "unsupported"
+                        ]
+                      },
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The catalog id looked up; absent for unsupported links."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "song",
+                          "album",
+                          "artist",
+                          "music_video"
+                        ],
+                        "description": "The kind the id must be (from the link or the type input)."
+                      },
+                      "storefront": {
+                        "type": "string"
+                      },
+                      "storefrontSource": {
+                        "type": "string",
+                        "enum": [
+                          "input",
+                          "link",
+                          "default"
+                        ]
+                      },
+                      "item": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "song",
+                              "album",
+                              "artist",
+                              "music_video"
+                            ]
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "artistName": {
+                            "type": "string"
+                          },
+                          "artistId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "albumName": {
+                            "type": "string"
+                          },
+                          "albumId": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "discNumber": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "trackCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "durationMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "releaseDate": {
+                            "type": "string",
+                            "description": "YYYY-MM-DD."
+                          },
+                          "genre": {
+                            "type": "string"
+                          },
+                          "explicit": {
+                            "type": "boolean"
+                          },
+                          "streamable": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artistUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "albumUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "artworkUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "unsupportedKind": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "storefront",
+                      "storefrontSource"
                     ],
                     "additionalProperties": false
                   }

@@ -56,6 +56,7 @@ async fn registers_the_media_tools_in_serving_order() {
             "media_catalog_search",
             "media_catalog_get",
             "media_catalog_browse",
+            "media_apple_music_resolve",
             "media_library_list",
             "media_watchlist_list",
             "media_watchlist_add",

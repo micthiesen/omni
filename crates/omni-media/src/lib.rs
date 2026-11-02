@@ -20,6 +20,7 @@ use omni_runtime::{AppContext, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
 use omni_tasks::{CronSchedule, Task};
 
+pub mod apple_music;
 pub mod arr;
 pub mod audiobooks;
 pub mod candidates;
@@ -167,6 +168,7 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         queue,
         audiobooks,
         nzbget: nzbget::NzbGet::new(ctx.http.clone(), config.nzbget_url.clone()),
+        apple_music: apple_music::AppleMusic::new(ctx.public_http.clone()),
         catalog: Arc::new(TmdbClient::new(
             ctx.http.clone(),
             config.tmdb_api_key.clone(),
