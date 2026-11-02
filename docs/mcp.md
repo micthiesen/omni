@@ -616,9 +616,13 @@ Every action takes `dryRun`, default `true`, which writes nothing.
   marks the row `notified` at `sentAt`, or an unknown send, which keeps it
   pending. A receipt proves sending, not reading. Repeating the same report is
   `unchanged` whatever revision it names; a different receipt is a conflict.
-- `withdraw` (with `notPresented: true`) fails a reservation the caller knows
-  was never presented, keeping the 24-hour retry exclusion. A sent row cannot
-  be withdrawn.
+  An unknown send is never treated as resolved without a receipt: it stays
+  pending, its title or episode stays excluded with no time limit, and only a
+  later `finish` with a receipt changes it.
+- `withdraw` (with `notPresented: true`) fails only a `reserved` row, one that
+  was never sent, keeping the 24-hour retry exclusion. A `sent` or `unknown`
+  row cannot be withdrawn: the caller's assertion is not evidence about an
+  uncertain send, and releasing it could repeat a delivered recommendation.
 
 Omni never resends, withdraws or fails an assistant row by itself: the
 selection pipelines' one-hour stale-pending repair applies only to rows

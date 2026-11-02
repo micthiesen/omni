@@ -373,8 +373,8 @@ async fn reconcile_stale_pending(
         .await
         .map_err(persistence("read stale recommendations"))?
         .into_iter()
-        // Assistant-recorded rows settle only through their own finish or
-        // withdraw: this repair would fail or re-notify an unknown chat send.
+        // Assistant-recorded rows settle only through a finish with a receipt, or a
+        // withdraw while still reserved: this repair would fail or re-notify an unknown send.
         .filter(|r| {
             r.is_legacy()
                 && r.status() == RecommendationStatus::Pending

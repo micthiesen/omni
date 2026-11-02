@@ -385,6 +385,26 @@ async fn receipts_finish_unknown_sends_wait_and_withdrawals_keep_the_retry_exclu
         .unwrap();
     assert_eq!(unknown["recommendation"]["status"], json!("pending"));
     assert_eq!(unknown["recommendation"]["notifiedAt"], Value::Null);
+    for (dry_run, revision) in [(true, 2), (false, 2), (false, 1)] {
+        let refused = f
+            .call(json!({
+                "action": "withdraw", "dryRun": dry_run, "recommendationId": id,
+                "expectedRevision": revision, "reason": "never sent", "notPresented": true,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.phase, ToolPhase::Execute);
+        assert!(refused.message.contains("unknown send cannot be withdrawn"));
+    }
+    let row = f.rows().await.into_iter().next().unwrap();
+    assert_eq!(row.status, PodcastRecommendationStatus::Pending);
+    assert_eq!(row.resolved_at, None);
+    assert_eq!(row.chat_record.as_ref().unwrap().revision, 2);
+    let blocked = f.call(prepare("k-other", Some(false))).await.unwrap();
+    assert_eq!(
+        codes(&blocked),
+        vec!["pending_recommendation", "show_cooldown"]
+    );
     let sent = json!({
         "action": "finish", "dryRun": false, "recommendationId": id, "expectedRevision": 2,
         "delivery": {"state": "sent", "channel": "claude-chat", "messageRef": "m1",

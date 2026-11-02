@@ -428,8 +428,8 @@ async fn reconcile_stale_pending(store: &Store, now: i64) -> Result<(), StoreErr
     let stale: Vec<PodcastRecommendationData> = get_all_podcast_recommendations(store)
         .await?
         .into_iter()
-        // Assistant-recorded rows settle only through their own finish or
-        // withdraw: failing one here would erase an unknown chat send.
+        // Assistant-recorded rows settle only through a finish with a receipt,
+        // or a withdraw while still reserved: failing one would erase an unknown send.
         .filter(|r| {
             r.is_legacy()
                 && r.status == PodcastRecommendationStatus::Pending

@@ -3,10 +3,10 @@
 //!
 //! A chat record is reserved before the assistant sends anything and is
 //! finished only with the assistant's own send receipt. A receipt proves the
-//! message was sent, not that it was read. An unknown send stays pending and
-//! is never resent or withdrawn by Omni; only the caller can reconcile it,
-//! either with a receipt or by withdrawing a reservation it knows was never
-//! presented. Legacy pipeline rows never carry a chat record.
+//! message was sent, not that it was read. An unknown send stays pending (and
+//! its title excluded) until the caller finishes it with a receipt; it can
+//! never be withdrawn, by Omni or the caller. Only a reservation that was
+//! never sent can be withdrawn. Legacy pipeline rows never carry a chat record.
 
 use omni_store::cbor::Extra;
 use serde::{Deserialize, Serialize};
@@ -306,7 +306,13 @@ pub fn withdraw(
         ChatDelivery::Sent => Err(ChatRecordError::Conflict(
             "A sent recommendation was presented and cannot be withdrawn".to_owned(),
         )),
-        ChatDelivery::Reserved | ChatDelivery::Unknown => {
+        // The caller's word cannot settle an uncertain send: releasing the
+        // exclusion could repeat a recommendation that was in fact delivered.
+        ChatDelivery::Unknown => Err(ChatRecordError::Conflict(
+            "An unknown send cannot be withdrawn; finish it with a send receipt or leave it pending"
+                .to_owned(),
+        )),
+        ChatDelivery::Reserved => {
             check_revision(record, expected_revision)?;
             Ok(changed(record, now, |next| {
                 next.delivery = ChatDelivery::Withdrawn;
@@ -405,6 +411,13 @@ mod tests {
         };
         let next = apply(&record, finish(&record, 1, &unknown, NOW).unwrap());
         assert_eq!(next.delivery, ChatDelivery::Unknown);
+        // Neither a current nor a stale revision lets the caller withdraw it.
+        for revision in [1, 2] {
+            assert!(matches!(
+                withdraw(&next, revision, "never sent", NOW),
+                Err(ChatRecordError::Conflict(_))
+            ));
+        }
         let sent_later = apply(&next, finish(&next, 2, &sent("m1"), NOW).unwrap());
         assert_eq!(sent_later.delivery, ChatDelivery::Sent);
         assert_eq!(sent_later.unknown_reason.as_deref(), Some("timeout"));

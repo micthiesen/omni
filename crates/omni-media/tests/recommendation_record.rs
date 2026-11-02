@@ -491,6 +491,76 @@ async fn an_unknown_send_stays_pending_and_legacy_reconciliation_never_touches_i
 }
 
 #[tokio::test]
+async fn an_unknown_send_cannot_be_withdrawn_and_stays_excluded_until_a_receipt() {
+    let f = Fixture::new().await;
+    let id = f.reserve("k1", 10).await["recommendation"]["recommendationId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.call(json!({
+        "action": "finish", "dryRun": false, "recommendationId": id, "expectedRevision": 1,
+        "delivery": {"state": "unknown", "reason": "chat send timed out"},
+    }))
+    .await
+    .expect("unknown");
+    let before = f.rows().await;
+    for (dry_run, revision) in [(true, 2), (false, 2), (false, 1)] {
+        let refused = f
+            .call(json!({
+                "action": "withdraw", "dryRun": dry_run, "recommendationId": id,
+                "expectedRevision": revision, "reason": "never sent", "notPresented": true,
+            }))
+            .await
+            .expect_err("unknown is not withdrawable");
+        assert_eq!(refused.phase, ToolPhase::Execute);
+        assert!(refused.message.contains("unknown send cannot be withdrawn"));
+    }
+    let after = f.rows().await;
+    assert_eq!(after, before, "no status, revision or field changed");
+    assert_eq!(after[0].status, RecommendationStatus::Pending);
+    assert_eq!(after[0].chat_record.as_ref().unwrap().revision, 2);
+    assert_eq!(
+        codes(&f.reserve("k2", 10).await),
+        vec!["pending_recommendation"]
+    );
+    // A day later the title is still excluded: an unknown send never ages out.
+    f.clock.set(TEST_EPOCH_MS + 3 * DAY);
+    assert_eq!(
+        codes(&f.reserve("k2", 10).await),
+        vec!["pending_recommendation"]
+    );
+    let sent_at = TEST_EPOCH_MS + HOUR;
+    let done = f.call(sent(&id, 2, "m1", sent_at)).await.expect("receipt");
+    assert_eq!(done["recommendation"]["status"], json!("notified"));
+    assert_eq!(done["recommendation"]["notifiedAt"], json!(sent_at));
+}
+
+#[tokio::test]
+async fn withdrawing_a_reserved_row_again_with_the_same_reason_is_unchanged() {
+    let f = Fixture::new().await;
+    let id = f.reserve("k1", 10).await["recommendation"]["recommendationId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let withdraw = |reason: &str| {
+        json!({
+            "action": "withdraw", "dryRun": false, "recommendationId": id,
+            "expectedRevision": 1, "reason": reason, "notPresented": true,
+        })
+    };
+    assert_eq!(
+        f.call(withdraw("never sent")).await.unwrap()["result"],
+        json!("changed")
+    );
+    assert_eq!(
+        f.call(withdraw("never sent")).await.unwrap()["result"],
+        json!("unchanged")
+    );
+    let other = f.call(withdraw("other")).await.expect_err("conflict");
+    assert!(other.message.contains("different reason"));
+}
+
+#[tokio::test]
 async fn a_stale_assistant_reservation_is_never_auto_failed() {
     let f = Fixture::new().await;
     let id = f.reserve("k1", 10).await["recommendation"]["recommendationId"]

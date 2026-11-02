@@ -433,8 +433,9 @@ private recommendation rows with `origin: assistant_chat` and a `chatRecord`
 (`omni_runtime::chat_record`); every action defaults to `dryRun: true`. A
 reservation re-checks all rows in one transaction, so one title or episode is
 reserved once across every caller and key. Only a caller-supplied send receipt
-marks a row notified; an unknown send stays pending and Omni never resends,
-withdraws or fails it. The selection pipelines' stale-pending repair (media
+marks a row notified; an unknown send stays pending and excluded until a
+receipt finishes it, and neither Omni nor the caller can withdraw, fail or
+resend it (withdraw accepts only never-sent `reserved` rows). The selection pipelines' stale-pending repair (media
 re-notify, podcast one-hour fail) applies only to rows without an origin, and
 `startedAt` and outcome labels apply only to notified rows. Podcast identity
 is the RSS feed and exact GUID, never a Castro id; a client mapping is exposed
