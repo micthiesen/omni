@@ -316,7 +316,9 @@ async fn refresh(server: &AuthorizationServer, params: &Params) -> Result<Respon
 }
 
 fn new_refresh_token() -> String {
-    format!("{REFRESH_PREFIX}{}", omni_core::ids::secure_id_b64url(32))
+    let token = format!("{REFRESH_PREFIX}{}", omni_core::ids::secure_id_b64url(32));
+    omni_core::secrets::register_runtime(&token);
+    token
 }
 
 fn tokens(

@@ -325,6 +325,7 @@ impl ApnsControlClient {
             &self.private_key_pem,
             issued_at,
         )?;
+        omni_core::secrets::register_runtime(&value);
         *cached = Some((value.clone(), issued_at));
         Ok(value)
     }

@@ -377,7 +377,6 @@ fn secret_values_include_url_credentials_and_encoded_forms_but_not_identifiers()
         "printer-pass-1",
         "nzb-query-token-2",
         "sk-ant-key+with/slash=3",
-        "sk-ant-key%2Bwith%2Fslash%3D3",
     ] {
         assert!(secrets.iter().any(|s| s == expected), "{expected} missing");
     }

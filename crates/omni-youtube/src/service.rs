@@ -538,9 +538,14 @@ impl Youtube {
             .await
             .map_err(|e| TokenFailure::Other(YoutubeError::Http(e)))?;
         if response.status.is_success() {
-            return serde_json::from_slice(&response.body).map_err(|e| {
+            let tokens: TokenResponse = serde_json::from_slice(&response.body).map_err(|e| {
                 TokenFailure::Other(YoutubeError::Decode(format!("token response: {e}")))
-            });
+            })?;
+            omni_core::secrets::register_runtime(&tokens.access_token);
+            if let Some(refresh) = &tokens.refresh_token {
+                omni_core::secrets::register_runtime(refresh);
+            }
+            return Ok(tokens);
         }
         let error: TokenError = serde_json::from_slice(&response.body).unwrap_or_default();
         let code = error.error.unwrap_or_else(|| "unknown_error".to_owned());
@@ -619,6 +624,7 @@ impl Youtube {
                 connect_url,
             });
         };
+        omni_core::secrets::register_runtime(&refresh);
         let form = [
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh.as_str()),

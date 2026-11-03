@@ -88,6 +88,23 @@ fn fail(operation: &str, reason: &str, status: Option<u16>) -> AppleRemindersErr
     AppleRemindersError::new(operation, reason, status, kind)
 }
 
+impl AppleSession {
+    /// Lets every log sink scrub the session's tokens.
+    fn register_for_scrub(&self) {
+        for value in [
+            &self.scnt,
+            &self.session_id,
+            &self.session_token,
+            &self.trust_token,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            omni_core::secrets::register_runtime(value);
+        }
+    }
+}
+
 /// The persisted Apple session (`AppleSession`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -346,6 +363,7 @@ impl AppleRemindersClient {
             client_id: format!("auth-{}", omni_core::ids::uuid_v4()),
             ..AppleSession::default()
         });
+        session.register_for_scrub();
         Ok(self.with_state(|s| {
             // A concurrent load may have won; keep the first.
             if s.session.is_none() {
@@ -383,6 +401,7 @@ impl AppleRemindersClient {
         self.with_state(|s| {
             if let Some(session) = s.session.as_mut() {
                 f(session);
+                session.register_for_scrub();
             }
         });
     }

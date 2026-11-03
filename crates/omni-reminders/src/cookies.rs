@@ -643,6 +643,11 @@ impl CookieJar {
 
     /// Replaces `(domain, path, key)` in place, else appends.
     fn put(&mut self, cookie: Cookie) {
+        // Session cookies are long random tokens; shorter values are locales,
+        // flags and similar text that scrubbing would only obscure.
+        if cookie.value.len() >= SCRUBBED_COOKIE_MIN_BYTES {
+            omni_core::secrets::register_runtime(&cookie.value);
+        }
         match self
             .cookies
             .iter_mut()
@@ -779,12 +784,37 @@ impl CookieJar {
     }
 }
 
+const SCRUBBED_COOKIE_MIN_BYTES: usize = 20;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn url(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn stored_cookie_values_are_scrubbed() {
+        let mut jar = CookieJar::new();
+        jar.set_cookie(
+            "X-APPLE-WEBAUTH-TOKEN=cookie-marker-96-session-x; Domain=icloud.com; Path=/; Secure",
+            &url("https://setup.icloud.com/setup/ws/1/accountLogin"),
+            1_800_000_000_000,
+        )
+        .unwrap();
+        jar.set_cookie(
+            "dslang=US-EN-short; Domain=icloud.com; Path=/",
+            &url("https://setup.icloud.com/setup/ws/1/accountLogin"),
+            1_800_000_000_000,
+        )
+        .unwrap();
+        assert_eq!(
+            omni_core::secrets::scrub(
+                "Cookie: X-APPLE-WEBAUTH-TOKEN=cookie-marker-96-session-x; dslang=US-EN-short"
+            ),
+            "Cookie: X-APPLE-WEBAUTH-TOKEN=[redacted]; dslang=US-EN-short"
+        );
     }
 
     #[test]

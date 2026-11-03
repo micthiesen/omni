@@ -222,6 +222,7 @@ impl WhiskerAuth {
             return Ok(entry.session.clone());
         }
         let id_token = self.sign_in().await?;
+        omni_core::secrets::register_runtime(&id_token);
         let (user_id, exp) = decode_jwt_payload(&id_token)?;
         #[allow(clippy::cast_possible_truncation)]
         let expires_at = exp

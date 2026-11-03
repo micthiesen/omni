@@ -495,20 +495,6 @@ const UNSCRUBBED_KEYS: &[&str] = &[
     "PRESSPODS_HIGGS_REF_TEXT",
 ];
 
-/// The forms a secret takes in log text: as configured, percent-encoded (in a
-/// URL) and JSON-escaped (in a serialized body or `{:?}` field).
-fn secret_forms(value: &str, out: &mut Vec<String>) {
-    out.push(value.to_owned());
-    let encoded: String = url::form_urlencoded::byte_serialize(value.as_bytes()).collect();
-    if encoded != value {
-        out.push(encoded);
-    }
-    let escaped = value.escape_debug().to_string();
-    if escaped != value {
-        out.push(escaped);
-    }
-}
-
 /// Userinfo and query values inside a public URL, which the summary strips
 /// but other log lines could print with the raw URL.
 fn url_secrets(value: &str, out: &mut Vec<String>) {
@@ -516,13 +502,13 @@ fn url_secrets(value: &str, out: &mut Vec<String>) {
         return;
     };
     if !url.username().is_empty() {
-        secret_forms(url.username(), out);
+        out.push(url.username().to_owned());
     }
     if let Some(password) = url.password() {
-        secret_forms(password, out);
+        out.push(password.to_owned());
     }
     for (_, query_value) in url.query_pairs() {
-        secret_forms(&query_value, out);
+        out.push(query_value.into_owned());
     }
 }
 
@@ -898,9 +884,9 @@ impl Config {
     }
 
     /// Every value the summary hides (except [`UNSCRUBBED_KEYS`]), credentials
-    /// inside public URLs, and the Whisker credentials, each in its raw,
-    /// percent-encoded and escaped forms: what `omni_core::secrets` scrubs from
-    /// logs and MCP errors.
+    /// inside public URLs, and the Whisker credentials: what
+    /// `omni_core::secrets` scrubs (with their encoded forms) from logs and
+    /// MCP errors.
     pub fn secret_values(&self) -> Vec<String> {
         let mut values = Vec::new();
         for entry in self.summary_entries() {
@@ -908,14 +894,14 @@ impl Config {
                 continue;
             }
             if entry.hidden() {
-                secret_forms(&entry.value, &mut values);
+                values.push(entry.value);
             } else {
                 url_secrets(&entry.value, &mut values);
             }
         }
         if let Some(whisker) = &self.whisker_credentials {
-            secret_forms(&whisker.email, &mut values);
-            secret_forms(&whisker.password, &mut values);
+            values.push(whisker.email.clone());
+            values.push(whisker.password.clone());
         }
         values
     }

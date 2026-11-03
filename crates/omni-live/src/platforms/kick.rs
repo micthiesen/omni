@@ -299,6 +299,7 @@ impl KickClient {
             .map_err(|e| format!("Decode kick token request: {e}"))?;
         #[allow(clippy::cast_possible_truncation)]
         let lifetime_ms = (parsed.expires_in * 1_000.0) as i64;
+        omni_core::secrets::register_runtime(&parsed.access_token);
         Ok(CachedToken {
             access_token: parsed.access_token,
             expires_at: self.now_ms() + lifetime_ms - TOKEN_REFRESH_LEEWAY_MS,

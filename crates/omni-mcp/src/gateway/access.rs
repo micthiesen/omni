@@ -79,10 +79,9 @@ pub fn issue_access_token(secrets: &GatewaySecrets, grant_id: &str, now: i64) ->
     };
     let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap_or_default());
     let signature = URL_SAFE_NO_PAD.encode(secrets.sign(ACCESS_PURPOSE, encoded.as_bytes()));
-    (
-        format!("{ACCESS_TOKEN_PREFIX}{encoded}.{signature}"),
-        expires_at,
-    )
+    let token = format!("{ACCESS_TOKEN_PREFIX}{encoded}.{signature}");
+    omni_core::secrets::register_runtime(&token);
+    (token, expires_at)
 }
 
 /// The grant an unexpired, correctly signed access token names.
@@ -322,6 +321,7 @@ impl DownstreamAccess {
             "{CLIENT_TOKEN_PREFIX}{}",
             omni_core::ids::secure_id_b64url(32)
         );
+        omni_core::secrets::register_runtime(&token);
         let row = ClientRow {
             id: omni_core::ids::uuid_v4(),
             label: label.to_owned(),
@@ -365,6 +365,33 @@ impl DownstreamAccess {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issued_tokens_and_opened_credentials_are_scrubbed() {
+        let secrets = GatewaySecrets::from_key([3; 32]);
+        let (token, _) = issue_access_token(&secrets, "grant-scrub", 1_000);
+        assert_eq!(
+            omni_core::secrets::scrub(&format!("Bearer {token}")),
+            "Bearer [redacted]"
+        );
+        let credentials = crate::gateway::model::CredentialSecrets {
+            headers: vec![
+                ("X-Api-Key".to_owned(), "header-marker-91".to_owned()),
+                (
+                    "Authorization".to_owned(),
+                    "Bearer bare-marker-90".to_owned(),
+                ),
+            ],
+            env: vec![("TOKEN".to_owned(), "env-marker-92".to_owned())],
+            access_token: Some("access-marker-93".to_owned()),
+            refresh_token: Some("refresh-marker-94".to_owned()),
+            client_secret: Some("client-marker-95".to_owned()),
+        };
+        credentials.register_for_scrub();
+        let line = "header-marker-91 env-marker-92 access-marker-93 \
+                    refresh-marker-94 client-marker-95 echoed bare-marker-90";
+        assert!(!omni_core::secrets::scrub(line).contains("marker"));
+    }
 
     #[test]
     fn access_tokens_verify_until_expiry_and_only_with_the_key() {

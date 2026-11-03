@@ -468,6 +468,9 @@ impl OAuthClient {
             .token_endpoint_auth_method
             .unwrap_or_else(|| method.to_owned());
         let secret = parsed.client_secret.filter(|secret| !secret.is_empty());
+        if let Some(secret) = &secret {
+            omni_core::secrets::register_runtime(secret);
+        }
         match TokenAuth::parse(&token_auth) {
             None => Err(OAuthError::Registration(format!(
                 "the server registered the unsupported token endpoint auth method {}",
@@ -776,6 +779,10 @@ fn token_set(
         .filter(|secs| secs.is_finite())
         // `as` saturates; a negative lifetime means "now".
         .map(|secs| now.saturating_add((secs.max(0.0) * 1000.0) as i64));
+    omni_core::secrets::register_runtime(&parsed.access_token);
+    if let Some(refresh) = &parsed.refresh_token {
+        omni_core::secrets::register_runtime(refresh);
+    }
     Ok(TokenSet {
         access_token: parsed.access_token,
         refresh_token: parsed.refresh_token.filter(|token| !token.is_empty()),

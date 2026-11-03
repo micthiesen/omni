@@ -160,6 +160,26 @@ pub struct CredentialSecrets {
     pub client_secret: Option<String>,
 }
 
+impl CredentialSecrets {
+    /// Lets every log sink scrub these values; called whenever they are
+    /// opened or saved.
+    pub fn register_for_scrub(&self) {
+        for (_, value) in self.headers.iter().chain(&self.env) {
+            omni_core::secrets::register_runtime(value);
+            // `Bearer <token>` and similar: errors may echo the token alone.
+            if let Some((_, token)) = value.trim().rsplit_once(' ') {
+                omni_core::secrets::register_runtime(token);
+            }
+        }
+        for value in [&self.access_token, &self.refresh_token, &self.client_secret]
+            .into_iter()
+            .flatten()
+        {
+            omni_core::secrets::register_runtime(value);
+        }
+    }
+}
+
 impl std::fmt::Debug for CredentialSecrets {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CredentialSecrets")

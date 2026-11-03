@@ -215,6 +215,9 @@ impl Credentials {
             .secrets
             .open(&context(&integration.id), &row.sealed)
             .and_then(|json| serde_json::from_str::<CredentialSecrets>(&json).ok());
+        if let Some(secrets) = &secrets {
+            secrets.register_for_scrub();
+        }
         Ok(secrets.map(|secrets| (row, secrets)))
     }
 
@@ -224,6 +227,7 @@ impl Credentials {
         meta: CredentialMeta,
         secrets: &CredentialSecrets,
     ) -> Result<(), StoreError> {
+        secrets.register_for_scrub();
         let row = CredentialRow {
             integration: integration.id.clone(),
             origin: integration.transport.credential_origin(),

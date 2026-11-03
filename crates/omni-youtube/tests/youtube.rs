@@ -196,6 +196,11 @@ async fn connecting_exchanges_the_code_once_and_seals_the_refresh_token() {
         .unwrap()
         .unwrap();
     assert!(!row.refresh_token.contains("granted"));
+    // Both tokens Google returned are scrubbed from any later log line.
+    assert_eq!(
+        omni_core::secrets::scrub("auth ya29.first with 1//granted"),
+        "auth [redacted] with [redacted]"
+    );
     let status = f.youtube.status().await.unwrap();
     assert_eq!(status.state, ConnectionState::Connected);
     assert_eq!(
