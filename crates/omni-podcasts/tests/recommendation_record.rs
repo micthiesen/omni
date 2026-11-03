@@ -69,6 +69,7 @@ impl Fixture {
             },
             directory: Arc::new(FakeDirectory::with_feeds(Vec::new(), vec![feed])),
             public_url: "https://recs.example/".into(),
+            exa: None,
         };
         Self {
             store,

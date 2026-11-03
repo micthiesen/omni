@@ -17,6 +17,10 @@ use crate::account::{
     AccountProvider, EnqueueEpisodeRequest, FetchResult, PodcastAccount, PodcastQueuePosition,
     PodcastWriteResult, SubscribeToShowRequest,
 };
+use crate::exa::{
+    ExaPodcasts, PageFetch, PageKind, PodcastPage, SearchHit, SearchParams, UnavailableReason,
+    normalize_date, page_slice, parse_podcast_url,
+};
 use crate::persistence::{
     PodcastFeedback, PodcastQueueResult, PodcastRecommendationData, PodcastRecommendationStatus,
     get_all_podcast_recommendations, get_podcast_recommendation,
@@ -45,6 +49,8 @@ pub struct McpState {
     pub directory: Arc<dyn ShowDirectory>,
     /// `RECS_PUBLIC_URL`, for feedback links.
     pub public_url: String,
+    /// Exa podcast transcripts; `None` without `EXA_API_KEY`.
+    pub exa: Option<Arc<ExaPodcasts>>,
 }
 
 fn require_account(state: &McpState) -> Result<Arc<dyn PodcastAccount>, ToolError> {
@@ -980,7 +986,201 @@ async fn recommendation_record(
     }
 }
 
-/// The eight podcast tools, in serving order.
+fn require_exa(state: &McpState) -> Result<Arc<ExaPodcasts>, ToolError> {
+    state.exa.clone().ok_or_else(|| {
+        ToolError::execute("Exa podcast transcripts are not configured: EXA_API_KEY is unset")
+    })
+}
+
+fn default_transcript_search_limit() -> usize {
+    5
+}
+
+fn default_highlight_chars() -> usize {
+    600
+}
+
+fn default_transcript_chars() -> usize {
+    20_000
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptSearchInput {
+    query: String,
+    #[serde(default = "default_transcript_search_limit")]
+    limit: usize,
+    #[serde(default)]
+    published_after: Option<String>,
+    #[serde(default)]
+    published_before: Option<String>,
+    #[serde(default = "default_highlight_chars")]
+    highlight_chars: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptSearchOutput {
+    index: &'static str,
+    request_id: Option<String>,
+    results: Vec<SearchHit>,
+    dropped_results: usize,
+    cost_dollars: Option<f64>,
+}
+
+fn date_bound(value: Option<String>, field: &str) -> Result<Option<String>, ToolError> {
+    value
+        .map(|v| {
+            normalize_date(&v).ok_or_else(|| {
+                ToolError::input(format!("{field} must be YYYY-MM-DD or an RFC 3339 time"))
+            })
+        })
+        .transpose()
+}
+
+async fn transcript_search(
+    state: McpState,
+    input: TranscriptSearchInput,
+) -> Result<TranscriptSearchOutput, ToolError> {
+    let query = trimmed_non_empty(&input.query, "query")?;
+    let published_after = date_bound(input.published_after, "publishedAfter")?;
+    let published_before = date_bound(input.published_before, "publishedBefore")?;
+    if let (Some(after), Some(before)) = (&published_after, &published_before)
+        && after.parse::<jiff::Timestamp>().ok() > before.parse::<jiff::Timestamp>().ok()
+    {
+        return Err(ToolError::input(
+            "publishedAfter must not be later than publishedBefore",
+        ));
+    }
+    let exa = require_exa(&state)?;
+    let found = exa
+        .search(SearchParams {
+            query,
+            limit: input.limit.clamp(1, crate::exa::MAX_SEARCH_RESULTS),
+            published_after,
+            published_before,
+            highlight_chars: input.highlight_chars.clamp(100, 2000),
+        })
+        .await
+        .map_err(|e| ToolError::execute_from(&e))?;
+    Ok(TranscriptSearchOutput {
+        index: crate::exa::PODCAST_INDEX,
+        request_id: found.request_id,
+        results: found.results,
+        dropped_results: found.dropped_results,
+        cost_dollars: found.cost_dollars,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptGetInput {
+    url: String,
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "default_transcript_chars")]
+    max_chars: usize,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum TranscriptGetOutput {
+    #[serde(rename_all = "camelCase")]
+    Available {
+        url: String,
+        kind: PageKind,
+        show_id: String,
+        episode_id: Option<String>,
+        exa_id: Option<String>,
+        title: Option<String>,
+        author: Option<String>,
+        published_date: Option<String>,
+        content_source: Option<String>,
+        request_id: Option<String>,
+        text: String,
+        offset: usize,
+        returned_chars: usize,
+        total_chars: usize,
+        next_offset: Option<usize>,
+        source_truncated: bool,
+        links: Vec<String>,
+        links_truncated: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    Unavailable {
+        url: String,
+        kind: PageKind,
+        show_id: String,
+        episode_id: Option<String>,
+        reason: UnavailableReason,
+        exa_error_tag: Option<String>,
+        exa_http_status: Option<u16>,
+        request_id: Option<String>,
+    },
+}
+
+async fn transcript_get(
+    state: McpState,
+    input: TranscriptGetInput,
+) -> Result<TranscriptGetOutput, ToolError> {
+    let page: PodcastPage = parse_podcast_url(&input.url).ok_or_else(|| {
+        ToolError::input(
+            "url must be an Exa podcast page: https://exa.ai/library/podcast/<showId> or https://exa.ai/library/podcast/<showId>/episode/<episodeId>",
+        )
+    })?;
+    let exa = require_exa(&state)?;
+    let fetched = exa
+        .page(&page)
+        .await
+        .map_err(|e| ToolError::execute_from(&e))?;
+    let url = page.canonical_url();
+    let show_id = page.show_id().to_owned();
+    let episode_id = page.episode_id().map(str::to_owned);
+    match fetched {
+        PageFetch::Unavailable(u) => Ok(TranscriptGetOutput::Unavailable {
+            url,
+            kind: page.kind(),
+            show_id,
+            episode_id,
+            reason: u.reason,
+            exa_error_tag: u.exa_error_tag,
+            exa_http_status: u.exa_http_status,
+            request_id: u.request_id,
+        }),
+        PageFetch::Available(p) => {
+            if input.offset > p.char_count {
+                return Err(ToolError::input(format!(
+                    "offset {} is past the end of the page text ({} characters)",
+                    input.offset, p.char_count
+                )));
+            }
+            let (text, next_offset) =
+                page_slice(&p.text, input.offset, input.max_chars.clamp(1000, 40_000));
+            Ok(TranscriptGetOutput::Available {
+                url,
+                kind: page.kind(),
+                show_id,
+                episode_id,
+                exa_id: p.exa_id.clone(),
+                title: p.title.clone(),
+                author: p.author.clone(),
+                published_date: p.published_date.clone(),
+                content_source: p.content_source.clone(),
+                request_id: p.request_id.clone(),
+                returned_chars: text.chars().count(),
+                text,
+                offset: input.offset,
+                total_chars: p.char_count,
+                next_offset,
+                source_truncated: p.source_truncated,
+                links: p.links.clone(),
+                links_truncated: p.links_truncated,
+            })
+        }
+    }
+}
+
+/// The podcast tools, in serving order.
 pub fn tools(state: McpState) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = state;
     Ok(vec![
@@ -1012,9 +1212,17 @@ pub fn tools(state: McpState) -> Result<Vec<McpTool>, ToolMetaError> {
             let s = s.clone();
             move |input: RecordInput, _cx| recommendation_record(s.clone(), input)
         })?,
+        typed_tool(&defs::PODCAST_TASTE_READ, {
+            let s = s.clone();
+            move |input: TasteReadInput, _cx| taste_read(s.clone(), input)
+        })?,
+        typed_tool(&defs::PODCAST_TRANSCRIPT_SEARCH, {
+            let s = s.clone();
+            move |input: TranscriptSearchInput, _cx| transcript_search(s.clone(), input)
+        })?,
         typed_tool(
-            &defs::PODCAST_TASTE_READ,
-            move |input: TasteReadInput, _cx| taste_read(s.clone(), input),
+            &defs::PODCAST_TRANSCRIPT_GET,
+            move |input: TranscriptGetInput, _cx| transcript_get(s.clone(), input),
         )?,
     ])
 }

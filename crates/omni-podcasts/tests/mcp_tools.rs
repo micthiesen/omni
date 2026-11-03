@@ -1,4 +1,4 @@
-//! The seven podcast MCP tools: golden metadata,
+//! The podcast MCP tools: golden metadata,
 //! input defaults/trimming, typed failures and golden output schemas.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -35,6 +35,7 @@ async fn state(account: Option<Arc<FakeAccount>>) -> (TestStore, McpState) {
         },
         directory: Arc::new(omni_podcasts::sources::OfflineDirectory),
         public_url: "https://recs.example".to_owned(),
+        exa: None,
     };
     (store, state)
 }
@@ -55,7 +56,7 @@ async fn call(tool: &McpTool, input: Value) -> Result<Map<String, Value>, ToolEr
 }
 
 #[tokio::test]
-async fn registers_the_eight_tools_in_serving_order() {
+async fn registers_the_ten_tools_in_serving_order() {
     let (_store, state) = state(None).await;
     let names: Vec<String> = tools(state)
         .unwrap()
@@ -73,6 +74,8 @@ async fn registers_the_eight_tools_in_serving_order() {
             "podcast_recommendation_feedback",
             "podcast_recommendation_record",
             "podcast_taste_read",
+            "podcast_transcript_search",
+            "podcast_transcript_get",
         ]
     );
 }

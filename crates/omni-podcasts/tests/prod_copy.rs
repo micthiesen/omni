@@ -223,6 +223,7 @@ async fn production_evidence_ids_fingerprint_and_serializers_round_trip() {
         accounts: Arc::new(FixedAccount(None)),
         directory: Arc::new(omni_podcasts::sources::OfflineDirectory),
         public_url: "https://recs.example".to_owned(),
+        exa: None,
     })
     .unwrap();
     let cx = || ToolContext {

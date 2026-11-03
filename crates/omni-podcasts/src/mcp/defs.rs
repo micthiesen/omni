@@ -169,8 +169,46 @@ pub static PODCAST_TASTE_READ: ToolDef<PodcastTasteReadInput, PodcastTasteReadOu
         },
     });
 
+pub static PODCAST_TRANSCRIPT_SEARCH: ToolDef<
+    PodcastTranscriptSearchInput,
+    PodcastTranscriptSearchOutput,
+> = ToolDef::new(ToolInfo {
+    name: "podcast_transcript_search",
+    title: "Search Podcast Transcripts",
+    description: "Search Exa's podcast index (full episode transcripts plus show pages) for what was said, by topic, guest or phrase. Results are only exa.ai/library/podcast pages: kind is episode or show, and showId/episodeId come from the page URL. publishedDate is the publication date Exa reports for the page, passed through unchanged (Exa reports no crawl date). highlights are passages Exa selected as relevant, verbatim and clipped to highlightChars; they are not the full transcript and may lack speaker labels. Pass a result url to podcast_transcript_get for the full text, show RSS and platform links. Each call is one paid Exa request.",
+    annotations: Annotations {
+        read_only_hint: true,
+        destructive_hint: false,
+        idempotent_hint: true,
+        open_world_hint: true,
+    },
+    policy: Policy {
+        side_effects: &["Sends the query to Exa's search API"],
+        cost: "One paid Exa search request per call, recorded in Omni costs at Exa's reported price",
+        recommended: ApprovalPolicy::Allow,
+    },
+});
+
+pub static PODCAST_TRANSCRIPT_GET: ToolDef<PodcastTranscriptGetInput, PodcastTranscriptGetOutput> =
+    ToolDef::new(ToolInfo {
+        name: "podcast_transcript_get",
+        title: "Get Podcast Transcript",
+        description: "Read one Exa podcast episode or show page by its exa.ai/library/podcast URL, paged by character offset. Episode pages carry the transcript as Exa formats it (speaker names and timestamps appear only where Exa's text has them; Omni adds and infers none). Show pages carry the description, hosts, publisher and Exa's list of recent episodes; links are the page links Exa extracted (show RSS feed and platform links when present), unverified. Omni retrieves at most 1,000,000 characters per page (sourceTruncated marks more) and caches the page for 15 minutes, so paging with nextOffset makes no new Exa request. status unavailable means Exa returned no usable text, with the reason; it is not evidence that the episode lacks a transcript elsewhere.",
+        annotations: Annotations {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+            open_world_hint: true,
+        },
+        policy: Policy {
+            side_effects: &["Reads one podcast page through Exa's contents API"],
+            cost: "One paid Exa contents request per uncached page, recorded in Omni costs at Exa's reported price",
+            recommended: ApprovalPolicy::Allow,
+        },
+    });
+
 /// Every podcast tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 8] = [
+pub static TOOLS: [&dyn ToolDefinition; 10] = [
     &PODCAST_ACCOUNT_LIST,
     &PODCAST_ACCOUNT_SEARCH,
     &PODCAST_ACCOUNT_UPDATE,
@@ -179,6 +217,8 @@ pub static TOOLS: [&dyn ToolDefinition; 8] = [
     &PODCAST_RECOMMENDATION_FEEDBACK,
     &PODCAST_RECOMMENDATION_RECORD,
     &PODCAST_TASTE_READ,
+    &PODCAST_TRANSCRIPT_SEARCH,
+    &PODCAST_TRANSCRIPT_GET,
 ];
 
 #[derive(JsonSchema)]
@@ -1068,4 +1108,150 @@ pub struct PodcastTasteReadOutputEvidence {
 pub enum PodcastTasteReadOutput {
     Profile(Box<PodcastTasteReadOutputProfile>),
     Evidence(PodcastTasteReadOutputEvidence),
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptSearchInput {
+    #[schemars(length(min = 1, max = 500))]
+    pub query: String,
+    #[schemars(range(min = 1, max = 10), extend("default" = 5))]
+    pub limit: Option<u64>,
+    #[schemars(
+        description = "Only pages Exa dates on or after this (YYYY-MM-DD as midnight UTC, or RFC 3339)",
+        length(min = 1, max = 40)
+    )]
+    pub published_after: Option<String>,
+    #[schemars(
+        description = "Only pages Exa dates on or before this (YYYY-MM-DD as midnight UTC, or RFC 3339)",
+        length(min = 1, max = 40)
+    )]
+    pub published_before: Option<String>,
+    #[schemars(
+        description = "Maximum characters per highlight",
+        range(min = 100, max = 2000),
+        extend("default" = 600)
+    )]
+    pub highlight_chars: Option<u64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum PodcastPageKind {
+    Show,
+    Episode,
+    Other,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptSearchOutputResult {
+    pub url: String,
+    pub kind: PodcastPageKind,
+    pub show_id: Option<String>,
+    pub episode_id: Option<String>,
+    pub exa_id: Option<String>,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    #[schemars(description = "Exa's publication date for the page, unchanged")]
+    pub published_date: Option<String>,
+    #[schemars(length(max = 3))]
+    pub highlights: Vec<String>,
+    pub highlights_truncated: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptSearchOutput {
+    #[schemars(transform = Literal("exa.ai/library/podcast"))]
+    pub index: Lit,
+    pub request_id: Option<String>,
+    pub results: Vec<PodcastTranscriptSearchOutputResult>,
+    #[schemars(description = "Results outside the podcast index that Omni dropped")]
+    pub dropped_results: u64,
+    pub cost_dollars: Option<f64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptGetInput {
+    #[schemars(
+        description = "An Exa podcast page URL: https://exa.ai/library/podcast/<showId> or .../<showId>/episode/<episodeId>",
+        length(min = 1, max = 300)
+    )]
+    pub url: String,
+    #[schemars(
+        description = "Zero-based character offset; pass the previous nextOffset",
+        range(max = 1_000_000),
+        extend("default" = 0)
+    )]
+    pub offset: Option<u64>,
+    #[schemars(range(min = 1000, max = 40000), extend("default" = 20000))]
+    pub max_chars: Option<u64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum PodcastPageKindExact {
+    Show,
+    Episode,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum PodcastTranscriptUnavailableReason {
+    ExaStatusError,
+    NotReturned,
+    EmptyText,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptGetOutputAvailable {
+    #[schemars(transform = Literal("available"))]
+    pub status: Lit,
+    pub url: String,
+    pub kind: PodcastPageKindExact,
+    pub show_id: String,
+    pub episode_id: Option<String>,
+    pub exa_id: Option<String>,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    #[schemars(description = "Exa's publication date for the page, unchanged")]
+    pub published_date: Option<String>,
+    #[schemars(description = "Exa's content source for this read: cached or crawled")]
+    pub content_source: Option<String>,
+    pub request_id: Option<String>,
+    pub text: String,
+    pub offset: u64,
+    pub returned_chars: u64,
+    pub total_chars: u64,
+    pub next_offset: Option<u64>,
+    #[schemars(description = "The page has text beyond the 1,000,000 characters Omni retrieves")]
+    pub source_truncated: bool,
+    #[schemars(length(max = 50))]
+    pub links: Vec<String>,
+    pub links_truncated: bool,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodcastTranscriptGetOutputUnavailable {
+    #[schemars(transform = Literal("unavailable"))]
+    pub status: Lit,
+    pub url: String,
+    pub kind: PodcastPageKindExact,
+    pub show_id: String,
+    pub episode_id: Option<String>,
+    pub reason: PodcastTranscriptUnavailableReason,
+    pub exa_error_tag: Option<String>,
+    pub exa_http_status: Option<u16>,
+    pub request_id: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(untagged, transform = one_of)]
+pub enum PodcastTranscriptGetOutput {
+    Available(Box<PodcastTranscriptGetOutputAvailable>),
+    Unavailable(PodcastTranscriptGetOutputUnavailable),
 }

@@ -1663,6 +1663,38 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "podcast_transcript_get",
+      "title": "Get Podcast Transcript",
+      "description": "Read one Exa podcast episode or show page by its exa.ai/library/podcast URL, paged by character offset. Episode pages carry the transcript as Exa formats it (speaker names and timestamps appear only where Exa's text has them; Omni adds and infers none). Show pages carry the description, hosts, publisher and Exa's list of recent episodes; links are the page links Exa extracted (show RSS feed and platform links when present), unverified. Omni retrieves at most 1,000,000 characters per page (sourceTruncated marks more) and caches the page for 15 minutes, so paging with nextOffset makes no new Exa request. status unavailable means Exa returned no usable text, with the reason; it is not evidence that the episode lacks a transcript elsewhere.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads one podcast page through Exa's contents API"
+      ],
+      "cost": "One paid Exa contents request per uncached page, recorded in Omni costs at Exa's reported price",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "podcast_transcript_search",
+      "title": "Search Podcast Transcripts",
+      "description": "Search Exa's podcast index (full episode transcripts plus show pages) for what was said, by topic, guest or phrase. Results are only exa.ai/library/podcast pages: kind is episode or show, and showId/episodeId come from the page URL. publishedDate is the publication date Exa reports for the page, passed through unchanged (Exa reports no crawl date). highlights are passages Exa selected as relevant, verbatim and clipped to highlightChars; they are not the full transcript and may lack speaker labels. Pass a result url to podcast_transcript_get for the full text, show RSS and platform links. Each call is one paid Exa request.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Sends the query to Exa's search API"
+      ],
+      "cost": "One paid Exa search request per call, recorded in Omni costs at Exa's reported price",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "presspods_delete",
       "title": "Delete PressPods Resource",
       "description": "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires the owner's approval.",

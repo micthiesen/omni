@@ -52,7 +52,10 @@ families cover:
   "Audiobooks" below), Apple Music link and id resolution
   (`media_apple_music_resolve`, see "Apple Music links" below), recommendations, podcast
   accounts, and podcast recommendations, including assistant-recorded
-  recommendations (`*_recommendation_record`, see "Recommendation records" below)
+  recommendations (`*_recommendation_record`, see "Recommendation records" below),
+  and podcast transcript search over Exa's podcast index
+  (`podcast_transcript_search`, `podcast_transcript_get`, see
+  `docs/exa-podcasts.md`)
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
 - Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
@@ -638,6 +641,12 @@ and `omni-podcasts/src/sync.rs`. The live `Recommendations`,
 `RecommendationSync` and `PodcastRecommendationSync` run the same steps
 without a model but are not registered, so nothing syncs twice while the
 legacy tasks run.
+
+### Podcast transcripts
+
+`podcast_transcript_search` and `podcast_transcript_get` are read-only Exa
+adapters for recommendation research; they never record, queue or schedule
+anything. See `docs/exa-podcasts.md`.
 
 ### Browser history
 

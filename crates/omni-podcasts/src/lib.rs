@@ -20,6 +20,7 @@ pub mod candidates;
 pub mod castro;
 pub mod concurrency;
 pub mod discovery;
+pub mod exa;
 pub mod filters;
 pub mod guest_selection;
 pub mod guests;
@@ -291,6 +292,8 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, BootError> {
             tz: tz.clone(),
         }),
         public_url: config.recs_public_url.clone(),
+        exa: exa::ExaPodcasts::from_config(&config, ctx.public_http.clone(), ctx.costs.clone())
+            .map(Arc::new),
     })
     .map_err(|e| BootError::new("podcast MCP tools", e.to_string()))?;
 

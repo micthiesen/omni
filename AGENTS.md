@@ -162,8 +162,8 @@ change; reuse authorization already given in the conversation.
   viewer anomalies, Destiny presence, summaries, alerts.
 - `omni-presspods`: article retrieval, narration, speech, audio chain, storage,
   RSS.
-- `omni-podcasts`: podcast recommendations, taste reflection, Castro bridge and
-  Inbox cleanup.
+- `omni-podcasts`: podcast recommendations, taste reflection, Castro bridge,
+  Inbox cleanup and Exa podcast transcript search tools.
 - `omni-media`: Plex, TMDB, Radarr/Sonarr, read-only NZBGet status, keyless Apple
   Music link and id resolution (`apple_music`), audiobooks
   (MyAnonamouse through Prowlarr and Deluge into the Plex audiobook library,
@@ -446,6 +446,16 @@ each crate's `sync.rs`; its no-model tasks stay unregistered while the legacy
 `Recommendations`, `TasteReflection`, `PodcastRecs` and
 `PodcastTasteReflection` tasks run. See "Recommendation records" in
 `docs/mcp.md`.
+
+### Podcast transcripts
+
+`podcast_transcript_search`/`podcast_transcript_get` (`omni-podcasts/src/exa.rs`,
+`docs/exa-podcasts.md`) read only `exa.ai/library/podcast` pages: searches
+always pass that `includeDomains`, and reads accept only show or episode URLs
+there. Text, dates and links pass through verbatim; never parse or infer
+speakers, timestamps or episode identity beyond the URL. Missing or empty text
+is `status: "unavailable"`, never an empty success. They feed no task, queue or
+recommendation record.
 
 ### Arr recovery
 

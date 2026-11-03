@@ -248,6 +248,7 @@ config_struct! {
     castro_secret_key: Option<String> = "CASTRO_SECRET_KEY",
     podcastindex_key: Option<String> = "PODCASTINDEX_KEY",
     podcastindex_secret: Option<String> = "PODCASTINDEX_SECRET",
+    exa_api_key: Option<String> = "EXA_API_KEY",
     podcast_voice_rotation_max: u32 = "PODCAST_VOICE_ROTATION_MAX",
     podcast_max_guest_picks: u32 = "PODCAST_MAX_GUEST_PICKS",
     plex_url: Option<String> = "PLEX_URL",
@@ -530,6 +531,7 @@ impl Config {
             castro_secret_key: env.opt("CASTRO_SECRET_KEY"),
             podcastindex_key: env.opt("PODCASTINDEX_KEY"),
             podcastindex_secret: env.opt("PODCASTINDEX_SECRET"),
+            exa_api_key: env.opt("EXA_API_KEY"),
             podcast_voice_rotation_max: env
                 .positive_int_with_default("PODCAST_VOICE_ROTATION_MAX", 12)?,
             podcast_max_guest_picks: env.positive_int_with_default("PODCAST_MAX_GUEST_PICKS", 6)?,
