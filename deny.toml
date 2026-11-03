@@ -6,29 +6,11 @@ all-features = false
 version = 2
 yanked = "deny"
 ignore = [
-  # webpki-roots 0.26.11 is the last 0.26 release and only re-exports the
-  # webpki-roots 1.x roots, which are locked at the patched 1.0.11. It reaches
-  # only sherpa-onnx-sys's build-time downloader (ureq 2.12.1); remove this
-  # entry once sherpa-onnx moves off ureq 2.
-  { id = "RUSTSEC-2026-0381", reason = "shim over the patched webpki-roots 1.0.11, build-time only" },
   # paste is archived. It reaches only the wasm frontend, through leptos,
   # reactive_graph, reactive_stores, tachys and either_of, as a proc macro with
   # no runtime code. The pinned leptos 0.8.20 still requires it; remove this
   # entry once a leptos upgrade drops paste.
   { id = "RUSTSEC-2024-0436", reason = "unmaintained proc macro reached only through leptos 0.8.20" },
-  # zip 2.4.2 is a build-dependency of sherpa-onnx-sys 1.13.8, which pins zip
-  # ^2 and extracts only the upstream iOS xcframework archive with it. Omni
-  # builds for Linux and macOS (bzip2 tarballs or SHERPA_ONNX_LIB_DIR), so the
-  # extraction code never runs. Remove once sherpa-onnx-sys allows zip >= 9.
-  { id = "RUSTSEC-2026-0367", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
-  { id = "RUSTSEC-2026-0368", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
-  { id = "RUSTSEC-2026-0369", reason = "zip extraction reached only for iOS sherpa-onnx archives, never built" },
-  # zstd 0.13 and zstd-safe 7 come only through that build-time zip 2.4.2
-  # (zip ^2 requires zstd ^0.13) and decompress only in the same never-run iOS
-  # extraction. Remove with the zip entries above.
-  { id = "RUSTSEC-2026-0391", reason = "zstd reached only through sherpa-onnx-sys's build-time zip, never run" },
-  { id = "RUSTSEC-2026-0398", reason = "zstd-safe reached only through sherpa-onnx-sys's build-time zip, never run" },
-  { id = "RUSTSEC-2026-0403", reason = "zstd-safe reached only through sherpa-onnx-sys's build-time zip, never run" },
 ]
 
 [licenses]
@@ -52,6 +34,13 @@ allow = [
   "0BSD",
 ]
 confidence-threshold = 0.9
+
+# libbz2-rs-sys is the Rust port of libbzip2 under its original license. It
+# reaches only sherpa-onnx-sys's build script, through zip ^9's default bzip2
+# feature; the same libbzip2 code already builds through bzip2-sys.
+[[licenses.exceptions]]
+crate = "libbz2-rs-sys"
+allow = ["bzip2-1.0.6"]
 
 [bans]
 multiple-versions = "allow"

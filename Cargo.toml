@@ -99,9 +99,9 @@ htmd = "=0.5.5"
 dom_smoothie = "=0.18.2"
 quick-xml = { version = "=0.42.0", features = ["serialize"] }
 id3 = "=1.17.2"
-sherpa-onnx = "=1.13.8"
+sherpa-onnx = "=2.0.1"
 # Must equal the static archive version in deploy/sherpa-onnx/fetch-static-lib.sh.
-sherpa-onnx-sys = "=1.13.8"
+sherpa-onnx-sys = "=2.0.1"
 ipp = { version = "=7.0.0", default-features = false, features = ["async-client-rustls"] }
 aws-cognito-srp = "=0.2.5"
 jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
@@ -130,7 +130,7 @@ js-sys = "=0.3.106"
 wasm-bindgen-futures = "=0.4.79"
 wasm-bindgen-test = "=0.3.79"
 console_error_panic_hook = "=0.1.7"
-pulldown-cmark = { version = "=0.13.5", default-features = false }
+pulldown-cmark = { version = "=0.13.6", default-features = false }
 wiremock = "=0.6.5"
 tempfile = "=3.27.0"
 proptest = "=1.11.0"
