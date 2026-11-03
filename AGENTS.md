@@ -97,7 +97,14 @@ change; reuse authorization already given in the conversation.
   inside a task run's span are captured into that run's bounded log by
   `omni_tasks::RunLogLayer`, including across `.instrument`ed async work. ERROR
   events reach Pushover through the gated, throttled `AlertLayer`. Never log
-  secrets, Claude session prompt text, or email bodies at info.
+  secrets, Claude session prompt text, or email bodies at info. Secrets are
+  kept out three ways: the boot config summary shows free-text values only
+  for keys in `PUBLIC_TEXT_KEYS` (`omni-config`; any other text, including a
+  new key, logs only `***`, empty or `undefined`); every configured secret is
+  registered with `omni_core::secrets` and scrubbed from console, daily-file,
+  run-log and alert lines and MCP tool errors; and `omni-http` errors name only
+  the request origin while cross-origin redirects forward only non-credential
+  headers. Keep new sinks and error paths behind the same scrub.
 - **Ports:** a subsystem crate depends only on foundation crates. Calls into
   another subsystem go through the port traits in `omni_runtime::ports`, wired
   once in `crates/omni/src/wiring.rs`; handle an unset port. The only

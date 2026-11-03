@@ -259,7 +259,7 @@ pub async fn record_run_end(
                 &run_id,
                 |mut run| {
                     run.status = end.status;
-                    run.error = end.error;
+                    run.error = end.error.map(omni_core::secrets::scrub_owned);
                     run.summary = end.summary;
                     run.finished_at = Some(end.finished_at);
                     run

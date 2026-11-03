@@ -154,6 +154,84 @@ async fn redirect_rules() {
 }
 
 #[tokio::test]
+async fn network_errors_name_only_the_origin() {
+    // A port that was just released refuses the connection.
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let target = format!(
+        "http://user:pw-secret-1@127.0.0.1:{port}/3/device/path-secret-2?api_key=query-secret-3"
+    );
+    let error = client()
+        .request(Method::GET, Url::parse(&target).unwrap())
+        .send_bounded(1024)
+        .await
+        .unwrap_err();
+    let HttpError::Network(text) = &error else {
+        panic!("expected a network error, got {error:?}");
+    };
+    for secret in ["pw-secret-1", "path-secret-2", "query-secret-3", "user:"] {
+        assert!(!text.contains(secret), "{secret} in {text}");
+    }
+    assert!(text.contains(&format!("http://127.0.0.1:{port}")), "{text}");
+}
+
+#[tokio::test]
+async fn cross_origin_redirects_forward_no_credential_headers() {
+    let first = MockServer::start().await;
+    let second = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/same"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", "/kept"))
+        .mount(&first)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/kept"))
+        .and(|request: &wiremock::Request| request.headers.contains_key("x-api-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("kept"))
+        .mount(&first)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/away"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("location", format!("{}/landed", second.uri())),
+        )
+        .mount(&first)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/landed"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+        .mount(&second)
+        .await;
+
+    let send = |p: &'static str| {
+        client()
+            .request(Method::GET, url(&first, p))
+            .header("x-api-key", "arr-key")
+            .header("x-plex-token", "plex-token")
+            .header("authorization", "Bearer token")
+            .header("accept", "application/json")
+            .redirect(RedirectRule::Follow(3))
+            .send_bounded(1024)
+    };
+    let same = send("/same").await.unwrap();
+    assert_eq!(&same.body[..], b"kept");
+
+    let away = send("/away").await.unwrap();
+    assert_eq!(&away.body[..], b"landed");
+    let received = second.received_requests().await.unwrap();
+    let headers = &received[0].headers;
+    for name in ["x-api-key", "x-plex-token", "authorization"] {
+        assert!(!headers.contains_key(name), "{name} crossed origins");
+    }
+    assert_eq!(headers.get("accept").unwrap(), "application/json");
+    assert_eq!(headers.get("user-agent").unwrap(), USER_AGENT);
+}
+
+#[tokio::test]
 async fn see_other_turns_a_post_into_a_bodiless_get() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

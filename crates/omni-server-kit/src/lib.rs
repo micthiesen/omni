@@ -57,7 +57,7 @@ impl ApiError {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
         ApiError::Status {
             status,
-            message: message.into(),
+            message: omni_core::secrets::scrub_owned(message.into()),
         }
     }
 

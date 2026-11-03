@@ -185,7 +185,7 @@ fn print_activity_input(input: &Value) -> Value {
 /// prefix, since a rejection can echo a measurement or an order.
 pub fn activity_error(tool: &str, message: String) -> String {
     if !tool.starts_with("stylist_") {
-        return message;
+        return omni_core::secrets::scrub_owned(message);
     }
     match message.split_once(']') {
         Some((code, _)) if code.starts_with('[') => format!("{code}]"),

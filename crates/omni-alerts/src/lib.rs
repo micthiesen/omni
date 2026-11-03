@@ -499,8 +499,8 @@ impl<S: Subscriber> tracing_subscriber::Layer<S> for AlertLayer {
         };
         let notification = AlertNotification {
             logger_name: event.metadata().target().to_owned(),
-            title: visitor.message,
-            body,
+            title: omni_core::secrets::scrub_owned(visitor.message),
+            body: omni_core::secrets::scrub_owned(body),
         };
         // A full queue drops the alert: logging must never block.
         let _ = self.tx.try_send(notification);

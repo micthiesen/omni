@@ -279,3 +279,20 @@ fn registry_server_uses_golden_server_info() {
             .starts_with("Omni exposes private personal data")
     );
 }
+
+#[test]
+fn tool_errors_scrub_registered_secrets() {
+    omni_core::secrets::register(["tool-error-secret-43".to_owned()]);
+    for error in [
+        ToolError::input("bad tool-error-secret-43"),
+        ToolError::execute("upstream echoed tool-error-secret-43"),
+        ToolError::output("tool-error-secret-43"),
+    ] {
+        assert!(
+            !error.message.contains("tool-error-secret-43"),
+            "{}",
+            error.message
+        );
+        assert!(error.message.contains("[redacted]"));
+    }
+}

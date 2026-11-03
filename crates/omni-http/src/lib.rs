@@ -295,7 +295,7 @@ impl RequestBuilder {
 
     async fn execute(self, max_bytes: usize) -> Result<BoundedResponse, HttpError> {
         let (client, request) = self.inner.build_split();
-        let mut request = request.map_err(|e| map_reqwest(&e))?;
+        let mut request = request.map_err(map_reqwest)?;
         let mut hops: u8 = 0;
         loop {
             if let Guard::Public(policy) = self.guard {
@@ -304,7 +304,7 @@ impl RequestBuilder {
             let replay = request.try_clone();
             let method = request.method().clone();
             let headers = request.headers().clone();
-            let response = client.execute(request).await.map_err(|e| map_reqwest(&e))?;
+            let response = client.execute(request).await.map_err(map_reqwest)?;
             let status = response.status();
             let location = redirect_location(&response);
             let Some(location) = location else {
@@ -342,7 +342,7 @@ impl RequestBuilder {
     /// the response headers; the caller bounds the body.
     pub async fn send_streaming(self) -> Result<reqwest::Response, HttpError> {
         let (client, request) = self.inner.build_split();
-        let mut request = request.map_err(|e| map_reqwest(&e))?;
+        let mut request = request.map_err(map_reqwest)?;
         // reqwest's whole-request timeout would also cut a long stream.
         *request.timeout_mut() = None;
         if let Guard::Public(policy) = self.guard {
@@ -355,8 +355,7 @@ impl RequestBuilder {
                 .map_err(|_| HttpError::Timeout)?,
             None => send.await,
         }
-        // The URL may carry a credential in its query; errors never repeat it.
-        .map_err(|e| map_reqwest(&e.without_url()))?;
+        .map_err(map_reqwest)?;
         if self.redirect == RedirectRule::Error && redirect_location(&response).is_some() {
             return Err(HttpError::Status {
                 status: response.status().as_u16(),
@@ -394,7 +393,7 @@ fn redirect_location(response: &reqwest::Response) -> Option<String> {
 }
 
 /// The next hop: 303 (and 301/302 after POST) becomes a bodiless GET, 307/308
-/// replay the method and body. Credentials are not forwarded across origins.
+/// replay the method and body. Only non-credential headers cross origins.
 fn redirected_request(
     status: StatusCode,
     method: Method,
@@ -404,17 +403,32 @@ fn redirected_request(
     next: Url,
 ) -> Result<reqwest::Request, HttpError> {
     use reqwest::header::{
-        AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, PROXY_AUTHORIZATION, TRANSFER_ENCODING,
+        ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING,
+        USER_AGENT,
     };
     let to_get = match status.as_u16() {
         303 => method != Method::HEAD,
         301 | 302 => method == Method::POST,
         _ => false,
     };
-    if from.origin() != next.origin() {
-        headers.remove(AUTHORIZATION);
-        headers.remove(PROXY_AUTHORIZATION);
-        headers.remove(COOKIE);
+    if !same_server(from, &next) {
+        // Default-deny: credentials also travel in custom headers (X-Api-Key,
+        // X-Plex-Token, api-key), so only these are forwarded to another origin.
+        let mut kept = HeaderMap::new();
+        for name in [
+            ACCEPT,
+            ACCEPT_ENCODING,
+            ACCEPT_LANGUAGE,
+            USER_AGENT,
+            CONTENT_TYPE,
+            CONTENT_LENGTH,
+            TRANSFER_ENCODING,
+        ] {
+            for value in headers.get_all(&name) {
+                kept.append(name.clone(), value.clone());
+            }
+        }
+        headers = kept;
     }
     if to_get {
         headers.remove(CONTENT_TYPE);
@@ -437,6 +451,17 @@ fn redirected_request(
     Ok(request)
 }
 
+/// The same origin, or an `http` to `https` upgrade of the same host on the
+/// default ports (a proxy forcing TLS), where credentials may follow.
+fn same_server(from: &Url, next: &Url) -> bool {
+    from.origin() == next.origin()
+        || (from.scheme() == "http"
+            && next.scheme() == "https"
+            && from.host() == next.host()
+            && from.port().is_none()
+            && next.port().is_none())
+}
+
 /// Reads the body while it stays within `max_bytes`; a declared oversize
 /// length is rejected before reading anything.
 async fn read_bounded(
@@ -454,7 +479,7 @@ async fn read_bounded(
     let headers = response.headers().clone();
     let final_url = response.url().clone();
     let mut body = BytesMut::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| map_reqwest(&e))? {
+    while let Some(chunk) = response.chunk().await.map_err(map_reqwest)? {
         if body.len() + chunk.len() > max_bytes {
             return Err(HttpError::TooLarge { limit: max_bytes });
         }
@@ -483,11 +508,20 @@ pub fn error_chain(error: &dyn std::error::Error) -> String {
     out
 }
 
-fn map_reqwest(error: &reqwest::Error) -> HttpError {
+/// Error text names only the request's origin: a URL's path, query or
+/// userinfo can carry a credential (an `api_key` parameter, an APNs device
+/// token, `user:pass@`), and the text reaches logs, alerts and MCP errors.
+fn map_reqwest(error: reqwest::Error) -> HttpError {
     if error.is_timeout() {
         return HttpError::Timeout;
     }
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    let origin = error.url().map(|url| url.origin().ascii_serialization());
+    let error = error.without_url();
+    let with_origin = |text: String| match &origin {
+        Some(origin) if origin != "null" => format!("{text} ({origin})"),
+        _ => text,
+    };
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(cause) = source {
         if let Some(blocked) = cause.downcast_ref::<public::NonPublicAddress>() {
             return HttpError::Blocked(blocked.to_string());
@@ -495,9 +529,9 @@ fn map_reqwest(error: &reqwest::Error) -> HttpError {
         source = cause.source();
     }
     if error.is_builder() {
-        return HttpError::InvalidUrl(error_chain(error));
+        return HttpError::InvalidUrl(with_origin(error_chain(&error)));
     }
-    HttpError::Network(error_chain(error))
+    HttpError::Network(with_origin(error_chain(&error)))
 }
 
 /// Error bodies are kept to 4 KiB (lossy UTF-8, cut at a char boundary).
@@ -560,6 +594,35 @@ pub enum SideEffectMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_follow_only_the_same_server() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        assert!(same_server(
+            &url("https://a.example/x"),
+            &url("https://a.example/y")
+        ));
+        assert!(same_server(
+            &url("http://a.example/x"),
+            &url("https://a.example/x")
+        ));
+        assert!(!same_server(
+            &url("https://a.example/x"),
+            &url("http://a.example/x")
+        ));
+        assert!(!same_server(
+            &url("http://a.example/x"),
+            &url("https://b.example/x")
+        ));
+        assert!(!same_server(
+            &url("http://a.example:7878/x"),
+            &url("https://a.example/x")
+        ));
+        assert!(!same_server(
+            &url("https://a.example/x"),
+            &url("https://a.example:8443/x")
+        ));
+    }
 
     #[test]
     fn transient_classification() {

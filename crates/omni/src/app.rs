@@ -129,11 +129,14 @@ async fn bind(config: &Config) -> Result<TcpListener, boot::AppError> {
         .map_err(|e| boot::AppError::Other(format!("listen on port {port}: {e}")))
 }
 
+/// Also registers the configured secrets so every log sink scrubs them.
 fn load_config() -> Result<Arc<Config>, u8> {
-    Config::from_process_env().map(Arc::new).map_err(|error| {
+    let config = Config::from_process_env().map_err(|error| {
         stderr_line(&format!("Invalid configuration: {error}"));
         EXIT_FAILURE
-    })
+    })?;
+    omni_core::secrets::register(config.secret_values());
+    Ok(Arc::new(config))
 }
 
 /// Cancels `token` on SIGINT or SIGTERM and records that it did.

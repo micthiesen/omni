@@ -12,6 +12,7 @@ mod js_date;
 pub mod log;
 pub mod mail_source;
 pub mod process;
+pub mod secrets;
 pub mod spawn;
 
 /// `futures::future::BoxFuture`, the future type used by every object-safe trait.

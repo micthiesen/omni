@@ -63,3 +63,26 @@ async fn chains_the_hook_and_drops_immediate_repeats() {
     assert_eq!(pushes[1].message.message, "Different boom");
     assert!(pushes.iter().all(|p| p.token == "general"));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn alert_pushes_scrub_registered_secrets() {
+    omni_core::secrets::register(["alert-sink-secret-42".to_owned()]);
+    let pushover = recording_pushover();
+    let (layer, worker) = AlertLayer::new(pushover.clone(), Arc::default(), TestClock::new(0));
+    let worker = tokio::spawn(worker.run());
+    {
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::error!(
+            target: "Test",
+            detail = "token alert-sink-secret-42",
+            "Request alert-sink-secret-42 failed"
+        );
+    }
+    worker.await.unwrap();
+    let pushes = pushover.recorded();
+    assert_eq!(pushes.len(), 1);
+    let title = pushes[0].message.title.clone().unwrap_or_default();
+    assert_eq!(title, "Error: Request [redacted] failed");
+    assert_eq!(pushes[0].message.message, "detail=token [redacted]");
+}

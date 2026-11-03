@@ -120,3 +120,26 @@ async fn run_end_settles_status_error_summary_and_finish_time() {
     let runs = persistence::get_runs(&h.store, None, 10).await.unwrap();
     assert_eq!(runs, vec![settled]);
 }
+
+#[tokio::test(start_paused = true)]
+async fn run_end_errors_are_stored_scrubbed() {
+    omni_core::secrets::register(["run-error-secret-44".to_owned()]);
+    let h = harness(TestClock::new(local_time(15, 10))).await;
+    let run = persistence::record_run_start(&h.store, "B", Trigger::Manual, None, None, 5)
+        .await
+        .unwrap();
+    let settled = persistence::record_run_end(
+        &h.store,
+        &run.run_id,
+        persistence::RunEnd {
+            status: TaskRunStatus::Error,
+            error: Some("GET ?key=run-error-secret-44 failed".to_owned()),
+            summary: None,
+            finished_at: 9,
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(settled.error.as_deref(), Some("GET ?key=[redacted] failed"));
+}

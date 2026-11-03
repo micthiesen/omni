@@ -109,12 +109,28 @@ impl fmt::Debug for WhiskerCredentials {
 
 /// Renders one field for the redacted config summary.
 trait SummaryValue {
+    /// Free text, which could hold a credential under any name; typed values
+    /// (flags, numbers, enums) cannot.
+    const TEXT: bool = false;
+
     fn summary(&self) -> String;
+
+    /// What the summary shows instead of a hidden value: `undefined` when
+    /// unset, empty when set to the empty string, otherwise `***`.
+    fn presence(&self) -> &'static str {
+        "***"
+    }
 }
 
 impl SummaryValue for String {
+    const TEXT: bool = true;
+
     fn summary(&self) -> String {
         self.clone()
+    }
+
+    fn presence(&self) -> &'static str {
+        if self.is_empty() { "" } else { "***" }
     }
 }
 impl SummaryValue for bool {
@@ -156,11 +172,36 @@ impl SummaryValue for WhiskerCredentials {
     }
 }
 impl<T: SummaryValue> SummaryValue for Option<T> {
+    const TEXT: bool = T::TEXT;
+
     fn summary(&self) -> String {
         match self {
             Some(value) => value.summary(),
             None => "undefined".to_owned(),
         }
+    }
+
+    fn presence(&self) -> &'static str {
+        match self {
+            Some(value) => value.presence(),
+            None => "undefined",
+        }
+    }
+}
+
+/// One config field as the redacted summary sees it.
+struct SummaryEntry {
+    key: &'static str,
+    value: String,
+    text: bool,
+    presence: &'static str,
+}
+
+impl SummaryEntry {
+    fn hidden(&self) -> bool {
+        PRIVATE_CONFIG_KEYS.contains(&self.key)
+            || is_sensitive_key(self.key)
+            || (self.text && !PUBLIC_TEXT_KEYS.contains(&self.key))
     }
 }
 
@@ -178,8 +219,13 @@ macro_rules! config_struct {
         pub const CONFIG_KEYS: &[&str] = &[$($key),*];
 
         impl Config {
-            fn entries(&self) -> Vec<(&'static str, String)> {
-                vec![$( ($key, SummaryValue::summary(&self.$field)) ),*]
+            fn summary_entries(&self) -> Vec<SummaryEntry> {
+                vec![$( SummaryEntry {
+                    key: $key,
+                    value: SummaryValue::summary(&self.$field),
+                    text: summary_is_text(&self.$field),
+                    presence: SummaryValue::presence(&self.$field),
+                } ),*]
             }
         }
     };
@@ -343,6 +389,141 @@ config_struct! {
     ffmpeg_path: Option<String> = "FFMPEG_PATH",
     /// `YT_DLP_PATH`, falling back to `yt-dlp` when unset or empty.
     yt_dlp_path: Option<String> = "YT_DLP_PATH",
+}
+
+fn summary_is_text<T: SummaryValue>(_: &T) -> bool {
+    T::TEXT
+}
+
+/// Free-text keys whose values the config summary shows: paths, schedules,
+/// model ids, display names and service URLs (with any userinfo, query or
+/// fragment removed by [`public_text`]). Every other free-text value, including
+/// any key added later, shows only whether it is set, so a credential with an
+/// unexpected name never reaches the log.
+const PUBLIC_TEXT_KEYS: &[&str] = &[
+    "DB_NAME",
+    "LIVESTREAM_INTELLIGENCE_MODEL",
+    "LIVESTREAM_MODEL_DIR",
+    "LIVESTREAM_DESTINY_VOICEPRINT_PATH",
+    "LOGS_PATH",
+    "ICLOUD_REMINDERS_ENABLED",
+    "ICLOUD_REMINDERS_PUBLIC_ORIGIN",
+    "ICLOUD_CALENDAR_NAME",
+    "KARAKEEP_URL",
+    "EXTRACTION_MODEL",
+    "CALENDAR_EXTRACTION_MODEL",
+    "TRIAGE_MODEL",
+    "RECS_SHORTLIST_MODEL",
+    "RECS_SELECTION_MODEL",
+    "TASTE_REFLECTION_MODEL",
+    "TASTE_REFLECTION_SCHEDULE",
+    "RECS_SCHEDULE",
+    "RECS_PUBLIC_URL",
+    "PODCAST_RECS_SCHEDULE",
+    "PODCAST_TASTE_PATH",
+    "PODCAST_TASTE_REFLECTION_MODEL",
+    "PODCAST_TASTE_REFLECTION_SCHEDULE",
+    "PLEX_URL",
+    "RADARR_URL",
+    "RADARR_ROOT_FOLDER_PATH",
+    "SONARR_URL",
+    "SONARR_ROOT_FOLDER_PATH",
+    "OBSERVER_URL",
+    "NZBGET_URL",
+    "PROWLARR_URL",
+    "PLEX_AUDIOBOOKS_LIBRARY",
+    "AUDIOBOOK_INDEXER",
+    "AUDIOBOOK_LANGUAGE",
+    "DELUGE_HOST",
+    "DELUGE_LABEL",
+    "YOUTUBE_REDIRECT_URI",
+    "TZ",
+    "SMTP_HOST",
+    "OMNI_GATEWAY_PUBLIC_URL",
+    "HISTER_URL",
+    "PRINTER_IPP_URL",
+    "PRESSPODS_PUBLIC_URL",
+    "PRESSPODS_AUDIO_DIR",
+    "PRESSPODS_METADATA_MODEL",
+    "PRESSPODS_CLEANING_MODEL",
+    "PRESSPODS_TTS_URL",
+    "PRESSPODS_TTS_MODEL",
+    "PRESSPODS_STT_URL",
+    "PRESSPODS_STT_MODEL",
+    "PRESSPODS_HIGGS_REF_AUDIO",
+    "IOS_CONTROL_HOME_URL",
+    "IOS_CONTROL_APNS_KEY_PATH",
+    "IOS_CONTROL_BUNDLE_ID",
+    "FFMPEG_PATH",
+    "YT_DLP_PATH",
+];
+
+/// A public text value with any URL userinfo, query or fragment hidden, since
+/// those are where credentials hide in otherwise public URLs.
+fn public_text(value: String) -> String {
+    let Ok(mut url) = url::Url::parse(&value) else {
+        return value;
+    };
+    if url.cannot_be_a_base() {
+        return value;
+    }
+    let hidden = !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some();
+    if !hidden {
+        return value;
+    }
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    format!("{url} (credentials, query or fragment hidden)")
+}
+
+/// Hidden from the summary but not scrubbed from logs: identifiers and public
+/// values that error lines legitimately name (which address bounced, which
+/// calendar failed) and that grant no access.
+const UNSCRUBBED_KEYS: &[&str] = &[
+    "EMAIL_FROM",
+    "EMAIL_SELF_ADDRESS",
+    "LOGS_EMAIL_TO",
+    "ICLOUD_CALENDAR_URL",
+    "DELUGE_CERT_SHA256",
+    "ELEVENLABS_VOICE_MALE",
+    "ELEVENLABS_VOICE_FEMALE",
+    "PRESSPODS_HIGGS_REF_TEXT",
+];
+
+/// The forms a secret takes in log text: as configured, percent-encoded (in a
+/// URL) and JSON-escaped (in a serialized body or `{:?}` field).
+fn secret_forms(value: &str, out: &mut Vec<String>) {
+    out.push(value.to_owned());
+    let encoded: String = url::form_urlencoded::byte_serialize(value.as_bytes()).collect();
+    if encoded != value {
+        out.push(encoded);
+    }
+    let escaped = value.escape_debug().to_string();
+    if escaped != value {
+        out.push(escaped);
+    }
+}
+
+/// Userinfo and query values inside a public URL, which the summary strips
+/// but other log lines could print with the raw URL.
+fn url_secrets(value: &str, out: &mut Vec<String>) {
+    let Ok(url) = url::Url::parse(value) else {
+        return;
+    };
+    if !url.username().is_empty() {
+        secret_forms(url.username(), out);
+    }
+    if let Some(password) = url.password() {
+        secret_forms(password, out);
+    }
+    for (_, query_value) in url.query_pairs() {
+        secret_forms(&query_value, out);
+    }
 }
 
 /// Keys always redacted in the config summary (`privateConfigKeys`).
@@ -700,16 +881,43 @@ impl Config {
 
     /// `(KEY, value)` for every variable with private and sensitive keys as `***`.
     pub fn redacted_summary(&self) -> Vec<(&'static str, String)> {
-        self.entries()
+        self.summary_entries()
             .into_iter()
-            .map(|(key, value)| {
-                if PRIVATE_CONFIG_KEYS.contains(&key) || is_sensitive_key(key) {
-                    (key, "***".to_owned())
+            .map(|entry| {
+                let hidden = entry.hidden();
+                let value = if hidden {
+                    entry.presence.to_owned()
+                } else if entry.text {
+                    public_text(entry.value)
                 } else {
-                    (key, value)
-                }
+                    entry.value
+                };
+                (entry.key, value)
             })
             .collect()
+    }
+
+    /// Every value the summary hides (except [`UNSCRUBBED_KEYS`]), credentials
+    /// inside public URLs, and the Whisker credentials, each in its raw,
+    /// percent-encoded and escaped forms: what `omni_core::secrets` scrubs from
+    /// logs and MCP errors.
+    pub fn secret_values(&self) -> Vec<String> {
+        let mut values = Vec::new();
+        for entry in self.summary_entries() {
+            if !entry.text || entry.presence != "***" || UNSCRUBBED_KEYS.contains(&entry.key) {
+                continue;
+            }
+            if entry.hidden() {
+                secret_forms(&entry.value, &mut values);
+            } else {
+                url_secrets(&entry.value, &mut values);
+            }
+        }
+        if let Some(whisker) = &self.whisker_credentials {
+            secret_forms(&whisker.email, &mut values);
+            secret_forms(&whisker.password, &mut values);
+        }
+        values
     }
 
     /// `DOCKERIZED ? /data/<DB_NAME> : <DB_NAME>` (string concatenation).

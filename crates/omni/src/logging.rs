@@ -86,7 +86,7 @@ fn event_text(event: &Event<'_>) -> String {
     let mut visitor = LineVisitor::default();
     event.record(&mut visitor);
     visitor.message.push_str(&visitor.fields);
-    visitor.message
+    omni_core::secrets::scrub_owned(visitor.message)
 }
 
 fn console_prefix(level: LogLevel) -> &'static str {
@@ -428,6 +428,47 @@ mod tests {
         sweep_old(dir.path(), far_future, FILE_RETAIN_DAYS);
         assert!(!old.exists());
         assert!(other.exists());
+    }
+
+    #[test]
+    fn file_and_run_logs_scrub_registered_secrets() {
+        omni_core::secrets::register(["file-sink-secret-41".to_owned()]);
+        let dir = tempfile::tempdir().unwrap();
+        let clock = omni_core::clock::TestClock::new(1_000);
+        let logs = RunLogs::new(omni_tasks::EventBus::default(), clock.clone());
+        logs.start("S:1", "S");
+        let subscriber = subscriber(
+            LoggingSetup {
+                level: LogLevel::Info,
+                logs_path: Some(dir.path().to_path_buf()),
+                tz: TimeZone::UTC,
+                clock,
+            },
+            Some(logs.clone()),
+            None,
+        );
+        tracing::subscriber::with_default(subscriber, || {
+            omni_tasks::log_capture::run_span("S:1", "S").in_scope(|| {
+                tracing::warn!(
+                    target: "Test",
+                    detail = "url?key=file-sink-secret-41",
+                    "failed with file-sink-secret-41"
+                );
+            });
+        });
+        let file = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
+            .collect::<String>();
+        assert!(file.contains("failed with [redacted]"), "{file}");
+        assert!(!file.contains("file-sink-secret-41"), "{file}");
+        let (lines, _) = logs.active("S:1").unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(
+            !lines[0].msg.contains("file-sink-secret-41"),
+            "{}",
+            lines[0].msg
+        );
     }
 
     #[test]

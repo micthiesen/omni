@@ -221,6 +221,7 @@ where
         event.record(&mut visitor);
         let mut text = visitor.message;
         text.push_str(&visitor.fields);
+        let mut text = omni_core::secrets::scrub_owned(text);
         if utf16_len(&text) > MAX_LINE_CHARS {
             text = format!("{}…", utf16_slice(&text, 0, MAX_LINE_CHARS));
         }

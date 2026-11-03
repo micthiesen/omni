@@ -285,14 +285,14 @@ impl ToolError {
     pub fn input(message: impl Into<String>) -> Self {
         Self {
             phase: ToolPhase::Input,
-            message: message.into(),
+            message: omni_core::secrets::scrub_owned(message.into()),
         }
     }
 
     pub fn execute(message: impl Into<String>) -> Self {
         Self {
             phase: ToolPhase::Execute,
-            message: message.into(),
+            message: omni_core::secrets::scrub_owned(message.into()),
         }
     }
 
@@ -304,7 +304,7 @@ impl ToolError {
     pub fn output(message: impl Into<String>) -> Self {
         Self {
             phase: ToolPhase::Output,
-            message: message.into(),
+            message: omni_core::secrets::scrub_owned(message.into()),
         }
     }
 }
