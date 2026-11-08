@@ -15,7 +15,8 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
 - **Subsystems:** `omni-imap`, `omni-email`, `omni-parcel`, `omni-calendar`,
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
-  `omni-device-link`, `omni-personal`, `omni-stylist`, `omni-youtube`. Each exposes
+  `omni-device-link`, `omni-personal`, `omni-stylist`, `omni-youtube`,
+  `omni-contacts`. Each exposes
   a constructor that returns an `omni_runtime::Subsystem`. `omni-mcp` hosts
   the MCP gateway (`/gateway/mcp`, [gateway.md](gateway.md)), Omni's only MCP
   endpoint, which serves every tool together with the configured upstream MCP

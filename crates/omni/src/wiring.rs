@@ -134,6 +134,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     subsystems.push(wire!("presspods", omni_presspods::subsystem(ctx)));
     subsystems.push(wire!("media", omni_media::subsystem(ctx)));
     subsystems.push(wire!("youtube", omni_youtube::subsystem(ctx)));
+    subsystems.push(wire!("contacts", omni_contacts::subsystem(ctx)));
     subsystems.push(omni_arr::subsystem(ctx));
     subsystems.push(wire!("podcasts", omni_podcasts::subsystem(ctx)));
     subsystems.push(wire!("reminders", omni_reminders::subsystem(ctx)));

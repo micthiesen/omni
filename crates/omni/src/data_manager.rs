@@ -48,6 +48,7 @@ pub const MANAGED_ORDER: &[&str] = &[
     "calendar-created-event",
     "calendar-primary-change",
     "calendar-mcp-operation",
+    "contacts-mcp-operation",
     "email-activity",
     "email-activity-log",
     "imap-folder-cursor",

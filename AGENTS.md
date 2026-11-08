@@ -161,6 +161,9 @@ change; reuse authorization already given in the conversation.
 - `omni-parcel`: Parcel email handler and the budgeted delivery-status cache.
 - `omni-calendar`: calendar email handler, CalDAV writes, and the primary
   calendar mirror, change feed and MCP tools.
+- `omni-contacts`: iCloud contacts over CardDAV: every address book, lossless
+  vCard edits, contact groups and membership, verified writes, `contacts_*`
+  tools.
 - `omni-live`: database streamer configuration (UI and MCP), aggregate streamer state, notifications, viewer
   metrics and records, DGG discovery, `LiveCheckTask`, cached streamer avatars (`StreamerAvatars`).
 - `omni-ios-controls`: the iOS app backend: signed routes, device registry,
@@ -321,6 +324,28 @@ A capture that finds the stream has ended (yt-dlp "not currently live", an m3u8
   parked rows (plus recent systemic `error` activity without a row), once per
   build and at most three builds per email. Only dedup-safe pipelines
   (`CalendarEvents`, `ParcelTracker`) replay.
+
+### Contacts
+
+`omni-contacts` (`docs/contacts.md`) reaches only the configured iCloud
+account's address books, with the existing iCloud app password, and only when
+a tool runs. A card is edited as its exact source lines: never rebuild a vCard
+from a model, and keep every line an edit does not name byte for byte. Plan
+writes only from a fresh GET with its ETag (strict UTF-8), send them with
+If-Match or If-None-Match, and check each plan against the request before
+sending. Verify by reading back: a mismatch is lost data
+(`data_not_preserved`, which stops the rest of the call) unless a strong PUT
+ETag differs from a strong read-back ETag (a later edit elsewhere); a missing
+or weak ETag never excuses it (RFC 6352 6.3.2.3), and a card with a weak ETag
+is never written. ETag comparison may ignore quotes, never `W/`. Settle an uncertain write
+as not applied only when the card provably is still the planned-against
+version; never resend. The write lock is held by the detached write. Group membership
+changes write only group cards, add before they remove, and refuse swaps and
+chains in one call. Operation rows keep ids, states and digests, never card
+values; pre-write card text lives only in the private, 30-day
+`contacts-recovery-copy` rows, which no tool reads. Contacts are not deleted
+through MCP. Data iOS keeps outside the vCard (Contact Posters) is not
+visible to CardDAV; never claim it is preserved or verified.
 
 ### Parcel delivery status
 

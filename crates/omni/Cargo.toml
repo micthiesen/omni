@@ -29,6 +29,7 @@ omni-alerts.workspace = true
 omni-api.workspace = true
 omni-arr.workspace = true
 omni-calendar.workspace = true
+omni-contacts.workspace = true
 omni-config.workspace = true
 omni-core.workspace = true
 omni-device-link.workspace = true

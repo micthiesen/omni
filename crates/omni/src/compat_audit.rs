@@ -42,6 +42,7 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
         omni_imap::subsystem::entities(),
         omni_parcel::entities(),
         omni_calendar::entities(),
+        omni_contacts::entities(),
         omni_email::entities(),
         omni_mcp::entities(),
     ] {

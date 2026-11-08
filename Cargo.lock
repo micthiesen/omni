@@ -3039,6 +3039,7 @@ dependencies = [
  "omni-arr",
  "omni-calendar",
  "omni-config",
+ "omni-contacts",
  "omni-core",
  "omni-device-link",
  "omni-email",
@@ -3204,6 +3205,30 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "url",
+]
+
+[[package]]
+name = "omni-contacts"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "jiff",
+ "omni-config",
+ "omni-core",
+ "omni-http",
+ "omni-mcp-kit",
+ "omni-runtime",
+ "omni-store",
+ "omni-testkit",
+ "quick-xml",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -3468,6 +3493,7 @@ dependencies = [
  "omni-api",
  "omni-calendar",
  "omni-config",
+ "omni-contacts",
  "omni-core",
  "omni-device-link",
  "omni-email",

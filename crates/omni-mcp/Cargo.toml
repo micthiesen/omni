@@ -45,6 +45,7 @@ url.workspace = true
 
 [dev-dependencies]
 omni-calendar.workspace = true
+omni-contacts.workspace = true
 omni-device-link.workspace = true
 omni-email.workspace = true
 omni-imap.workspace = true

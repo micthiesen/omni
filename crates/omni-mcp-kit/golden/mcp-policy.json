@@ -359,6 +359,186 @@
       "recommendedPolicy": "require_approval"
     },
     {
+      "name": "contacts_change_preview",
+      "title": "Preview Contacts Change",
+      "description": "Plan any contacts write (exactly one of groupCreate, groupUpdate, groupDelete, membersChange, contactCreate, contactsUpdate) against current iCloud state and show each request with the exact lines it removes and adds, without changing anything. Lines not shown are kept byte for byte.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "contacts_contact_create",
+      "title": "Create Contact",
+      "description": "Create a contact in an iCloud address book, optionally adding it to groups of that book. Repeating the idempotencyKey returns the first result. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Creates a contact in the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_contact_get",
+      "title": "Get Contact",
+      "description": "Read one contact fresh from iCloud: fields, labeled values with their ids (for edits), the groups it belongs to, the names of every other property it carries (photos, Apple extensions), and its etag.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "contacts_contacts_update",
+      "title": "Update Contacts",
+      "description": "Edit up to 50 contact cards, each at the etag it was read with: set or clear single fields, and add, change (value, label, preferred) or remove labeled values by id. Only the named vCard lines change; every other line (photo, unknown and Apple-specific properties) is sent byte for byte, and the card iCloud stores for the write is read back and compared. data_not_preserved means that comparison failed after the write applied: the remaining cards are not written, nothing is rolled back, and the card's earlier text is kept privately in Omni for 30 days for manual recovery. Data iOS keeps outside the vCard, such as Contact Poster assets, is not visible here and its preservation is not verified. Every edit is validated before anything is sent. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes contacts in the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_group_create",
+      "title": "Create Contact Group",
+      "description": "Create a contact group (list) in an iCloud address book, optionally with initial members from the same book. Member contacts are not modified. Repeating the idempotencyKey returns the first result. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Creates a group in the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_group_delete",
+      "title": "Delete Contact Group",
+      "description": "Delete a contact group (the list only; its member contacts stay). Requires the group's current etag. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Deletes a group from the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_group_members_change",
+      "title": "Change Group Membership",
+      "description": "Add contacts to groups (lists), remove them, or move them between groups of the same address book. Only the group cards are written; contact cards are never written, so a contact's own data cannot change. Groups gaining members are written before groups losing them, and a refused or uncertain write stops the rest, so a move never leaves a contact in neither group. A call in which one group both gains and loses members while other groups change (a swap or chain) is refused: send the additions first, then the removals. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes group membership in the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_group_update",
+      "title": "Rename Contact Group",
+      "description": "Rename a contact group (it replaces the current name). Its members and other properties are unchanged. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Renames a group in the owner's iCloud contacts"
+      ],
+      "cost": "No paid API; a few CardDAV requests",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "contacts_groups_list",
+      "title": "List Contact Groups",
+      "description": "List the contact groups (lists) of every iCloud address book with member counts and etags. List a group's members with contacts_search groupId.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "contacts_search",
+      "title": "Search Contacts",
+      "description": "Search contacts across every iCloud address book by name, organization, email, phone, address or note (an empty query lists all), optionally only members of one group (list) or contacts in no group. Sorted by name; page with cursor.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "contacts_status",
+      "title": "Inspect Contacts Status",
+      "description": "Report whether iCloud contacts are reachable, list every address book of the connected iCloud account with its contact, group and unreadable-card counts, and state what the tools cannot reach or verify (other accounts, device-only contacts, Contact Poster data kept outside the vCard). Never reveals URLs or credentials.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "contacts_write_status",
+      "title": "Check Contacts Write",
+      "description": "Report what happened to a contacts write by its idempotencyKey. An uncertain request is settled by reading the card back; it is never sent again.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; a few CardDAV reads",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "costs_read",
       "title": "Read Omni Cost Telemetry",
       "description": "Summarize Omni's persisted model, search, TTS, retrieval, and transcription costs for a fixed time range. Unknown-price events remain explicit.",

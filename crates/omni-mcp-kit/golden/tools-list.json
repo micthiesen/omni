@@ -10981,6 +10981,3366 @@
       }
     },
     {
+      "name": "contacts_status",
+      "title": "Inspect Contacts Status",
+      "description": "Report whether iCloud contacts are reachable, list every address book of the connected iCloud account with its contact, group and unreadable-card counts, and state what the tools cannot reach or verify (other accounts, device-only contacts, Contact Poster data kept outside the vCard). Never reveals URLs or credentials.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "description": "`ready`, `not_configured`, `stale` or `error`."
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "books": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bookId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "contactCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "groupCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unreadableCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Cards that could not be read (too large or not a vCard)."
+                }
+              },
+              "required": [
+                "bookId",
+                "name",
+                "contactCount",
+                "groupCount",
+                "unreadableCount"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "syncedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What these tools can reach and what their verification covers."
+          }
+        },
+        "required": [
+          "configured",
+          "state",
+          "errorCode",
+          "message",
+          "books",
+          "syncedAt",
+          "limits"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_search",
+      "title": "Search Contacts",
+      "description": "Search contacts across every iCloud address book by name, organization, email, phone, address or note (an empty query lists all), optionally only members of one group (list) or contacts in no group. Sorted by name; page with cursor.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Substring of a name, organization, email, phone (digits), address or note."
+          },
+          "bookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          },
+          "groupId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+            "description": "Only members of this group."
+          },
+          "ungrouped": {
+            "type": "boolean",
+            "description": "Only contacts in no group of their book. A group card that could not\nbe read (see unreadableCount) cannot count its members."
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "From a previous nextCursor."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "fresh": {
+            "type": "boolean",
+            "description": "Refresh from iCloud first even if the index is recent."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contactId": {
+                  "type": "string"
+                },
+                "bookId": {
+                  "type": "string"
+                },
+                "etag": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "organization": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "phones": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "groupIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "hasPhoto": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "contactId",
+                "bookId",
+                "etag",
+                "displayName",
+                "organization",
+                "emails",
+                "phones",
+                "groupIds",
+                "hasPhoto"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unreadableCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Cards in the searched books that could not be read (not searched)."
+          },
+          "syncedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "The last refresh failed; results are from syncedAt."
+          }
+        },
+        "required": [
+          "contacts",
+          "total",
+          "nextCursor",
+          "unreadableCount",
+          "syncedAt",
+          "stale"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_contact_get",
+      "title": "Get Contact",
+      "description": "Read one contact fresh from iCloud: fields, labeled values with their ids (for edits), the groups it belongs to, the names of every other property it carries (photos, Apple extensions), and its etag.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          }
+        },
+        "required": [
+          "contactId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string"
+          },
+          "bookId": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string",
+            "description": "Pass as `etag` to update or delete exactly this version."
+          },
+          "uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "fullName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "family": {
+                    "type": "string"
+                  },
+                  "given": {
+                    "type": "string"
+                  },
+                  "middle": {
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "suffix": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "family",
+                  "given",
+                  "middle",
+                  "prefix",
+                  "suffix"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "birthday": {
+            "description": "`YYYY-MM-DD`, or `--MM-DD` when the year is hidden.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "birthdayYearOmitted": {
+            "type": "boolean",
+            "description": "Apple's X-APPLE-OMIT-YEAR hides the birthday's year."
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Names this exact line for update or remove (valid with this etag)."
+                },
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "phone",
+                    "address",
+                    "url",
+                    "instantMessage",
+                    "socialProfile",
+                    "relatedName",
+                    "date"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The value (an address on one line)."
+                },
+                "label": {
+                  "description": "`mobile`, `home`, `work`, `other`, ... or a custom label.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "labelToken": {
+                  "description": "The Apple label token as stored (`_$!<Son>!$_`), to copy the exact\nlabel to another value.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "customLabel": {
+                  "type": "boolean"
+                },
+                "preferred": {
+                  "type": "boolean"
+                },
+                "address": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "street": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "region": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "poBox": {
+                          "type": "string"
+                        },
+                        "extended": {
+                          "type": "string"
+                        },
+                        "countryCode": {
+                          "description": "Apple's X-ABADR country code.",
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "street",
+                        "city",
+                        "region",
+                        "postalCode",
+                        "country",
+                        "poBox",
+                        "extended",
+                        "countryCode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "user": {
+                  "description": "An IM address's or social profile's user name.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "service": {
+                  "description": "The IM or social service (`X-SERVICE-TYPE`, or a profile's type).",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "field",
+                "value",
+                "label",
+                "labelToken",
+                "customLabel",
+                "preferred",
+                "address",
+                "user",
+                "service"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "groupId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "groupId",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "otherProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "name",
+                "count"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Properties kept byte for byte on every edit that does not name them\n(photo, Apple extensions, unknown properties), by name."
+          },
+          "hasPhoto": {
+            "type": "boolean"
+          },
+          "vcardVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether the edit tools can change it, and why not."
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "contactId",
+          "bookId",
+          "etag",
+          "uid",
+          "displayName",
+          "fullName",
+          "name",
+          "nickname",
+          "organization",
+          "department",
+          "jobTitle",
+          "birthday",
+          "birthdayYearOmitted",
+          "note",
+          "values",
+          "groups",
+          "otherProperties",
+          "hasPhoto",
+          "vcardVersion",
+          "editable",
+          "blockers"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_groups_list",
+      "title": "List Contact Groups",
+      "description": "List the contact groups (lists) of every iCloud address book with member counts and etags. List a group's members with contacts_search groupId.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "bookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          },
+          "fresh": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "groupId": {
+                  "type": "string"
+                },
+                "bookId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "etag": {
+                  "type": "string"
+                },
+                "memberCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unresolvedMemberCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Member references naming no contact in the book."
+                }
+              },
+              "required": [
+                "groupId",
+                "bookId",
+                "name",
+                "etag",
+                "memberCount",
+                "unresolvedMemberCount"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unreadableCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Cards that could not be read; an unreadable group is not listed."
+          },
+          "syncedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "groups",
+          "unreadableCount",
+          "syncedAt",
+          "stale"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_change_preview",
+      "title": "Preview Contacts Change",
+      "description": "Plan any contacts write (exactly one of groupCreate, groupUpdate, groupDelete, membersChange, contactCreate, contactsUpdate) against current iCloud state and show each request with the exact lines it removes and adds, without changing anything. Lines not shown are kept byte for byte.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$",
+            "description": "Used for the ids a create would assign; pass the key you will write with."
+          },
+          "groupCreate": {
+            "type": "object",
+            "properties": {
+              "bookId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "contactIds": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                  "description": "A contactId."
+                }
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "groupUpdate": {
+            "type": "object",
+            "properties": {
+              "groupId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+              },
+              "etag": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "groupId",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "groupDelete": {
+            "type": "object",
+            "properties": {
+              "groupId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+              },
+              "etag": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "groupId",
+              "etag"
+            ],
+            "additionalProperties": false
+          },
+          "membersChange": {
+            "type": "object",
+            "properties": {
+              "add": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "groupId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                    },
+                    "contactIds": {
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                        "description": "A contactId."
+                      }
+                    }
+                  },
+                  "required": [
+                    "groupId",
+                    "contactIds"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "remove": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "groupId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                    },
+                    "contactIds": {
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                        "description": "A contactId."
+                      }
+                    }
+                  },
+                  "required": [
+                    "groupId",
+                    "contactIds"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "move": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fromGroupId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                    },
+                    "toGroupId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                    },
+                    "contactIds": {
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                        "description": "A contactId."
+                      }
+                    }
+                  },
+                  "required": [
+                    "fromGroupId",
+                    "toGroupId",
+                    "contactIds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "contactCreate": {
+            "type": "object",
+            "properties": {
+              "bookId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$"
+              },
+              "fields": {
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "name": {
+                    "type": "object",
+                    "properties": {
+                      "family": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "given": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "middle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "prefix": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "suffix": {
+                        "type": "string",
+                        "maxLength": 100
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "Only the given parts change."
+                  },
+                  "nickname": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "organization": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "department": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "jobTitle": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "birthday": {
+                    "type": "string",
+                    "pattern": "^(\\d{4}|-)-\\d{2}-\\d{2}$",
+                    "description": "`YYYY-MM-DD`, or `--MM-DD` for a birthday without a year."
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 10000
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Single fields to set; absent fields are left alone."
+              },
+              "values": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "phone",
+                        "address",
+                        "url",
+                        "instantMessage",
+                        "socialProfile",
+                        "relatedName",
+                        "date"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The value; addresses use `address`."
+                    },
+                    "address": {
+                      "type": "object",
+                      "properties": {
+                        "street": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "city": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "region": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "postalCode": {
+                          "type": "string",
+                          "maxLength": 50
+                        },
+                        "country": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "poBox": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "extended": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "`mobile`, `iphone`, `home`, `work`, `main`, `home fax`, `work fax`,\n`other fax`, `pager`, `other`, `homepage`, `school`, a relation\n(`mother`, `friend`, ...), `anniversary`, an Apple label token as\nread in labelToken (`_$!<Son>!$_`), or any custom label."
+                    },
+                    "preferred": {
+                      "type": "boolean"
+                    },
+                    "service": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60,
+                      "description": "Required for instantMessage (X-SERVICE-TYPE, e.g. `Skype`) and\nsocialProfile (e.g. `twitter`) values; not used otherwise."
+                    },
+                    "user": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "A socialProfile's user name."
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "groupIds": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                  "description": "A contactId."
+                }
+              }
+            },
+            "required": [
+              "fields"
+            ],
+            "additionalProperties": false
+          },
+          "contactsUpdate": {
+            "type": "object",
+            "properties": {
+              "changes": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "contactId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                    },
+                    "etag": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "The etag the contact was read with."
+                    },
+                    "set": {
+                      "type": "object",
+                      "properties": {
+                        "fullName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "family": {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            "given": {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            "middle": {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "maxLength": 100
+                            },
+                            "suffix": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          },
+                          "additionalProperties": false,
+                          "description": "Only the given parts change."
+                        },
+                        "nickname": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "organization": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "department": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "jobTitle": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "birthday": {
+                          "type": "string",
+                          "pattern": "^(\\d{4}|-)-\\d{2}-\\d{2}$",
+                          "description": "`YYYY-MM-DD`, or `--MM-DD` for a birthday without a year."
+                        },
+                        "note": {
+                          "type": "string",
+                          "maxLength": 10000
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Single fields to set; absent fields are left alone."
+                    },
+                    "clear": {
+                      "maxItems": 6,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "nickname",
+                          "organization",
+                          "department",
+                          "jobTitle",
+                          "birthday",
+                          "note"
+                        ]
+                      }
+                    },
+                    "add": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string",
+                            "enum": [
+                              "email",
+                              "phone",
+                              "address",
+                              "url",
+                              "instantMessage",
+                              "socialProfile",
+                              "relatedName",
+                              "date"
+                            ]
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000,
+                            "description": "The value; addresses use `address`."
+                          },
+                          "address": {
+                            "type": "object",
+                            "properties": {
+                              "street": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "city": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "region": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "postalCode": {
+                                "type": "string",
+                                "maxLength": 50
+                              },
+                              "country": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "poBox": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "extended": {
+                                "type": "string",
+                                "maxLength": 200
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "description": "`mobile`, `iphone`, `home`, `work`, `main`, `home fax`, `work fax`,\n`other fax`, `pager`, `other`, `homepage`, `school`, a relation\n(`mother`, `friend`, ...), `anniversary`, an Apple label token as\nread in labelToken (`_$!<Son>!$_`), or any custom label."
+                          },
+                          "preferred": {
+                            "type": "boolean"
+                          },
+                          "service": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 60,
+                            "description": "Required for instantMessage (X-SERVICE-TYPE, e.g. `Skype`) and\nsocialProfile (e.g. `twitter`) values; not used otherwise."
+                          },
+                          "user": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "A socialProfile's user name."
+                          }
+                        },
+                        "required": [
+                          "field"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "update": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{12}$",
+                            "description": "A value id from contacts_contact_get."
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "address": {
+                            "type": "object",
+                            "properties": {
+                              "street": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "city": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "region": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "postalCode": {
+                                "type": "string",
+                                "maxLength": 50
+                              },
+                              "country": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "poBox": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "extended": {
+                                "type": "string",
+                                "maxLength": 200
+                              }
+                            },
+                            "additionalProperties": false,
+                            "description": "Only the given address parts change."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "preferred": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "remove": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$",
+                        "description": "A value id."
+                      },
+                      "description": "Value ids to remove (with their label lines)."
+                    }
+                  },
+                  "required": [
+                    "contactId",
+                    "etag"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "changes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "resourceId": {
+                  "type": "string"
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "precondition": {
+                  "type": "string",
+                  "description": "`if-match:<etag>` or `if-none-match`."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "removedLines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Unfolded lines the write removes (long values shortened)."
+                },
+                "addedLines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Unfolded lines the write adds."
+                }
+              },
+              "required": [
+                "method",
+                "resourceId",
+                "purpose",
+                "precondition",
+                "changes",
+                "removedLines",
+                "addedLines"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "contactId",
+          "groupId",
+          "writes",
+          "unchanged",
+          "warnings"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_write_status",
+      "title": "Check Contacts Write",
+      "description": "Report what happened to a contacts write by its idempotencyKey. An uncertain request is settled by reading the card back; it is never sent again.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          }
+        },
+        "required": [
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "state": {
+            "description": "`reserved`, `confirmed`, `partial`, `unverified`, `uncertain`,\n`diverged` or `failed`.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "`created`, `updated`, `deleted` or `unchanged`."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "groupId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "resourceId": {
+                          "type": "string"
+                        },
+                        "method": {
+                          "type": "string",
+                          "description": "`PUT` or `DELETE`."
+                        },
+                        "purpose": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                        },
+                        "httpStatus": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 65535
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "etag": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "verified": {
+                          "type": "boolean",
+                          "description": "Read back and matching the plan."
+                        },
+                        "changes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Property names and actions."
+                        },
+                        "detail": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "resourceId",
+                        "method",
+                        "purpose",
+                        "state",
+                        "httpStatus",
+                        "etag",
+                        "verified",
+                        "changes",
+                        "detail"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "unchanged": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Resources the request already matched (nothing sent)."
+                  },
+                  "verified": {
+                    "type": "boolean",
+                    "description": "Every write was read back and matches."
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "replayed": {
+                    "type": "boolean",
+                    "description": "This idempotencyKey was already used; this is the recorded result."
+                  }
+                },
+                "required": [
+                  "status",
+                  "state",
+                  "contactId",
+                  "groupId",
+                  "steps",
+                  "unchanged",
+                  "verified",
+                  "warnings",
+                  "replayed"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "found",
+          "state",
+          "tool",
+          "createdAt",
+          "updatedAt",
+          "result",
+          "error"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_group_create",
+      "title": "Create Contact Group",
+      "description": "Create a contact group (list) in an iCloud address book, optionally with initial members from the same book. Member contacts are not modified. Repeating the idempotencyKey returns the first result. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "bookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$",
+            "description": "Required when the account has more than one address book."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "contactIds": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+              "description": "A contactId."
+            },
+            "description": "Initial members (contacts of the same book)."
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_group_update",
+      "title": "Rename Contact Group",
+      "description": "Rename a contact group (it replaces the current name). Its members and other properties are unchanged. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "groupId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          },
+          "etag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Refuse if the group changed since this etag was read."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "groupId",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_group_delete",
+      "title": "Delete Contact Group",
+      "description": "Delete a contact group (the list only; its member contacts stay). Requires the group's current etag. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "groupId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          },
+          "etag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "groupId",
+          "etag"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_group_members_change",
+      "title": "Change Group Membership",
+      "description": "Add contacts to groups (lists), remove them, or move them between groups of the same address book. Only the group cards are written; contact cards are never written, so a contact's own data cannot change. Groups gaining members are written before groups losing them, and a refused or uncertain write stops the rest, so a move never leaves a contact in neither group. A call in which one group both gains and loses members while other groups change (a swap or chain) is refused: send the additions first, then the removals. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "add": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "groupId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                },
+                "contactIds": {
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                    "description": "A contactId."
+                  }
+                }
+              },
+              "required": [
+                "groupId",
+                "contactIds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "remove": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "groupId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                },
+                "contactIds": {
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                    "description": "A contactId."
+                  }
+                }
+              },
+              "required": [
+                "groupId",
+                "contactIds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "move": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromGroupId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                },
+                "toGroupId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                },
+                "contactIds": {
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+                    "description": "A contactId."
+                  }
+                }
+              },
+              "required": [
+                "fromGroupId",
+                "toGroupId",
+                "contactIds"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Add to toGroupId, then remove from fromGroupId."
+          }
+        },
+        "required": [
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_contact_create",
+      "title": "Create Contact",
+      "description": "Create a contact in an iCloud address book, optionally adding it to groups of that book. Repeating the idempotencyKey returns the first result. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "bookId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}$"
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "fullName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "name": {
+                "type": "object",
+                "properties": {
+                  "family": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "given": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "middle": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "suffix": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Only the given parts change."
+              },
+              "nickname": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "organization": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "department": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "jobTitle": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "birthday": {
+                "type": "string",
+                "pattern": "^(\\d{4}|-)-\\d{2}-\\d{2}$",
+                "description": "`YYYY-MM-DD`, or `--MM-DD` for a birthday without a year."
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 10000
+              }
+            },
+            "additionalProperties": false,
+            "description": "Single fields to set; absent fields are left alone."
+          },
+          "values": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "phone",
+                    "address",
+                    "url",
+                    "instantMessage",
+                    "socialProfile",
+                    "relatedName",
+                    "date"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000,
+                  "description": "The value; addresses use `address`."
+                },
+                "address": {
+                  "type": "object",
+                  "properties": {
+                    "street": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "city": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "region": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "postalCode": {
+                      "type": "string",
+                      "maxLength": 50
+                    },
+                    "country": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "poBox": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "extended": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "`mobile`, `iphone`, `home`, `work`, `main`, `home fax`, `work fax`,\n`other fax`, `pager`, `other`, `homepage`, `school`, a relation\n(`mother`, `friend`, ...), `anniversary`, an Apple label token as\nread in labelToken (`_$!<Son>!$_`), or any custom label."
+                },
+                "preferred": {
+                  "type": "boolean"
+                },
+                "service": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "description": "Required for instantMessage (X-SERVICE-TYPE, e.g. `Skype`) and\nsocialProfile (e.g. `twitter`) values; not used otherwise."
+                },
+                "user": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "A socialProfile's user name."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "groupIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$",
+              "description": "A contactId."
+            },
+            "description": "Groups of the same book to add the new contact to."
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "contacts_contacts_update",
+      "title": "Update Contacts",
+      "description": "Edit up to 50 contact cards, each at the etag it was read with: set or clear single fields, and add, change (value, label, preferred) or remove labeled values by id. Only the named vCard lines change; every other line (photo, unknown and Apple-specific properties) is sent byte for byte, and the card iCloud stores for the write is read back and compared. data_not_preserved means that comparison failed after the write applied: the remaining cards are not written, nothing is rolled back, and the card's earlier text is kept privately in Omni for 30 days for manual recovery. Data iOS keeps outside the vCard, such as Contact Poster assets, is not visible here and its preservation is not verified. Every edit is validated before anything is sent. Requires approval.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "changes": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contactId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~%@+=:,-]{1,200}/[A-Za-z0-9._~%@+=:,-]{1,200}$"
+                },
+                "etag": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The etag the contact was read with."
+                },
+                "set": {
+                  "type": "object",
+                  "properties": {
+                    "fullName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "name": {
+                      "type": "object",
+                      "properties": {
+                        "family": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "given": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "middle": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "prefix": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "suffix": {
+                          "type": "string",
+                          "maxLength": 100
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the given parts change."
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "organization": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "department": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "jobTitle": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "birthday": {
+                      "type": "string",
+                      "pattern": "^(\\d{4}|-)-\\d{2}-\\d{2}$",
+                      "description": "`YYYY-MM-DD`, or `--MM-DD` for a birthday without a year."
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 10000
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Single fields to set; absent fields are left alone."
+                },
+                "clear": {
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "nickname",
+                      "organization",
+                      "department",
+                      "jobTitle",
+                      "birthday",
+                      "note"
+                    ]
+                  }
+                },
+                "add": {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "enum": [
+                          "email",
+                          "phone",
+                          "address",
+                          "url",
+                          "instantMessage",
+                          "socialProfile",
+                          "relatedName",
+                          "date"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000,
+                        "description": "The value; addresses use `address`."
+                      },
+                      "address": {
+                        "type": "object",
+                        "properties": {
+                          "street": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "city": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "region": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "postalCode": {
+                            "type": "string",
+                            "maxLength": 50
+                          },
+                          "country": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "poBox": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "extended": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "description": "`mobile`, `iphone`, `home`, `work`, `main`, `home fax`, `work fax`,\n`other fax`, `pager`, `other`, `homepage`, `school`, a relation\n(`mother`, `friend`, ...), `anniversary`, an Apple label token as\nread in labelToken (`_$!<Son>!$_`), or any custom label."
+                      },
+                      "preferred": {
+                        "type": "boolean"
+                      },
+                      "service": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "Required for instantMessage (X-SERVICE-TYPE, e.g. `Skype`) and\nsocialProfile (e.g. `twitter`) values; not used otherwise."
+                      },
+                      "user": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "A socialProfile's user name."
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "update": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$",
+                        "description": "A value id from contacts_contact_get."
+                      },
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "address": {
+                        "type": "object",
+                        "properties": {
+                          "street": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "city": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "region": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "postalCode": {
+                            "type": "string",
+                            "maxLength": 50
+                          },
+                          "country": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "poBox": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "extended": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Only the given address parts change."
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "preferred": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "remove": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{12}$",
+                    "description": "A value id."
+                  },
+                  "description": "Value ids to remove (with their label lines)."
+                }
+              },
+              "required": [
+                "contactId",
+                "etag"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`created`, `updated`, `deleted` or `unchanged`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`confirmed` (every write read back matching), `partial` (some\nindependent writes were refused; see steps), `unverified` (a write is\nnot visible yet, or the card changed elsewhere since; not a success)\nor `uncertain` (check contacts_write_status; never retry with a new\nkey). Failed and diverged writes are tool errors."
+          },
+          "contactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceId": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "`PUT` or `DELETE`."
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "`planned`, `sending`, `acknowledged` (applied, not yet visible or\nchanged elsewhere since), `verified`, `diverged` (applied, but the\ncard read back lost or changed unedited lines), `rejected`,\n`uncertain` or `skipped`."
+                },
+                "httpStatus": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "etag": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "Read back and matching the plan."
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Property names and actions."
+                },
+                "detail": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "method",
+                "purpose",
+                "state",
+                "httpStatus",
+                "etag",
+                "verified",
+                "changes",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Resources the request already matched (nothing sent)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Every write was read back and matches."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "This idempotencyKey was already used; this is the recorded result."
+          }
+        },
+        "required": [
+          "status",
+          "state",
+          "contactId",
+          "groupId",
+          "steps",
+          "unchanged",
+          "verified",
+          "warnings",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "email_draft_create",
       "title": "Create Email Draft",
       "description": "Save a plain-text draft in the server-designated Drafts mailbox, optionally attaching PDFs you reviewed with email_attachment_get by passing each attachmentReference unchanged. Omni re-reads attachments server-side and refuses bytes that differ from the reviewed SHA-256; never pass file bytes. A draft lets the owner review attachments before sending. Reusing an idempotency key with different content is rejected.",

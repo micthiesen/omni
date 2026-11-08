@@ -37,6 +37,10 @@ families cover:
 - the primary iCloud calendar: status, occurrence listing and search, event
   detail, preview, idempotent create/update/delete, write status, a change feed,
   and the email-created event list (see "Calendar" below)
+- iCloud contacts: status, search across every address book, contact detail,
+  groups (lists), preview, idempotent group create/rename/delete, membership
+  changes and moves, contact create and field-targeted updates, and write
+  status (`contacts_*`, see "Contacts" below)
 - task status, task runs, and livestreams
 - tracked-streamer configuration: list, create, edit (sources, tier,
   live-notification override), delete, reorder within each tier (primary always
@@ -314,6 +318,34 @@ Invitations are read-only, and events Michael organizes with attendees need
 skips changes written by these tools unless `origin` is `any`, and its cursor
 moves past filtered rows. `calendar_events_list` over now to now plus the lead
 is the polling form of `calendar.event_starting` (`docs/mcp-events.md`).
+
+### Contacts
+
+The contacts tools (`docs/contacts.md`) cover every address book of the
+configured iCloud account; other accounts and device-only contacts are not
+reachable. Reads (`contacts_status`, `contacts_search`, `contacts_groups_list`)
+serve an in-memory index refreshed by CTag and ETag when it is older than 30
+seconds or `fresh` is set, and report cards they could not read as
+`unreadableCount`. `contacts_contact_get` reads one card fresh and returns its
+etag and value ids; `contacts_change_preview` shows the exact lines a write
+would remove and add without sending anything.
+
+`contacts_group_create`, `contacts_group_update`, `contacts_group_delete`,
+`contacts_group_members_change`, `contacts_contact_create` and
+`contacts_contacts_update` require approval and an `idempotencyKey`. A replay
+returns the recorded result; reusing a key with other input fails with
+`idempotency_key_reused`. Membership changes and moves write only group
+cards, add before they remove, and refuse a swap or chain of moves in one call
+(`split_required`). Contact updates change only the named lines, at the etag
+the contact was read with. Every write is conditional and read back:
+`confirmed` means every write matched its plan, `unverified` that the write
+is not visible yet or the card has since changed elsewhere, `uncertain` that
+an answer was lost (settled by `contacts_write_status` by reading, never
+resent), and `data_not_preserved` that the card read back after an applied
+write lost or changed unedited lines; the rest of the call is skipped. Errors carry a `[code]` prefix such
+as `version_conflict`, `group_exists`, `cross_book` or `unknown_value_id`.
+Contacts cannot be deleted through these tools, and data iOS keeps outside
+the vCard (Contact Poster assets) is not visible to them.
 
 ### Sonarr seasons
 

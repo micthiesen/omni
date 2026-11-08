@@ -46,6 +46,7 @@ omni-live-intel = { path = "crates/omni-live-intel" }
 omni-media = { path = "crates/omni-media" }
 omni-arr = { path = "crates/omni-arr" }
 omni-calendar = { path = "crates/omni-calendar" }
+omni-contacts = { path = "crates/omni-contacts" }
 omni-reminders = { path = "crates/omni-reminders" }
 omni-personal = { path = "crates/omni-personal" }
 omni-live = { path = "crates/omni-live" }
