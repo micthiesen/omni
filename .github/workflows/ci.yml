@@ -123,6 +123,12 @@ jobs:
         # the host target only, so wasm32 is not installed here.
         run: rustup toolchain install
 
+      - name: Install the legacy time zone names
+        # Ubuntu 26.04 moved the backward-compatible names (Asia/Calcutta,
+        # US/Pacific) to tzdata-legacy. The runtime image's Debian tzdata has
+        # them, and jiff reads the system zoneinfo before its bundled copy.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tzdata-legacy
+
       - name: Restore the test build
         uses: ./.github/actions/cargo-cache
         with:
