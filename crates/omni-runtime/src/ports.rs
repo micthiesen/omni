@@ -167,6 +167,42 @@ pub trait LiveIntelligence: Send + Sync {
     fn record_feedback(&self, input: Value) -> BoxFuture<'_, Result<Value, PortError>>;
 }
 
+/// Sample rate of the mono `f32` audio a [`SpeechTranscriber`] takes.
+pub const SPEECH_SAMPLE_RATE: u32 = 16_000;
+
+/// One stretch of speech in a transcribed chunk, as sample offsets into it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpeechSegment {
+    pub start_sample: usize,
+    pub end_sample: usize,
+    pub text: String,
+}
+
+/// The speech of one audio chunk.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChunkTranscript {
+    pub segments: Vec<SpeechSegment>,
+    /// Samples the segments cover. Less than the chunk when it ended inside
+    /// an utterance: the caller starts its next chunk here so no sentence is
+    /// cut at a chunk boundary.
+    pub consumed_samples: usize,
+}
+
+/// Implemented by `omni-live-intel` over its local speech models; used by
+/// `omni-youtube` transcripts. Unset while livestream intelligence is disabled
+/// or its models failed to load.
+pub trait SpeechTranscriber: Send + Sync {
+    /// The transcription model's name.
+    fn model(&self) -> &'static str;
+    /// Transcribes one chunk of [`SPEECH_SAMPLE_RATE`] mono audio. `last`
+    /// marks the end of the recording, where everything is consumed.
+    fn transcribe_chunk(
+        &self,
+        samples: Arc<Vec<f32>>,
+        last: bool,
+    ) -> BoxFuture<'_, Result<ChunkTranscript, PortError>>;
+}
+
 /// Implemented by `omni-media`; used by the dashboard snapshot. Values are serialized
 /// `omni_api::media::OnDeckItem`s.
 pub trait OnDeckSource: Send + Sync {
@@ -348,6 +384,7 @@ ports! {
     calendar_connection, set_calendar_connection: CalendarConnection,
     live_directory, set_live_directory: LiveDirectory,
     live_intelligence, set_live_intelligence: LiveIntelligence,
+    speech_transcriber, set_speech_transcriber: SpeechTranscriber,
     on_deck_source, set_on_deck_source: OnDeckSource,
     deliveries_source, set_deliveries_source: DeliveriesSource,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,

@@ -15,7 +15,9 @@ use sherpa_onnx::{
 };
 
 use crate::audio::SAMPLE_RATE;
-use crate::speech::{DiarizedSegment, ModelFiles, SpeechBackend, SpeechRecognitionError};
+use crate::speech::{
+    DiarizedSegment, ModelFiles, SpeechBackend, SpeechRecognitionError, SpeechSpan,
+};
 
 const VAD_WINDOW: usize = 512;
 const VAD_BUFFER_SECONDS: f32 = 120.0;
@@ -100,6 +102,33 @@ impl SherpaSpeaker {
             vad.pop();
         }
         Ok(segments)
+    }
+
+    /// VAD speech spans of any length, as sample ranges of `samples`.
+    pub fn speech_spans(&self, samples: &[f32]) -> Result<Vec<SpeechSpan>, SpeechRecognitionError> {
+        let vad = VoiceActivityDetector::create(&self.vad_config, VAD_BUFFER_SECONDS).ok_or_else(
+            || SpeechRecognitionError::new("find speech spans", "VAD creation failed"),
+        )?;
+        let mut spans = Vec::new();
+        // Drained while feeding, so the detector's buffer never has to hold
+        // more than one utterance of a long chunk.
+        let mut drain = |vad: &VoiceActivityDetector| {
+            while let Some(segment) = vad.front() {
+                let start = usize::try_from(segment.start()).unwrap_or(0);
+                spans.push(SpeechSpan {
+                    start,
+                    end: start + segment.samples().len(),
+                });
+                vad.pop();
+            }
+        };
+        for chunk in samples.chunks(VAD_WINDOW) {
+            vad.accept_waveform(chunk);
+            drain(&vad);
+        }
+        vad.flush();
+        drain(&vad);
+        Ok(spans)
     }
 
     /// One speaker embedding.
@@ -209,6 +238,10 @@ impl SpeechBackend for SherpaBackend {
 
     fn embedding(&self, samples: &[f32]) -> Result<Vec<f32>, SpeechRecognitionError> {
         self.speaker.embedding(samples)
+    }
+
+    fn speech_spans(&self, samples: &[f32]) -> Result<Vec<SpeechSpan>, SpeechRecognitionError> {
+        self.speaker.speech_spans(samples)
     }
 
     fn transcribe(&self, samples: &[f32]) -> Result<String, SpeechRecognitionError> {

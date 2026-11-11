@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use omni_runtime::ports::{ChunkTranscript, PortError, SpeechSegment, SpeechTranscriber};
 use serde::{Deserialize, Serialize};
 
 use crate::audio::SAMPLE_RATE;
@@ -204,6 +205,51 @@ pub fn cosine_similarity(a: &[f32], b: &[f64]) -> f64 {
     dot / f64::EPSILON.max(norm_a.sqrt() * norm_b.sqrt())
 }
 
+/// A stretch of speech found by voice activity detection, as a sample range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpeechSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Spans closer than this are transcribed together, so the recognizer sees
+/// whole sentences instead of fragments split at a breath.
+const SPAN_MERGE_GAP_SECONDS: f64 = 0.8;
+/// A merged span stops growing here, which bounds one recognizer call.
+const MAX_MERGED_SPAN_SECONDS: usize = 30;
+/// A final span ending this close to the end of a chunk is still being spoken.
+const OPEN_TAIL_SECONDS: f64 = 0.5;
+
+/// Sorted, in-bounds spans with close neighbours merged
+/// ([`SPAN_MERGE_GAP_SECONDS`], [`MAX_MERGED_SPAN_SECONDS`]).
+pub fn merge_spans(spans: &[SpeechSpan], total_samples: usize) -> Vec<SpeechSpan> {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let gap = (SPAN_MERGE_GAP_SECONDS * f64::from(SAMPLE_RATE)) as usize;
+    let max_len = MAX_MERGED_SPAN_SECONDS * SAMPLE_RATE as usize;
+    let mut sorted: Vec<SpeechSpan> = spans
+        .iter()
+        .map(|s| SpeechSpan {
+            start: s.start,
+            end: s.end.min(total_samples),
+        })
+        .filter(|s| s.start < s.end)
+        .collect();
+    sorted.sort_by_key(|s| s.start);
+    let mut merged: Vec<SpeechSpan> = Vec::new();
+    for span in sorted {
+        match merged.last_mut() {
+            Some(last)
+                if span.start <= last.end + gap
+                    && span.end.saturating_sub(last.start) <= max_len =>
+            {
+                last.end = last.end.max(span.end);
+            }
+            _ => merged.push(span),
+        }
+    }
+    merged
+}
+
 /// The native operations the runtime needs. All calls block.
 pub trait SpeechBackend: Send + Sync + 'static {
     /// VAD speech segments of at least one second.
@@ -212,6 +258,8 @@ pub trait SpeechBackend: Send + Sync + 'static {
     fn embedding(&self, samples: &[f32]) -> Result<Vec<f32>, SpeechRecognitionError>;
     /// Raw transcript text.
     fn transcribe(&self, samples: &[f32]) -> Result<String, SpeechRecognitionError>;
+    /// VAD speech spans of any length, in order.
+    fn speech_spans(&self, samples: &[f32]) -> Result<Vec<SpeechSpan>, SpeechRecognitionError>;
     /// Speaker-clustered segments, sorted by start time.
     fn diarize(&self, samples: &[f32]) -> Result<Vec<DiarizedSegment>, SpeechRecognitionError>;
 }
@@ -555,6 +603,45 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
     pub fn transcribe(&self, samples: &[f32]) -> Result<String, SpeechRecognitionError> {
         Ok(omni_core::js::trim(&self.backend.transcribe(samples)?).to_owned())
     }
+
+    /// Transcribes each stretch of speech in one chunk of a longer recording.
+    /// Unless `last`, an utterance still being spoken at the end of the chunk
+    /// is left for the next one: `consumed_samples` is where it starts. A
+    /// tail starting in the first half of the chunk is transcribed anyway, so
+    /// every chunk advances by at least half its length.
+    pub fn transcribe_chunk(
+        &self,
+        samples: &[f32],
+        last: bool,
+    ) -> Result<ChunkTranscript, SpeechRecognitionError> {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let open_tail = (OPEN_TAIL_SECONDS * f64::from(SAMPLE_RATE)) as usize;
+        let mut spans = merge_spans(&self.backend.speech_spans(samples)?, samples.len());
+        let mut consumed_samples = samples.len();
+        if !last
+            && let Some(tail) = spans.last().copied()
+            && tail.end + open_tail >= samples.len()
+            && tail.start >= samples.len() / 2
+        {
+            consumed_samples = tail.start;
+            spans.pop();
+        }
+        let mut segments = Vec::new();
+        for span in spans {
+            let text = self.transcribe(&samples[span.start..span.end])?;
+            if !text.is_empty() {
+                segments.push(SpeechSegment {
+                    start_sample: span.start,
+                    end_sample: span.end,
+                    text,
+                });
+            }
+        }
+        Ok(ChunkTranscript {
+            segments,
+            consumed_samples,
+        })
+    }
 }
 
 /// The service's speech seam.
@@ -625,5 +712,32 @@ impl<B: SpeechBackend> SpeechEngine for BlockingSpeech<B> {
         Box::pin(blocking("diarize livestream audio", move || {
             runtime.attribute_speakers(&samples)
         }))
+    }
+}
+
+/// The [`SpeechTranscriber`] port over the loaded runtime.
+pub struct LocalTranscriber<B>(pub Arc<LocalSpeechRuntime<B>>);
+
+impl<B: SpeechBackend> SpeechTranscriber for LocalTranscriber<B> {
+    fn model(&self) -> &'static str {
+        TRANSCRIPTION_MODEL
+    }
+
+    fn transcribe_chunk(
+        &self,
+        samples: Arc<Vec<f32>>,
+        last: bool,
+    ) -> BoxFuture<'_, Result<ChunkTranscript, PortError>> {
+        let runtime = Arc::clone(&self.0);
+        Box::pin(async move {
+            blocking("transcribe audio chunk", move || {
+                runtime.transcribe_chunk(&samples, last)
+            })
+            .await
+            .map_err(|error| PortError::Failed {
+                message: error.to_string(),
+                transient: false,
+            })
+        })
     }
 }

@@ -136,3 +136,80 @@ impl Entity for YoutubeWriteData {
         self.key.clone()
     }
 }
+
+/// Where a transcript job stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptState {
+    Queued,
+    Downloading,
+    Transcribing,
+    Ready,
+    Failed,
+}
+
+impl TranscriptState {
+    /// A job that has not finished: it holds a place in the queue.
+    pub fn is_active(self) -> bool {
+        matches!(self, Self::Queued | Self::Downloading | Self::Transcribing)
+    }
+}
+
+/// One stretch of speech, in milliseconds from the start of the video.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSegmentData {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+}
+
+/// A video's locally transcribed speech and the job that produces it. The
+/// downloaded audio is never stored here; it lives in the job's work
+/// directory until the job ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoutubeTranscriptData {
+    pub video_id: String,
+    pub state: TranscriptState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    /// `YYYYMMDD`, as yt-dlp reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_date: Option<String>,
+    pub requested_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<i64>,
+    /// The last start or read; retention counts from here.
+    pub last_read_at: i64,
+    /// Audio transcribed so far. An interrupted job resumes here.
+    #[serde(default)]
+    pub transcribed_ms: i64,
+    /// Times a job for this request began (restarts after a shutdown count).
+    #[serde(default)]
+    pub attempts: u32,
+    #[serde(default)]
+    pub segments: Vec<TranscriptSegmentData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Entity for YoutubeTranscriptData {
+    const NAME: &'static str = "youtube-transcript";
+    type Key = String;
+    fn key(&self) -> String {
+        self.video_id.clone()
+    }
+}

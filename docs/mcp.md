@@ -71,8 +71,12 @@ families cover:
 - the owner's YouTube playlists (list, create, rename, describe, privacy,
   delete, add, remove, reorder), public YouTube search and video and channel
   details through Omni's own Google OAuth client (`youtube_*`, see
-  [YouTube](youtube.md)); Watch Later, history, Home and transcripts are not
-  available through the API
+  [YouTube](youtube.md)); Watch Later, history and Home are not available
+  through the API
+- local transcripts of YouTube videos (`youtube_transcript_start`,
+  `youtube_transcript_get`, `youtube_transcript_search`,
+  `youtube_transcripts_list`): yt-dlp audio and the local speech model, no API
+  or account (see "Transcripts" in [YouTube](youtube.md))
 - agent push notifications to Michael (see "Owner notifications" below)
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
   record queries, measurement comparison, typed records and immutable events,

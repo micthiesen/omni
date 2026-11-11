@@ -8,8 +8,8 @@ use std::sync::Mutex;
 use omni_live_intel::load_speech_runtime;
 use omni_live_intel::speech::{
     DEFAULT_SPEAKER_THRESHOLD, DiarizedSegment, LocalSpeechRuntime, ModelFiles, SpeakerTurn,
-    SpeakerVoiceMatch, SpeechBackend, SpeechRecognitionError, VoiceprintFile, cosine_similarity,
-    destiny_speakers, is_destiny_voice, label_speakers, speaker_turns,
+    SpeakerVoiceMatch, SpeechBackend, SpeechRecognitionError, SpeechSpan, VoiceprintFile,
+    cosine_similarity, destiny_speakers, is_destiny_voice, label_speakers, speaker_turns,
 };
 
 fn speech_fixture(voiceprint: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -118,6 +118,10 @@ impl SpeechBackend for FakeBackend {
     fn embedding(&self, samples: &[f32]) -> Result<Vec<f32>, SpeechRecognitionError> {
         self.windows.lock().expect("lock").push(samples.len());
         Ok(vec![samples[0], 1.0])
+    }
+
+    fn speech_spans(&self, _samples: &[f32]) -> Result<Vec<SpeechSpan>, SpeechRecognitionError> {
+        Ok(vec![])
     }
 
     fn transcribe(&self, _samples: &[f32]) -> Result<String, SpeechRecognitionError> {

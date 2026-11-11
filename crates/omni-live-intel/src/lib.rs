@@ -48,7 +48,7 @@ use crate::port::IntelligencePort;
 use crate::routes::IntelState;
 use crate::service::{LivestreamIntelligenceService, ServiceDeps, ServiceSettings};
 use crate::sherpa::SherpaBackend;
-use crate::speech::{BlockingSpeech, LocalSpeechRuntime, SpeechRecognitionError};
+use crate::speech::{BlockingSpeech, LocalSpeechRuntime, LocalTranscriber, SpeechRecognitionError};
 use crate::types::{
     LivestreamDiagnosticsData, LivestreamFeedbackData, LivestreamIntelligenceData,
     LivestreamIntelligenceEventData,
@@ -137,6 +137,16 @@ pub async fn create_service(
     })
     .await
     .map_err(|e| SpeechRecognitionError::new("initialize livestream speech models", e))??;
+    let runtime = Arc::new(runtime);
+    // Other subsystems (YouTube transcripts) transcribe through the same
+    // loaded models.
+    if ctx
+        .ports
+        .set_speech_transcriber(Arc::new(LocalTranscriber(Arc::clone(&runtime))))
+        .is_err()
+    {
+        tracing::warn!(target: LOG, "The speech transcriber port was already set");
+    }
     let deps = ServiceDeps {
         store: ctx.store.clone(),
         clock: ctx.clock.clone(),
@@ -147,7 +157,7 @@ pub async fn create_service(
             config.ffmpeg_bin(),
             ctx.clock.clone(),
         )),
-        speech: Arc::new(BlockingSpeech(Arc::new(runtime))),
+        speech: Arc::new(BlockingSpeech(runtime)),
         classifier: Arc::new(LivestreamClassifier::new(
             ctx.ai.clone(),
             Arc::clone(&ctx.config),

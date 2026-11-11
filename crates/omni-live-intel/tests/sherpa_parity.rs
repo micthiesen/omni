@@ -22,7 +22,7 @@ use omni_live_intel::audio::decode_f32le;
 use omni_live_intel::sherpa::SherpaSpeaker;
 use omni_live_intel::speech::{
     DEFAULT_SPEAKER_THRESHOLD, DiarizedSegment, LocalSpeechRuntime, SpeechBackend,
-    SpeechRecognitionError, VoiceprintFile, cosine_similarity,
+    SpeechRecognitionError, SpeechSpan, VoiceprintFile, cosine_similarity,
 };
 use serde::Deserialize;
 
@@ -59,6 +59,10 @@ impl SpeechBackend for Speaker {
 
     fn embedding(&self, samples: &[f32]) -> Result<Vec<f32>, SpeechRecognitionError> {
         self.0.embedding(samples)
+    }
+
+    fn speech_spans(&self, samples: &[f32]) -> Result<Vec<SpeechSpan>, SpeechRecognitionError> {
+        self.0.speech_spans(samples)
     }
 
     fn transcribe(&self, _samples: &[f32]) -> Result<String, SpeechRecognitionError> {

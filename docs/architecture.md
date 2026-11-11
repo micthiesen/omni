@@ -55,6 +55,7 @@ tasks and tools, and starts the services.
 Cross-subsystem calls go through the port traits in
 `crates/omni-runtime/src/ports.rs`: `EmailReader`, `ArchiveEcho`,
 `EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
+`SpeechTranscriber` (the local speech model, for YouTube transcripts),
 `OnDeckSource`, `DeliveriesSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
 port is set once during wiring (`crates/omni/src/wiring.rs`); a consumer
@@ -94,7 +95,7 @@ requests, closes MCP and SSE streams, and waits up to 30 s for tracked work.
 Livestream intelligence is optional at boot: if its speech or speaker model
 files are missing, empty or corrupt (`omni-live-intel/src/model_check.rs`), boot
 logs `Livestream intelligence disabled: ...`, installs no `LiveIntelligence`
-port and continues.
+or `SpeechTranscriber` port and continues.
 
 ## Data compatibility
 

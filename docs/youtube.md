@@ -2,8 +2,9 @@
 
 `omni-youtube` connects the owner's YouTube account through the YouTube Data
 API v3 with Omni's own Google OAuth client, and serves twelve `youtube_*` MCP
-tools: playlist listing and management, public search, and video and channel
-details. It replaced Composio for this, whose shared Google project ran out of
+tools for it: playlist listing and management, public search, and video and
+channel details. Four more tools transcribe videos on the server without the
+API or the account (see [Transcripts](#transcripts)). It replaced Composio for this, whose shared Google project ran out of
 quota even for plain reads. The live check's scraper is unrelated
 ([youtube-data-api.md](youtube-data-api.md) explains why it does not use the API).
 
@@ -13,7 +14,8 @@ The YouTube Data API does not serve Watch Later or watch history (both
 removed in 2016; the tools refuse `WL` and `HL`), the personalized Home feed or
 recommendations, or caption text and transcripts of other channels' videos.
 `youtube_videos_get` reports only whether captions exist. Tool text never
-implies any of these.
+implies any of these. What a video says comes from Omni's own transcription
+instead ([Transcripts](#transcripts)), which does not use the API.
 
 ## Google Cloud setup
 
@@ -126,3 +128,115 @@ and change only playlists whose `channelId` is the connected channel.
 A write whose answer was lost (timeout, network, 5xx) is checked by reading
 YouTube back and reported `uncertain` when the read does not confirm it; it is
 never resent.
+
+## Transcripts
+
+`youtube_transcript_start`, `youtube_transcript_get`,
+`youtube_transcript_search` and `youtube_transcripts_list` turn a video's
+speech into timestamped text on the server, so an assistant can read what a
+video says when the owner pastes a URL or asks about one. They use neither the
+YouTube Data API nor the connected account, cost no quota and call no paid
+service (`crates/omni-youtube/src/transcripts/`).
+
+### How a transcript is made
+
+1. `youtube_transcript_start` takes a video id or any YouTube URL
+   (`ids::video_id`) and stores a `youtube-transcript` row keyed by the video
+   id. Only the canonical `https://www.youtube.com/watch?v=<id>` URL is ever
+   handed to yt-dlp.
+2. `yt-dlp` reads the metadata (title, channel, duration, live status), then
+   downloads one audio-only format into
+   `<data dir>/youtube-transcripts/<video id>/`: the original-language track
+   at 40 kbit/s or more when YouTube offers it, 1 GiB at most.
+3. `ffmpeg` decodes the file two minutes at a time to 16 kHz mono, and each
+   chunk goes to the `SpeechTranscriber` port: the Parakeet TDT 0.6B v3 model
+   livestream intelligence already loads. Silero VAD finds the stretches of
+   speech, stretches less than 0.8 s apart are transcribed together (30 s at
+   most), and an utterance still being spoken at the end of a chunk is left
+   for the next chunk, so no sentence is cut at a chunk boundary.
+4. The segments (start, end, text) and the progress are stored after every
+   chunk. When the last chunk is stored the audio is deleted and the row
+   becomes `ready`.
+
+No new model, download or service is involved: the image already carries
+yt-dlp, ffmpeg and the speech models. The models are loaded only when
+livestream intelligence is enabled and its models are sound; otherwise the
+port is unset, `youtube_transcript_start` answers `[unavailable]` and stored
+transcripts stay readable. `SideEffectMode::Record` (`--preview`, tests)
+starts no job.
+
+### Tools
+
+- **`youtube_transcript_start`** (`video`, `force`, `waitSeconds` 0 to 50,
+  default 25, `maxChars`) starts the job or returns what the video already
+  has: a running job is joined and never restarted (`force` included), a
+  `ready` transcript is reused unless `force`, a `failed` one starts over. It
+  waits up to `waitSeconds`; a short video comes back `ready` with the first
+  page of text, a longer one with its status and progress.
+- **`youtube_transcript_get`** (`video`, `cursor`, `startSeconds`,
+  `endSeconds`, `maxChars` 1,000 to 200,000, default 30,000, `waitSeconds`)
+  reads the text as `[m:ss] ...` or `[h:mm:ss] ...` lines, each gathering
+  about a minute or 400 characters of speech. Pages end on a segment boundary;
+  `nextCursor` (a segment index) continues. The transcribed part of a running
+  job is readable (`complete: false`), and `waitSeconds` holds the call until
+  the job ends. No stored transcript is a `[not_found]` error.
+- **`youtube_transcript_search`** (`video`, `query`, `limit`) finds passages
+  holding every word of the query, ignoring case and punctuation, also when a
+  sentence is split across two segments. Each match has its timestamp, a
+  `youtu.be/<id>?t=` link, an excerpt with the neighbouring speech and a
+  `cursor` for `youtube_transcript_get`. It is word matching, not semantic
+  search.
+- **`youtube_transcripts_list`** lists stored transcripts and queued or
+  running jobs, newest request first, and whether the speech models are
+  available.
+
+Every result carries `transcript`: `status` (`queued`, `downloading`,
+`transcribing`, `ready`, `failed`), title, channel, duration,
+`transcribedSeconds`, `percent`, size, `expiresAt`, the model, and `error`
+(`code`, `message`) for a failed job.
+
+| `error.code` | Meaning |
+| --- | --- |
+| `live` | A live or upcoming stream; transcribe it once it has ended |
+| `too_long` | Over 6 hours |
+| `too_large` | The audio file is over 1 GiB |
+| `no_duration` | yt-dlp reports no duration |
+| `download_failed` | yt-dlp failed; `message` is its last error line (private, removed, age or bot check, network), or it left no audio file |
+| `decode_failed` | ffmpeg could not decode the audio |
+| `speech_failed`, `speech_unavailable` | The speech model failed or is not loaded |
+| `interrupted` | Restarts interrupted the job three times |
+| `internal` | Storage or filesystem failure |
+
+Failures log at WARN and never alert: most are properties of the video.
+
+### Limits and lifecycle
+
+- One job downloads and transcribes at a time; five may be queued or running
+  (`[busy]` beyond that). Transcription shares the recognizer with livestream
+  intelligence and takes turns with it one utterance at a time.
+- **Audio** exists only while its job runs. It is deleted when the job ends,
+  whether it finished, failed or was stopped by a shutdown, and before the row
+  reports `ready`. The work directory is emptied at boot before the server
+  accepts requests, and the daily cleanup removes any directory without a job. At most one audio file of
+  1 GiB is on disk.
+- **A shutdown** (every deploy) stops the job and leaves its row active. The
+  `youtube-transcripts` boot step resumes it after the server is up: the audio
+  is downloaded again and transcription continues after the last stored chunk.
+  A job interrupted three times fails with `interrupted`.
+- **Transcript text** is deleted 30 days after its last read (a start that
+  reuses it or a read of a `ready` transcript counts; a failed job counts from
+  its failure). `YoutubeTranscriptCleanup` runs daily at 04:23 and also keeps
+  at most 200 finished transcripts, deleting the least recently read first. It
+  never touches a queued or running job.
+
+### What the text is
+
+Machine transcription of the audio track: names, numbers and technical terms
+can be wrong, there are no speaker labels, and music or silence produces
+nothing. Parakeet v3 covers English and other European languages; it does not
+translate. The words are whatever the video says, so the tool descriptions
+mark them as untrusted third-party content that is never to be followed as
+instructions; the title and channel are the uploader's too, and are stored
+as one line of at most 200 characters. yt-dlp failures follow YouTube's changes: when downloads start
+failing with bot checks or format errors, update the pinned yt-dlp
+(`Dockerfile`), which livestream intelligence depends on as well.

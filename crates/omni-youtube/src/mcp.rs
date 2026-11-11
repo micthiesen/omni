@@ -3,6 +3,7 @@
 pub mod defs;
 
 use std::future::Future;
+use std::time::Duration;
 
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
 
@@ -13,6 +14,11 @@ use crate::service::{
     ChannelLookup, CreatePlaylist, PlaylistScope, RemoveTarget, SearchParams, UpdatePlaylist,
     Youtube,
 };
+use crate::transcripts::model::{
+    TranscriptInfo, TranscriptRead, TranscriptSearchOutput, TranscriptsList,
+};
+use crate::transcripts::text::{self, PageRequest};
+use crate::transcripts::{RETENTION_MS, TranscriptError, Transcripts};
 
 /// `[code] message`, so clients can tell quota, connection and input failures apart.
 fn tool_error(error: &YoutubeError) -> ToolError {
@@ -67,7 +73,140 @@ where
     })
 }
 
-pub fn tools(youtube: &Youtube) -> Result<Vec<McpTool>, ToolMetaError> {
+fn transcript_error(error: &TranscriptError) -> ToolError {
+    ToolError::execute(format!("[{}] {error}", error.code()))
+}
+
+fn transcript_tool<I, O, F, Fut>(
+    def: &'static omni_mcp_kit::ToolDef<I, O>,
+    transcripts: &Transcripts,
+    f: F,
+) -> Result<McpTool, ToolMetaError>
+where
+    I: schemars::JsonSchema + serde::de::DeserializeOwned + Send + 'static,
+    O: schemars::JsonSchema + serde::Serialize + Send + 'static,
+    F: Fn(Transcripts, I) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<O, ToolError>> + Send + 'static,
+{
+    let transcripts = transcripts.clone();
+    typed_tool(def, move |input: I, _cx: ToolContext| {
+        f(transcripts.clone(), input)
+    })
+}
+
+const DEFAULT_MAX_CHARS: u32 = 30_000;
+
+/// The `youtube_transcript*` tools.
+pub fn transcript_tools(transcripts: &Transcripts) -> Result<Vec<McpTool>, ToolMetaError> {
+    Ok(vec![
+        transcript_tool(
+            &defs::YOUTUBE_TRANSCRIPT_START,
+            transcripts,
+            |transcripts, i: defs::TranscriptStartInput| async move {
+                let id = ids::video_id(&i.video).map_err(|e| tool_error(&e))?;
+                let mut row = transcripts
+                    .start(&id, i.force.unwrap_or(false))
+                    .await
+                    .map_err(|e| transcript_error(&e))?;
+                let wait = i.wait_seconds.unwrap_or(25);
+                if row.state.is_active() && wait > 0 {
+                    row = transcripts
+                        .wait(&id, Duration::from_secs(u64::from(wait)))
+                        .await
+                        .map_err(|e| transcript_error(&e))?;
+                }
+                // Only a finished transcript's text: partial text is read
+                // on purpose, with youtube_transcript_get.
+                let page = if row.state.is_active() {
+                    text::Page::default()
+                } else {
+                    text::page(
+                        &row.segments,
+                        PageRequest {
+                            cursor: 0,
+                            start_ms: None,
+                            end_ms: None,
+                            max_chars: i.max_chars.unwrap_or(DEFAULT_MAX_CHARS) as usize,
+                        },
+                    )
+                };
+                Ok(TranscriptRead::of(&row, page))
+            },
+        )?,
+        transcript_tool(
+            &defs::YOUTUBE_TRANSCRIPT_GET,
+            transcripts,
+            |transcripts, i: defs::TranscriptGetInput| async move {
+                let id = ids::video_id(&i.video).map_err(|e| tool_error(&e))?;
+                if let (Some(start), Some(end)) = (i.start_seconds, i.end_seconds)
+                    && start >= end
+                {
+                    return Err(input("startSeconds must be before endSeconds"));
+                }
+                let row = match i.wait_seconds.unwrap_or(0) {
+                    0 => transcripts.get(&id).await,
+                    wait => {
+                        transcripts
+                            .wait(&id, Duration::from_secs(u64::from(wait)))
+                            .await
+                    }
+                }
+                .map_err(|e| transcript_error(&e))?;
+                let page = text::page(
+                    &row.segments,
+                    PageRequest {
+                        cursor: i.cursor.unwrap_or(0) as usize,
+                        start_ms: i.start_seconds.map(|s| i64::from(s) * 1000),
+                        end_ms: i.end_seconds.map(|s| i64::from(s) * 1000),
+                        max_chars: i.max_chars.unwrap_or(DEFAULT_MAX_CHARS) as usize,
+                    },
+                );
+                Ok(TranscriptRead::of(&row, page))
+            },
+        )?,
+        transcript_tool(
+            &defs::YOUTUBE_TRANSCRIPT_SEARCH,
+            transcripts,
+            |transcripts, i: defs::TranscriptSearchInput| async move {
+                let id = ids::video_id(&i.video).map_err(|e| tool_error(&e))?;
+                if !i.query.chars().any(char::is_alphanumeric) {
+                    return Err(input("query: give at least one word"));
+                }
+                let row = transcripts
+                    .get(&id)
+                    .await
+                    .map_err(|e| transcript_error(&e))?;
+                let (hits, total) =
+                    text::search(&row.segments, &i.query, i.limit.unwrap_or(10) as usize);
+                Ok(TranscriptSearchOutput::of(&row, hits, total))
+            },
+        )?,
+        transcript_tool(
+            &defs::YOUTUBE_TRANSCRIPTS_LIST,
+            transcripts,
+            |transcripts, i: defs::TranscriptsListInput| async move {
+                let (rows, total) = transcripts
+                    .list(i.limit.unwrap_or(20) as usize)
+                    .await
+                    .map_err(|e| transcript_error(&e))?;
+                Ok(TranscriptsList {
+                    transcripts: rows.iter().map(TranscriptInfo::of).collect(),
+                    total: total as u64,
+                    retention_days: u64::try_from(RETENTION_MS / 86_400_000).unwrap_or(0),
+                    speech_available: transcripts.speech_available(),
+                })
+            },
+        )?,
+    ])
+}
+
+pub fn tools(youtube: &Youtube, transcripts: &Transcripts) -> Result<Vec<McpTool>, ToolMetaError> {
+    let mut tools = account_tools(youtube)?;
+    tools.extend(transcript_tools(transcripts)?);
+    Ok(tools)
+}
+
+fn account_tools(youtube: &Youtube) -> Result<Vec<McpTool>, ToolMetaError> {
     Ok(vec![
         tool(
             &defs::YOUTUBE_STATUS,

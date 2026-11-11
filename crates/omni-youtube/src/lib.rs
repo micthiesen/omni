@@ -13,16 +13,22 @@ pub mod records;
 pub mod routes;
 pub mod secrets;
 pub mod service;
+pub mod transcripts;
 pub mod wire;
 
-use omni_runtime::{AppContext, Subsystem};
+use std::sync::Arc;
+
+use omni_runtime::{AppContext, BootError, BootPhase, BootStep, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
 use crate::records::{
-    YoutubeAccountData, YoutubeOauthStateData, YoutubeQuotaData, YoutubeWriteData,
+    YoutubeAccountData, YoutubeOauthStateData, YoutubeQuotaData, YoutubeTranscriptData,
+    YoutubeWriteData,
 };
 use crate::secrets::Sealer;
 use crate::service::{Deps, Settings, Youtube};
+use crate::transcripts::media::YtDlpMedia;
+use crate::transcripts::{TranscriptCleanupTask, TranscriptDeps, Transcripts};
 
 const LOG: &str = "YouTube";
 
@@ -49,19 +55,94 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<YoutubeOauthStateData>(),
         EntityDescriptor::of::<YoutubeQuotaData>(),
         EntityDescriptor::of::<YoutubeWriteData>(),
+        EntityDescriptor::of::<YoutubeTranscriptData>(),
     ]
 }
 
-/// The YouTube subsystem: the OAuth routes, the `youtube_*` tools and its entities.
-pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, omni_mcp_kit::ToolMetaError> {
-    subsystem_with(build(ctx))
+/// The transcript service over the application context: yt-dlp and ffmpeg
+/// from the configuration, audio under `youtube-transcripts` in the data
+/// directory.
+pub fn build_transcripts(ctx: &AppContext) -> Transcripts {
+    Transcripts::new(TranscriptDeps {
+        store: ctx.store.clone(),
+        clock: ctx.clock.clone(),
+        ports: ctx.ports.clone(),
+        media: Arc::new(YtDlpMedia::new(
+            ctx.config.yt_dlp_bin(),
+            ctx.config.ffmpeg_bin(),
+        )),
+        work_dir: ctx.paths.data_dir.join(transcripts::WORK_DIR),
+        tracker: ctx.tracker.clone(),
+        shutdown: ctx.shutdown.clone(),
+        mode: ctx.side_effects,
+    })
 }
 
-pub fn subsystem_with(youtube: Youtube) -> Result<Subsystem, omni_mcp_kit::ToolMetaError> {
+/// The YouTube subsystem: the OAuth routes, the `youtube_*` tools, the
+/// transcript jobs with their cleanup task, and the entities.
+pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, BootError> {
+    const STEP: &str = "youtube";
+    let transcripts = build_transcripts(ctx);
+    let mut subsystem = subsystem_with(build(ctx), &transcripts)
+        .map_err(|e| BootError::new(STEP, e.to_string()))?;
+    let tz =
+        jiff::tz::TimeZone::get(&ctx.config.tz).unwrap_or_else(|_| jiff::tz::TimeZone::system());
+    let schedule = omni_tasks::CronSchedule::parse(transcripts::CLEANUP_SCHEDULE, &tz)
+        .map_err(|e| BootError::new(STEP, format!("invalid cleanup schedule: {e}")))?;
+    subsystem.tasks.push(Arc::new(TranscriptCleanupTask::new(
+        schedule,
+        transcripts.clone(),
+    )));
+    // Before the server accepts a request: whatever audio is on disk
+    // belonged to a process that no longer runs, and no job has started yet.
+    let clearing = transcripts.clone();
+    subsystem.boot_steps.push(BootStep {
+        phase: BootPhase::Reconcile,
+        name: "youtube-transcripts-clear",
+        run: Box::new(move |_ctx: AppContext| {
+            Box::pin(async move {
+                clearing.clear_work_dir().await;
+                Ok(())
+            })
+        }),
+    });
+    // After the server is up, so the speech port (set by livestream
+    // intelligence's boot step) is there for the jobs a shutdown interrupted.
+    subsystem.boot_steps.push(BootStep {
+        phase: BootPhase::AfterServer,
+        name: "youtube-transcripts",
+        run: Box::new(move |_ctx: AppContext| {
+            Box::pin(async move {
+                match transcripts.resume_interrupted().await {
+                    Ok(0) => {}
+                    Ok(resumed) => {
+                        tracing::info!(
+                            target: LOG,
+                            "Resumed {resumed} interrupted transcript job(s)"
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            target: LOG,
+                            "Could not resume transcript jobs: {error}"
+                        );
+                    }
+                }
+                Ok(())
+            })
+        }),
+    });
+    Ok(subsystem)
+}
+
+pub fn subsystem_with(
+    youtube: Youtube,
+    transcripts: &Transcripts,
+) -> Result<Subsystem, omni_mcp_kit::ToolMetaError> {
     Ok(Subsystem {
         name: "youtube",
         router: routes::router(youtube.clone()),
-        mcp_tools: mcp::tools(&youtube)?,
+        mcp_tools: mcp::tools(&youtube, transcripts)?,
         entities: entities(),
         ..Subsystem::named("youtube")
     })
