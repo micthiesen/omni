@@ -2,7 +2,7 @@
 //! `calendar-created-event` entity, keyed by a normalized content hash, used for
 //! create dedup and cancel/update matching.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
 use jiff::tz::TimeZone;
@@ -59,6 +59,15 @@ pub struct CreatedCalendarEvent {
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<EventStatus>,
+    /// Set (with `status: cancelled`) when the calendar event itself was
+    /// deleted outside the email pipeline: by a calendar tool, or found
+    /// missing by an update. The pipeline never recreates this exact event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<i64>,
+    /// Emails that wrote this event before `email_id` did (updates and
+    /// reschedules), oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub earlier_email_ids: Vec<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -74,6 +83,28 @@ impl Entity for CreatedCalendarEvent {
 impl CreatedCalendarEvent {
     pub fn is_cancelled(&self) -> bool {
         self.status == Some(EventStatus::Cancelled)
+    }
+
+    /// Whether `email_id` wrote this event, now or before a later update.
+    pub fn written_by(&self, email_id: &str) -> bool {
+        self.email_id == email_id || self.earlier_email_ids.iter().any(|id| id == email_id)
+    }
+
+    /// The writers a row replacing this one (written by another email)
+    /// carries forward, bounded.
+    pub fn writers(&self) -> Vec<String> {
+        const KEPT: usize = 20;
+        let mut ids = self.earlier_email_ids.clone();
+        if !ids.contains(&self.email_id) {
+            ids.push(self.email_id.clone());
+        }
+        let excess = ids.len().saturating_sub(KEPT);
+        ids.split_off(excess)
+    }
+
+    /// Whether the calendar event was deleted from the calendar itself.
+    pub fn is_deleted(&self) -> bool {
+        self.is_cancelled() && self.deleted_at.is_some()
     }
 
     /// A new active record of `event` (all extracted fields, no tombstone).
@@ -102,6 +133,8 @@ impl CreatedCalendarEvent {
             recurrence: event.recurrence.clone(),
             created_at,
             status: None,
+            deleted_at: None,
+            earlier_email_ids: Vec::new(),
             extra: Extra::default(),
         }
     }
@@ -478,6 +511,34 @@ pub async fn has_created_event(
         ))
 }
 
+/// Why a create of this exact event (its hash) must not write anything.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreateBlock {
+    /// An active record exists.
+    Duplicate,
+    /// The event was deleted from the calendar; no email recreates it.
+    Deleted,
+    /// The record was cancelled or moved away by a later email, and this is
+    /// an email that wrote it being processed again.
+    Superseded,
+}
+
+/// The tracked row's verdict on creating its event from `email_id`. Only the
+/// exact event is blocked: another date or time is a different hash, and
+/// another email may book a cancelled slot again.
+pub fn create_block(record: Option<&CreatedCalendarEvent>, email_id: &str) -> Option<CreateBlock> {
+    let record = record?;
+    if !record.is_cancelled() {
+        return Some(CreateBlock::Duplicate);
+    }
+    if record.is_deleted() {
+        return Some(CreateBlock::Deleted);
+    }
+    record
+        .written_by(email_id)
+        .then_some(CreateBlock::Superseded)
+}
+
 pub async fn record_created_event(
     store: &Store,
     data: CreatedCalendarEvent,
@@ -528,6 +589,61 @@ fn set_cancelled_raw(tx: &mut Tx<'_>, event_hash: &str) -> Result<(), omni_store
     object.insert("status".to_owned(), JsValue::String("cancelled".to_owned()));
     let now = tx.now_ms();
     tx.upsert_doc(&pk, &value, raw_meta(now))
+}
+
+/// Tombstones, as deleted from the calendar, the active tracked row of each
+/// given calendar event (`ids` hold UIDs or resource names without `.ics`).
+/// Rows an earlier reschedule or cancellation already retired describe other
+/// times and stay as they are. Runs inside the caller's transaction; returns
+/// how many rows changed.
+pub fn mark_calendar_events_deleted_in(
+    tx: &mut Tx<'_>,
+    ids: &BTreeSet<String>,
+) -> Result<u64, omni_store::StoreError> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let now = tx.now_ms();
+    let mut changed = 0u64;
+    for stored in tx.get_raw_rows_by_prefix(&format!("${}#", CreatedCalendarEvent::NAME))? {
+        if stored.expires_at.is_some_and(|at| at <= now) {
+            continue;
+        }
+        let Ok(mut value) = stored.decode() else {
+            continue;
+        };
+        let Some(object) = value.as_object_mut() else {
+            continue;
+        };
+        let tracked = object
+            .get("calendarEventId")
+            .and_then(JsValue::as_str)
+            .is_some_and(|id| ids.contains(id));
+        let retired = object.get("status").and_then(JsValue::as_str) == Some("cancelled");
+        if !tracked || retired {
+            continue;
+        }
+        object.insert("status".to_owned(), JsValue::String("cancelled".to_owned()));
+        object.insert("deletedAt".to_owned(), JsValue::Int(i128::from(now)));
+        tx.upsert_doc(&stored.pk, &value, raw_meta(now))?;
+        changed += 1;
+    }
+    Ok(changed)
+}
+
+/// [`mark_calendar_events_deleted_in`] for one calendar event, in its own
+/// transaction.
+pub async fn mark_calendar_event_deleted(
+    store: &Store,
+    calendar_event_id: &str,
+) -> Result<u64, CalendarPersistenceError> {
+    let ids = BTreeSet::from([calendar_event_id.to_owned()]);
+    store
+        .write(move |tx| mark_calendar_events_deleted_in(tx, &ids))
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "mark calendar event deleted",
+        ))
 }
 
 /// Marks an event cancelled, keeping the record to prevent re-creation.

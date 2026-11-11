@@ -152,8 +152,17 @@ pub fn pick_calendar_collection<'a>(
     event_capable.first().copied()
 }
 
-/// RFC 4791 `no-uid-conflict` precondition: the href of the resource that
-/// already holds the UID (iCloud's answer to a cross-calendar move).
-pub fn extract_uid_conflict_href(xml: &str) -> Option<String> {
-    extract_property_href(xml, "no-uid-conflict")
+/// The resource href of every `response` in a multistatus whose block
+/// contains `needle` (a REPORT's matches, narrowed by their returned data).
+pub fn extract_response_hrefs_containing(xml: &str, needle: &str) -> Vec<String> {
+    let (Some(split), Some(href)) = (RESPONSE_SPLIT.as_ref(), HREF.as_ref()) else {
+        return Vec::new();
+    };
+    split
+        .split(xml)
+        .skip(1)
+        .filter(|block| block.contains(needle))
+        .filter_map(|block| href.captures(block).and_then(|c| c.get(1)))
+        .map(|m| m.as_str().trim().to_owned())
+        .collect()
 }

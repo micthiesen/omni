@@ -7,9 +7,10 @@ use std::cell::Cell;
 use jiff::tz::TimeZone;
 use omni_calendar::extraction::schema::{EventRecurrence, RecurrenceFrequency};
 use omni_calendar::persistence::{
-    self, CreatedCalendarEvent, EventFields, EventHandles, EventStatus, compute_calendar_event_uid,
-    compute_event_hash, find_event, has_event_changed, normalize_title, pick_by_start_date,
-    resolve_event_reference, resolve_explicit_event_reference, select_recent_events,
+    self, CreateBlock, CreatedCalendarEvent, EventFields, EventHandles, EventStatus,
+    compute_calendar_event_uid, compute_event_hash, create_block, find_event, has_event_changed,
+    normalize_title, pick_by_start_date, resolve_event_reference, resolve_explicit_event_reference,
+    select_recent_events,
 };
 use omni_store::cbor::{self, Extra, JsValue};
 use omni_store::{DocOps as _, Entity as _};
@@ -34,6 +35,8 @@ fn rec() -> CreatedCalendarEvent {
         recurrence: None,
         created_at: 0,
         status: None,
+        deleted_at: None,
+        earlier_email_ids: Vec::new(),
         extra: Extra::default(),
     }
 }
@@ -670,4 +673,107 @@ async fn replace_tombstones_the_previous_identity() {
             .await
             .unwrap()
     );
+}
+
+#[test]
+fn a_create_is_blocked_only_for_the_exact_event_and_the_right_reason() {
+    assert_eq!(create_block(None, "e"), None);
+    let active = rec();
+    assert_eq!(
+        create_block(Some(&active), "other"),
+        Some(CreateBlock::Duplicate)
+    );
+
+    // Cancelled or moved by an email: only an email that wrote the row is
+    // stale; another email may book the slot again.
+    let mut cancelled = rec();
+    cancelled.status = Some(EventStatus::Cancelled);
+    cancelled.earlier_email_ids = vec!["first".to_owned()];
+    for writer in ["e", "first"] {
+        assert_eq!(
+            create_block(Some(&cancelled), writer),
+            Some(CreateBlock::Superseded)
+        );
+    }
+    assert_eq!(create_block(Some(&cancelled), "other"), None);
+    assert_eq!(cancelled.writers(), ["first", "e"]);
+
+    // Deleted from the calendar: no email recreates it.
+    let mut deleted = cancelled.clone();
+    deleted.deleted_at = Some(1);
+    for email in ["e", "other"] {
+        assert_eq!(
+            create_block(Some(&deleted), email),
+            Some(CreateBlock::Deleted)
+        );
+    }
+    // `deletedAt` without the cancelled status is not a tombstone.
+    let mut odd = rec();
+    odd.deleted_at = Some(1);
+    assert!(!odd.is_deleted());
+}
+
+#[tokio::test]
+async fn a_calendar_deletion_tombstones_the_active_row_of_that_event_only() {
+    let t = store().await;
+    // One calendar event that was rescheduled once, and an unrelated one.
+    persistence::record_created_event(&t.store, with("before", "Dentist", "2026-09-10"))
+        .await
+        .unwrap();
+    let mut after = with("after", "Dentist", "2026-09-11");
+    after
+        .extra
+        .insert("futureField".to_owned(), JsValue::Bool(true));
+    persistence::replace_created_event(&t.store, after, "before")
+        .await
+        .unwrap();
+    let mut other = with("other", "Vet", "2026-09-12");
+    other.calendar_event_id = "another".to_owned();
+    persistence::record_created_event(&t.store, other)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        persistence::mark_calendar_event_deleted(&t.store, "cal")
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        persistence::mark_calendar_event_deleted(&t.store, "cal")
+            .await
+            .unwrap(),
+        0,
+        "idempotent"
+    );
+    let get = |hash: &'static str| {
+        let store = t.store.clone();
+        async move {
+            persistence::get_tracked_event(&store, hash)
+                .await
+                .unwrap()
+                .unwrap()
+        }
+    };
+    // The time it was moved away from is a different event: still only
+    // cancelled, so another email may book it.
+    let before = get("before").await;
+    assert!(before.is_cancelled() && !before.is_deleted());
+    let after = get("after").await;
+    assert!(after.is_deleted());
+    assert!(after.deleted_at.is_some_and(|at| at >= TEST_EPOCH_MS));
+    assert_eq!(after.title, "Dentist", "other fields are kept");
+    assert_eq!(after.extra.get("futureField"), Some(&JsValue::Bool(true)));
+    assert!(!get("other").await.is_cancelled());
+    assert!(
+        !persistence::has_created_event(&t.store, "after")
+            .await
+            .unwrap()
+    );
+
+    // A later booking of the same slot by the pipeline is an active row again.
+    persistence::record_created_event(&t.store, with("after", "Dentist", "2026-09-11"))
+        .await
+        .unwrap();
+    assert!(!get("after").await.is_deleted());
 }

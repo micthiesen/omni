@@ -3,7 +3,7 @@
 
 use omni_calendar::caldav::xml::{
     CalendarCollection, extract_calendar_collections, extract_property_href,
-    extract_uid_conflict_href, pick_calendar_collection,
+    extract_response_hrefs_containing, pick_calendar_collection,
 };
 
 const ICLOUD_PRINCIPAL_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -211,13 +211,20 @@ fn returns_undefined_when_nothing_is_event_capable() {
 }
 
 #[test]
-fn finds_the_conflicting_href_of_a_no_uid_conflict_error() {
-    let xml = r#"<d:error xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <c:no-uid-conflict><d:href>/1/calendars/work/x.ics</d:href></c:no-uid-conflict>
-</d:error>"#;
+fn lists_the_href_of_each_report_match_whose_data_has_the_needle() {
+    let xml = r#"<multistatus xmlns="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <response><href>/1/calendars/work/x.ics</href><propstat><prop><c:calendar-data>BEGIN:VEVENT
+UID:one
+END:VEVENT</c:calendar-data></prop></propstat></response>
+  <D:response xmlns:D="DAV:"><D:href> /1/calendars/work/y.ics </D:href><c:calendar-data><![CDATA[UID:two]]></c:calendar-data></D:response>
+</multistatus>"#;
     assert_eq!(
-        extract_uid_conflict_href(xml).as_deref(),
-        Some("/1/calendars/work/x.ics")
+        extract_response_hrefs_containing(xml, "UID:two"),
+        ["/1/calendars/work/y.ics"]
     );
-    assert_eq!(extract_uid_conflict_href("<d:error/>"), None);
+    assert_eq!(
+        extract_response_hrefs_containing(xml, "UID:"),
+        ["/1/calendars/work/x.ics", "/1/calendars/work/y.ics"]
+    );
+    assert!(extract_response_hrefs_containing(xml, "UID:three").is_empty());
 }

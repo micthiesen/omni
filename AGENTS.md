@@ -300,7 +300,15 @@ A capture that finds the stream has ended (yt-dlp "not currently live", an m3u8
   collection. Never hardcode an iCloud `pXX` shard. The pipeline updates an
   event by GET, merging only the fields it owns, and PUT with If-Match; a 412
   re-reads and merges at most three times, never clobbering manual or agent
-  edits. A 403 `no-uid-conflict` merges into the moved copy in place.
+  edits. A missing event is never recreated: a copy found by UID in another of
+  the account's calendars is merged in place, otherwise the event was deleted
+  and its tracked row is tombstoned (`deletedAt`); a write calendar the
+  account no longer lists is an error and tombstones nothing.
+- A tracked event deleted from the calendar stays deleted: the tombstone is
+  stored with the confirmed `calendar_event_delete` in one transaction, and a
+  create is suppressed only for that exact event (title, date and time). Never
+  widen that to other dates, times or reschedules, and never let a replayed
+  email undo a later cancellation or reschedule. See `docs/calendar.md`.
 - A create whose title matches one active tracked event on the same day at
   another time, or on another date within 45 days when the email uses
   reschedule language, updates that event instead of duplicating it.

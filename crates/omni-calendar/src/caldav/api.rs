@@ -9,10 +9,12 @@ use std::sync::{Arc, Mutex};
 use omni_core::clock::SharedClock;
 use omni_http::{HttpClient, Method, SideEffectMode, Url};
 
-use super::http::{self, CALDAV_ERROR_MAX_BYTES, CaldavResponse, assert_trusted_caldav_url};
+use super::http::{
+    self, CALDAV_ERROR_MAX_BYTES, CALDAV_XML_MAX_BYTES, CaldavResponse, assert_trusted_caldav_url,
+};
 use super::ics::build_icalendar;
 use super::merge;
-use super::xml::extract_uid_conflict_href;
+use super::xml::{extract_calendar_collections, extract_response_hrefs_containing};
 use crate::error::CaldavError;
 use crate::extraction::schema::ExtractedEvent;
 
@@ -48,8 +50,16 @@ pub enum CreateOutcome {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UpdateOutcome {
-    Success { event_uid: String },
-    Error { code: u16, message: String },
+    Success {
+        event_uid: String,
+    },
+    /// The event exists in none of the account's calendars: it was deleted.
+    /// Nothing was written.
+    Missing,
+    Error {
+        code: u16,
+        message: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,6 +85,69 @@ pub struct CaldavWriter {
     mode: SideEffectMode,
     default_tz: String,
     recorded: Arc<Mutex<Vec<RecordedCaldavWrite>>>,
+}
+
+/// Where a missing event's UID was found.
+enum MovedCopy {
+    Found(Url),
+    Absent,
+    /// The lookup did not complete, so the event is neither known deleted
+    /// nor found.
+    Unknown {
+        code: u16,
+        message: String,
+    },
+}
+
+/// Other calendars searched for a moved event, and matches read per calendar.
+const MOVED_COPY_COLLECTIONS: usize = 25;
+const MOVED_COPY_CANDIDATES: usize = 5;
+
+const LIST_COLLECTIONS: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:displayname/>
+    <d:resourcetype/>
+    <c:supported-calendar-component-set/>
+  </d:prop>
+</d:propfind>"#;
+
+/// A `calendar-query` for the events around `start_date` (a day before
+/// through two days after, so any time zone is covered), with their data.
+/// iCloud refuses a UID `prop-filter` with 412, so the UID is matched in the
+/// returned data instead. `None` when the date does not parse.
+fn nearby_events_query(start_date: &str) -> Option<String> {
+    let date = start_date.parse::<jiff::civil::Date>().ok()?;
+    let from = date.yesterday().ok()?.strftime("%Y%m%d");
+    let to = date
+        .checked_add(jiff::Span::new().days(2))
+        .ok()?
+        .strftime("%Y%m%d");
+    Some(format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><d:getetag/><c:calendar-data/></d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VEVENT">
+        <c:time-range start="{from}T000000Z" end="{to}T000000Z"/>
+      </c:comp-filter>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>"#
+    ))
+}
+
+/// Whether an iCalendar body has a `UID` line with exactly this value.
+fn carries_uid(ics: &str, uid: &str) -> bool {
+    let unfolded = ics
+        .replace("\r\n ", "")
+        .replace("\r\n\t", "")
+        .replace("\n ", "")
+        .replace("\n\t", "");
+    unfolded
+        .lines()
+        .any(|line| line.strip_prefix("UID:").map(str::trim_end) == Some(uid))
 }
 
 fn status_message(response: &CaldavResponse) -> String {
@@ -188,10 +261,10 @@ impl CaldavWriter {
     /// current copy, applies only the field groups that differ between
     /// `base` (what the pipeline last wrote) and `event`, and writes with
     /// `If-Match`. A 412 re-reads and merges again, at most
-    /// [`MERGE_ATTEMPTS`] times. A missing resource is recreated with
-    /// `If-None-Match: *`; when that is refused with a `no-uid-conflict`
-    /// naming a trusted resource in another calendar (a cross-calendar move),
-    /// the moved copy is merged in place instead.
+    /// [`MERGE_ATTEMPTS`] times. A missing resource is never recreated: when
+    /// the UID lives in another of the account's calendars (a cross-calendar
+    /// move) that copy is merged in place, otherwise the event was deleted
+    /// and the result is [`UpdateOutcome::Missing`].
     pub async fn update(
         &self,
         session: &CaldavSession,
@@ -217,38 +290,32 @@ impl CaldavWriter {
                     target = home.clone();
                     continue;
                 }
-                tracing::warn!(target: LOG, "Calendar event {existing_uid} is missing; recreating it");
-                let response = self
-                    .put(
-                        session,
-                        &home,
-                        new_ics.clone(),
-                        Some("*"),
-                        None,
-                        "recreate calendar event",
-                    )
-                    .await?;
-                if matches!(response.status, 201 | 204) {
-                    return success();
-                }
-                if response.status == 412 {
-                    continue;
-                }
-                let text = http::error_text(&response, "recreate calendar event")?;
-                if response.status == 403
-                    && let Some(conflict) = self.conflicting_copy(&home, &text)
+                // Gone from its calendar: deleted, or moved to another one. A
+                // deleted event is never written back, so the copy is looked
+                // up by reading instead of probing with a creating PUT.
+                match self
+                    .find_moved_copy(session, existing_uid, &base.start_date)
+                    .await?
                 {
-                    tracing::warn!(
-                        target: LOG,
-                        "Calendar event {existing_uid} moved to another calendar; updating it there"
-                    );
-                    target = conflict;
-                    continue;
+                    MovedCopy::Found(copy) => {
+                        tracing::warn!(
+                            target: LOG,
+                            "Calendar event {existing_uid} moved to another calendar; updating it there"
+                        );
+                        target = copy;
+                        continue;
+                    }
+                    MovedCopy::Absent => {
+                        tracing::info!(
+                            target: LOG,
+                            "Calendar event {existing_uid} was deleted; not recreating it"
+                        );
+                        return Ok(UpdateOutcome::Missing);
+                    }
+                    MovedCopy::Unknown { code, message } => {
+                        return Ok(UpdateOutcome::Error { code, message });
+                    }
                 }
-                return Ok(UpdateOutcome::Error {
-                    code: response.status,
-                    message: status_message(&response),
-                });
             }
             if !current.is_ok() {
                 return Ok(UpdateOutcome::Error {
@@ -330,20 +397,126 @@ impl CaldavWriter {
         .await
     }
 
-    /// The trusted URL of the resource holding this UID in another collection.
-    fn conflicting_copy(&self, url: &Url, body: &str) -> Option<Url> {
-        let href = extract_uid_conflict_href(body)?;
-        let resolved = url.join(&href).ok()?;
-        if resolved == *url {
-            return None;
+    /// Looks for the event with this UID in the account's other event
+    /// calendars (the collections beside the session's one), reading only:
+    /// the events around `start_date` are listed and a candidate counts only
+    /// when its own body carries the UID. A copy that was also moved to
+    /// another date is not found and counts as deleted.
+    async fn find_moved_copy(
+        &self,
+        session: &CaldavSession,
+        uid: &str,
+        start_date: &str,
+    ) -> Result<MovedCopy, CaldavError> {
+        let collection = assert_trusted_caldav_url(&session.calendar_url)?;
+        let unlisted = || MovedCopy::Unknown {
+            code: 404,
+            message: "the write calendar is not in the account's calendar list, so a missing \
+                      event is not treated as deleted"
+                .to_owned(),
+        };
+        let Ok(home) = collection.join("../") else {
+            return Ok(unlisted());
+        };
+        if home == collection {
+            return Ok(unlisted());
         }
-        match assert_trusted_caldav_url(resolved.as_str()) {
-            Ok(trusted) => Some(trusted),
-            Err(error) => {
-                tracing::warn!(target: LOG, "Ignoring UID conflict location: {error}");
-                None
+        let listing = http::propfind(
+            &self.http,
+            &home,
+            &session.auth_header,
+            "1",
+            LIST_COLLECTIONS,
+        )
+        .await?;
+        let is_write_calendar =
+            |url: &Url| url.path().trim_end_matches('/') == collection.path().trim_end_matches('/');
+        let calendars: Vec<Url> = extract_calendar_collections(&listing.xml)
+            .iter()
+            .filter(|c| {
+                c.components
+                    .as_ref()
+                    .is_none_or(|set| set.iter().any(|name| name == "VEVENT"))
+            })
+            .filter_map(|c| listing.url.join(&c.href).ok())
+            .filter_map(|url| assert_trusted_caldav_url(url.as_str()).ok())
+            .collect();
+        // A stale or removed write calendar answers 404 for every event; that
+        // must never read as "all of them were deleted".
+        if !calendars.iter().any(is_write_calendar) {
+            return Ok(unlisted());
+        }
+        let others: Vec<Url> = calendars
+            .into_iter()
+            .filter(|url| !is_write_calendar(url))
+            .take(MOVED_COPY_COLLECTIONS)
+            .collect();
+        let report = Method::from_bytes(b"REPORT")
+            .map_err(|e| CaldavError::new("find moved calendar event", e.to_string(), false))?;
+        if others.is_empty() {
+            return Ok(MovedCopy::Absent);
+        }
+        let Some(query) = nearby_events_query(start_date) else {
+            return Ok(MovedCopy::Unknown {
+                code: 422,
+                message: format!("could not look for the moved event (start date {start_date:?})"),
+            });
+        };
+        let needle = format!("UID:{uid}");
+        for other in others {
+            let response = http::request(
+                &self.http,
+                report.clone(),
+                &other,
+                &[
+                    ("Content-Type", "application/xml; charset=utf-8"),
+                    ("Authorization", session.auth_header.as_str()),
+                    ("Depth", "1"),
+                ],
+                Some(query.clone()),
+                "find moved calendar event",
+                CALDAV_XML_MAX_BYTES,
+            )
+            .await?;
+            if (400..500).contains(&response.status) {
+                // A calendar that cannot be queried (subscribed, delegated)
+                // is not where the pipeline's event went.
+                tracing::warn!(
+                    target: LOG,
+                    "Skipping a calendar that refused the moved-event lookup: {}",
+                    status_message(&response)
+                );
+                continue;
+            }
+            if !response.is_ok() {
+                return Ok(MovedCopy::Unknown {
+                    code: response.status,
+                    message: format!(
+                        "could not look for the moved event ({})",
+                        status_message(&response)
+                    ),
+                });
+            }
+            for href in extract_response_hrefs_containing(&response.text(), &needle)
+                .into_iter()
+                .filter(|href| href.ends_with(".ics"))
+                .take(MOVED_COPY_CANDIDATES)
+            {
+                let Some(candidate) = other
+                    .join(&href)
+                    .ok()
+                    .and_then(|url| assert_trusted_caldav_url(url.as_str()).ok())
+                    .filter(|url| url.path().starts_with(other.path()))
+                else {
+                    continue;
+                };
+                let copy = self.get(session, &candidate).await?;
+                if copy.is_ok() && carries_uid(&copy.text(), uid) {
+                    return Ok(MovedCopy::Found(candidate));
+                }
             }
         }
+        Ok(MovedCopy::Absent)
     }
 
     /// Deletes `<collection><uid>.ics`; 404 is `NotFound`.

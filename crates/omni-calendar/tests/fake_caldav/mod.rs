@@ -56,6 +56,11 @@ pub struct State {
     pub foreign_uids: BTreeSet<String>,
     /// Status to answer the next write with instead of applying it.
     pub fail_next_write: Option<u16>,
+    /// Status to answer the next write with after applying it (a lost
+    /// acknowledgement).
+    pub lose_next_write: Option<u16>,
+    /// Collections whose REPORTs answer 500.
+    pub broken_reports: BTreeSet<String>,
     pub supports_sync: bool,
     /// Holds the response to the next PUT or DELETE, after applying it,
     /// until the test releases it.
@@ -131,6 +136,14 @@ impl State {
     fn in_primary(path: &str) -> bool {
         path.starts_with(PRIMARY) && path.len() > PRIMARY.len()
     }
+
+    fn in_event_calendar(&self, path: &str) -> bool {
+        self.collections.iter().any(|c| {
+            c.components.contains(&"VEVENT")
+                && path.starts_with(&c.path)
+                && path.len() > c.path.len()
+        })
+    }
 }
 
 impl FakeCaldav {
@@ -164,6 +177,8 @@ impl FakeCaldav {
             race_next_put: BTreeSet::new(),
             foreign_uids: BTreeSet::new(),
             fail_next_write: None,
+            lose_next_write: None,
+            broken_reports: BTreeSet::new(),
             supports_sync: true,
             hold_next_write: None,
         }));
@@ -303,15 +318,33 @@ fn handle(
                 .into_response(),
             None => StatusCode::NOT_FOUND.into_response(),
         },
-        "PUT" => put(
-            &mut s,
-            &path,
-            &body,
-            header("if-match"),
-            header("if-none-match"),
-        ),
-        "DELETE" => delete(&mut s, &path, header("if-match")),
+        "PUT" => {
+            let lost = s.lose_next_write.take();
+            let response = put(
+                &mut s,
+                &path,
+                &body,
+                header("if-match"),
+                header("if-none-match"),
+            );
+            lose(response, lost)
+        }
+        "DELETE" => {
+            let lost = s.lose_next_write.take();
+            let response = delete(&mut s, &path, header("if-match"));
+            lose(response, lost)
+        }
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+    }
+}
+
+/// An applied write whose acknowledgement is replaced by `lost`.
+fn lose(response: Response, lost: Option<u16>) -> Response {
+    match lost {
+        Some(status) if response.status().is_success() => {
+            StatusCode::from_u16(status).unwrap().into_response()
+        }
+        _ => response,
     }
 }
 
@@ -381,6 +414,44 @@ fn propfind(s: &mut State, path: &str, depth: Option<&str>) -> Response {
 }
 
 fn report(s: &mut State, path: &str, body: &str) -> Response {
+    if s.broken_reports.contains(path) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if body.contains("calendar-query") {
+        if !s.collections.iter().any(|c| c.path == path) {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        // Like iCloud: only a time-range filter is accepted.
+        if !body.contains("<c:time-range") || body.contains("prop-filter") {
+            return StatusCode::PRECONDITION_FAILED.into_response();
+        }
+        let bound = |name: &str| {
+            between(body, &format!(r#"{name}=""#), "T000000Z")
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let (start, end) = (bound("start"), bound("end"));
+        let starts_in_range = |text: &str| {
+            text.lines()
+                .filter(|l| l.starts_with("DTSTART"))
+                .filter_map(|l| l.rsplit(':').next())
+                .any(|v| v.len() >= 8 && v[..8] >= *start && v[..8] < *end)
+        };
+        let mut out = String::new();
+        for (resource, (etag, text)) in &s.resources {
+            if resource.starts_with(path) && starts_in_range(text) {
+                out.push_str(&prop_response(
+                    resource,
+                    &format!(
+                        "<d:getetag>{}</d:getetag><c:calendar-data>{}</c:calendar-data>",
+                        xml_escape(etag),
+                        xml_escape(text)
+                    ),
+                ));
+            }
+        }
+        return multistatus(&out);
+    }
     if path != PRIMARY {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -486,7 +557,7 @@ fn put(
     if_match: Option<String>,
     if_none_match: Option<String>,
 ) -> Response {
-    if !State::in_primary(path) {
+    if !s.in_event_calendar(path) {
         return StatusCode::FORBIDDEN.into_response();
     }
     if let Some(status) = s.fail_next_write.take() {

@@ -27,6 +27,8 @@ fn event(event_hash: &str, title: &str) -> CreatedCalendarEvent {
         recurrence: None,
         created_at: 1_800_000_000_000,
         status: None,
+        deleted_at: None,
+        earlier_email_ids: Vec::new(),
         extra: Extra::default(),
     }
 }

@@ -34,7 +34,7 @@ use crate::extraction::schema::{EventAction, ExtractedEvent};
 use crate::filter::{FilterResult, filter_calendar_candidate};
 use crate::logfile::{RunLogFile, log_timestamp};
 use crate::persistence::{
-    self, CreatedCalendarEvent, EventFields, EventHandles, compute_calendar_event_uid,
+    self, CreateBlock, CreatedCalendarEvent, EventFields, EventHandles, compute_calendar_event_uid,
     compute_event_hash, has_event_changed, resolve_event_reference,
     resolve_explicit_event_reference,
 };
@@ -72,6 +72,15 @@ impl ItemResult {
             transient: None,
         }
     }
+}
+
+/// What an update of a tracked event came to.
+enum Applied {
+    /// Updated, unchanged, or failed: the item is settled.
+    Done(ItemResult),
+    /// The tracked event no longer exists (retired since the snapshot, or
+    /// deleted from the calendar); nothing was written.
+    Gone(ItemResult),
 }
 
 /// Why an item operation stopped.
@@ -121,6 +130,8 @@ pub struct CalendarEventPipeline {
     deps: PipelineDeps,
     tz: TimeZone,
     session: Mutex<Option<CaldavSession>>,
+    /// Serializes event writes across concurrent batches.
+    writes: Mutex<()>,
 }
 
 impl CalendarEventPipeline {
@@ -130,6 +141,7 @@ impl CalendarEventPipeline {
             deps,
             tz,
             session: Mutex::new(None),
+            writes: Mutex::new(()),
         }
     }
 
@@ -397,6 +409,10 @@ impl CalendarEventPipeline {
             // several bookings, never a move of one of them.
             let reschedule =
                 (!persistence::title_repeats(event, &extraction.events)).then_some(reschedule_hint);
+            // The dispatcher, the retry task and a manual reprocess can hold
+            // the same email at once: each item's check, write and record
+            // runs alone, so the second sees the first's row.
+            let _writing = self.writes.lock().await;
             let outcome = match event.action {
                 EventAction::Create => {
                     self.handle_create(event, &email.id, &handles, reschedule, session)
@@ -467,17 +483,20 @@ impl CalendarEventPipeline {
             let event_hash =
                 compute_event_hash(&event.title, &event.start_date, event.start_time.as_deref());
             let label = format!("\"{}\" on {}", event.title, event.start_date);
-            if persistence::has_created_event(&self.deps.store, &event_hash).await? {
+            let existing = persistence::get_tracked_event(&self.deps.store, &event_hash).await?;
+            if let Some(block) = persistence::create_block(existing.as_ref(), email_id) {
+                let reason = match block {
+                    CreateBlock::Duplicate => "duplicate, skipped",
+                    CreateBlock::Deleted => "deleted from the calendar, not recreated",
+                    CreateBlock::Superseded => "cancelled or moved by a later email, not recreated",
+                };
                 tracing::info!(
                     target: LOG,
-                    "Duplicate event: \"{}\" on {} (skipping)",
+                    "Not creating \"{}\" on {}: {reason}",
                     event.title,
                     event.start_date
                 );
-                return Ok(ItemResult::new(
-                    format!("{label}: duplicate, skipped"),
-                    true,
-                ));
+                return Ok(ItemResult::new(format!("{label}: {reason}"), true));
             }
             // A new time or date for an already tracked event updates it
             // instead of creating a second copy.
@@ -491,7 +510,12 @@ impl CalendarEventPipeline {
                     event.title,
                     record.start_date
                 );
-                return self.apply_update(event, record, email_id, session).await;
+                match self.apply_update(event, record, email_id, session).await? {
+                    Applied::Done(result) => return Ok(result),
+                    // The event this would have moved is gone, and it stays
+                    // gone; the new date or time is a different event.
+                    Applied::Gone(_) => {}
+                }
             }
             let uid = compute_calendar_event_uid(&event_hash);
             let event_uid = match self
@@ -609,7 +633,9 @@ impl CalendarEventPipeline {
                 .handle_create(event, email_id, handles, reschedule, session)
                 .await;
         };
-        self.apply_update(event, record, email_id, session).await
+        match self.apply_update(event, record, email_id, session).await? {
+            Applied::Done(result) | Applied::Gone(result) => Ok(result),
+        }
     }
 
     /// Merge-updates `record`'s calendar event with the email's fields and
@@ -620,8 +646,24 @@ impl CalendarEventPipeline {
         record: &CreatedCalendarEvent,
         email_id: &str,
         session: &CaldavSession,
-    ) -> Result<ItemResult, OpError> {
+    ) -> Result<Applied, OpError> {
         let label = format!("\"{}\" on {}", event.title, event.start_date);
+
+        // `record` is from the snapshot taken before extraction: an earlier
+        // item of this email or a calendar tool may have retired it since.
+        let current = persistence::get_tracked_event(&self.deps.store, &record.event_hash).await?;
+        let Some(current) = current.filter(|row| !row.is_cancelled()) else {
+            tracing::info!(
+                target: LOG,
+                "\"{}\" on {} is no longer tracked (skipping update)",
+                event.title,
+                record.start_date
+            );
+            return Ok(Applied::Gone(ItemResult::new(
+                format!("{label}: event no longer tracked, skipped"),
+                true,
+            )));
+        };
 
         // The model cannot see description/duration/reminderMinutes/recurrence, so
         // a full-PUT update would drop them: backfill from the stored record.
@@ -644,10 +686,10 @@ impl CalendarEventPipeline {
                 event.title,
                 event.start_date
             );
-            return Ok(ItemResult::new(
+            return Ok(Applied::Done(ItemResult::new(
                 format!("{label}: no changes, skipped"),
                 true,
-            ));
+            )));
         }
 
         match self
@@ -663,17 +705,36 @@ impl CalendarEventPipeline {
             .await?
         {
             UpdateOutcome::Success { .. } => {}
+            UpdateOutcome::Missing => {
+                // Deleted in a calendar app: remember it so neither this
+                // update nor a later email brings the event back.
+                persistence::mark_calendar_event_deleted(
+                    &self.deps.store,
+                    &record.calendar_event_id,
+                )
+                .await?;
+                tracing::info!(
+                    target: LOG,
+                    "\"{}\" on {} was deleted from the calendar (skipping update)",
+                    event.title,
+                    record.start_date
+                );
+                return Ok(Applied::Gone(ItemResult::new(
+                    format!("{label}: deleted from the calendar, not recreated"),
+                    true,
+                )));
+            }
             UpdateOutcome::Error { code, message } => {
                 tracing::error!(
                     target: LOG,
                     "Failed to update calendar event \"{}\": {message}",
                     event.title
                 );
-                return Ok(ItemResult {
+                return Ok(Applied::Done(ItemResult {
                     line: format!("{label}: update failed ({message})"),
                     ok: false,
                     transient: is_transient_code(code).then_some(message),
-                });
+                }));
             }
         }
 
@@ -693,7 +754,7 @@ impl CalendarEventPipeline {
                 merged.title
             );
         }
-        let row = CreatedCalendarEvent::from_event(
+        let mut row = CreatedCalendarEvent::from_event(
             if collides {
                 record.event_hash.clone()
             } else {
@@ -704,10 +765,18 @@ impl CalendarEventPipeline {
             &merged,
             self.deps.clock.now_ms(),
         );
+        if email_id != current.email_id {
+            row.earlier_email_ids = current.writers();
+        } else {
+            row.earlier_email_ids = current.earlier_email_ids;
+        }
         persistence::replace_created_event(&self.deps.store, row, &record.event_hash).await?;
         self.notify("Calendar Event Updated", &merged).await;
         tracing::info!(target: LOG, "Updated: \"{}\" on {}", event.title, event.start_date);
-        Ok(ItemResult::new(format!("{label}: updated"), true))
+        Ok(Applied::Done(ItemResult::new(
+            format!("{label}: updated"),
+            true,
+        )))
     }
 
     /// Pushover after a successful write and record; failures only warn.

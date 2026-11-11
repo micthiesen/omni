@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use omni_core::digest::sha256_hex;
+use omni_http::SideEffectMode;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{Store, StoreError};
 use regex::Regex;
@@ -489,8 +490,7 @@ impl PrimaryCalendar {
         record.state = OperationState::Confirmed;
         record.result = serde_json::to_value(&outcome).ok();
         record.updated_at = self.now_ms();
-        self.save_operation(&record).await?;
-        self.after_confirmed(&record).await;
+        self.save_confirmed(&record).await?;
         Ok(outcome)
     }
 
@@ -601,46 +601,42 @@ impl PrimaryCalendar {
             .map_err(PrimaryError::store)
     }
 
-    /// A whole-resource delete of a pipeline-created event tombstones its
-    /// tracked row, so a replayed email does not recreate it.
-    async fn after_confirmed(&self, record: &OperationRecord) {
-        let uids: BTreeSet<String> = record
-            .steps
-            .iter()
-            .filter(|s| s.kind == StepKind::Delete && s.state == StepState::Verified)
-            .filter_map(|s| s.before_ics.as_deref())
-            .filter_map(|text| IcsDoc::parse(text).ok())
-            .filter_map(|doc| model::primary_event(&doc).and_then(|e| e.uid()))
-            .collect();
-        // `before_ics` is compacted on confirm; fall back to the event ids.
-        let ids: BTreeSet<String> = record
-            .steps
-            .iter()
-            .filter(|s| s.kind == StepKind::Delete && s.state == StepState::Verified)
-            .filter_map(|s| s.event_id.strip_suffix(".ics").map(str::to_owned))
-            .collect();
-        if uids.is_empty() && ids.is_empty() {
-            return;
-        }
-        let tracked = match persistence::get_tracked_events(self.store()).await {
-            Ok(rows) => rows,
-            Err(error) => {
-                tracing::warn!(target: LOG, "Could not read tracked events: {error}");
-                return;
-            }
+    /// Stores a confirmed operation and, in the same transaction, tombstones
+    /// the tracked rows of every pipeline-created event it deleted whole, so
+    /// no email recreates them. A delete is never reported confirmed without
+    /// its tombstone: when this fails the operation keeps its earlier state
+    /// and repeating the key (or reading its status) settles it without
+    /// sending anything.
+    async fn save_confirmed(&self, record: &OperationRecord) -> Result<(), PrimaryError> {
+        // A recorded (unsent) delete removed nothing.
+        let deleted = if self.inner.deps.mode == SideEffectMode::Record {
+            BTreeSet::new()
+        } else {
+            deleted_event_ids(record)
         };
-        for row in tracked {
-            if row.is_cancelled()
-                || !(uids.contains(&row.calendar_event_id) || ids.contains(&row.calendar_event_id))
-            {
-                continue;
-            }
-            if let Err(error) =
-                persistence::mark_event_cancelled(self.store(), &row.event_hash).await
-            {
-                tracing::warn!(target: LOG, "Could not tombstone tracked event: {error}");
-            }
-        }
+        let mut record = record.clone();
+        record.compact();
+        let ttl = record.ttl_ms();
+        self.store()
+            .write(move |tx| {
+                tx.upsert(
+                    &record,
+                    UpsertOpts {
+                        expires_at: None,
+                        ttl_ms: ttl,
+                    },
+                )?;
+                let tombstoned = persistence::mark_calendar_events_deleted_in(tx, &deleted)?;
+                if tombstoned > 0 {
+                    tracing::info!(
+                        target: LOG,
+                        "Recorded the deletion of {tombstoned} tracked email event row(s)"
+                    );
+                }
+                Ok(())
+            })
+            .await
+            .map_err(PrimaryError::store)
     }
 
     async fn replay(&self, record: OperationRecord) -> Result<WriteOutcome, PrimaryError> {
@@ -765,7 +761,11 @@ impl PrimaryCalendar {
             );
         }
         record.updated_at = now;
-        self.save_operation(&record).await?;
+        if record.state == OperationState::Confirmed {
+            self.save_confirmed(&record).await?;
+        } else {
+            self.save_operation(&record).await?;
+        }
         if record.state == OperationState::Failed {
             return Err(PrimaryError::coded(
                 "not_applied",
@@ -820,6 +820,26 @@ impl PrimaryCalendar {
         }
         self.load_operation(&key_hash).await
     }
+}
+
+/// The pipeline identities (UID, and resource name without `.ics`) of the
+/// events an operation deleted whole. Deleting one occurrence or truncating a
+/// series is a PUT and never counts.
+fn deleted_event_ids(record: &OperationRecord) -> BTreeSet<String> {
+    let deleted = || {
+        record
+            .steps
+            .iter()
+            .filter(|s| s.kind == StepKind::Delete && s.state == StepState::Verified)
+    };
+    let uids = deleted()
+        .filter_map(|s| s.before_ics.as_deref())
+        .filter_map(|text| IcsDoc::parse(text).ok())
+        .filter_map(|doc| model::primary_event(&doc).and_then(|e| e.uid()));
+    // The pipeline names its resources `<uid>.ics`; this covers a step whose
+    // earlier copy is absent or unreadable.
+    let names = deleted().filter_map(|s| s.event_id.strip_suffix(".ics").map(str::to_owned));
+    uids.chain(names).collect()
 }
 
 enum Verification {

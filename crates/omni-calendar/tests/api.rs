@@ -1,4 +1,5 @@
-//! CalDAV writes, plus the cross-calendar move (403) fallback and record mode.
+//! CalDAV writes, plus the missing-event lookup (deleted or moved to another
+//! calendar) and record mode.
 //!
 //! The interruption cases assert that aborting the task drops the in-flight
 //! request. Update and delete requests are bounded by the shared 15 s request
@@ -257,34 +258,82 @@ async fn update_gives_up_after_bounded_conflicts() {
     assert_eq!(puts, MERGE_ATTEMPTS);
 }
 
-const UID_CONFLICT: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<d:error xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <c:no-uid-conflict><d:href>/123/calendars/work/stable@omni-notify.ics</d:href></c:no-uid-conflict>
-</d:error>"#;
+const MOVED_PATH: &str = "/123/calendars/work/renamed-by-calendar.ics";
+
+/// The account's calendars: the session's own, another event calendar and a
+/// task list.
+const COLLECTIONS: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <response><href>/123/calendars/</href><propstat><prop><resourcetype><collection/></resourcetype></prop></propstat></response>
+  <response><href>/123/calendars/home/</href><propstat><prop><displayname>Home</displayname><resourcetype><collection/><c:calendar/></resourcetype><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set></prop></propstat></response>
+  <response><href>/123/calendars/work/</href><propstat><prop><displayname>Work</displayname><resourcetype><collection/><c:calendar/></resourcetype><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set></prop></propstat></response>
+  <response><href>/123/calendars/tasks/</href><propstat><prop><displayname>Tasks</displayname><resourcetype><collection/><c:calendar/></resourcetype><c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set></prop></propstat></response>
+</multistatus>"#;
+
+/// A `calendar-query` answer: `(href, uid)` of each event near the date.
+fn multistatus(events: &[(&str, &str)]) -> ResponseTemplate {
+    let responses: String = events
+        .iter()
+        .map(|(href, uid)| {
+            format!("<response><href>{href}</href><propstat><prop><getetag>\"x\"</getetag><calendar-data xmlns=\"urn:ietf:params:xml:ns:caldav\">BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:{uid}\nEND:VEVENT\nEND:VCALENDAR\n</calendar-data></prop></propstat></response>")
+        })
+        .collect();
+    ResponseTemplate::new(207).set_body_string(format!(
+        r#"<?xml version="1.0" encoding="utf-8"?><multistatus xmlns="DAV:">{responses}</multistatus>"#
+    ))
+}
+
+/// The event is gone from its calendar; listing the other event calendar
+/// around the event's date answers with `matches`.
+async fn mount_missing_at_home(server: &MockServer, matches: ResponseTemplate) {
+    Mock::given(method("GET"))
+        .and(path(EVENT_PATH))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(server)
+        .await;
+    Mock::given(method("PROPFIND"))
+        .and(path("/123/calendars/"))
+        .and(header("Depth", "1"))
+        .respond_with(ResponseTemplate::new(207).set_body_string(COLLECTIONS))
+        .mount(server)
+        .await;
+    Mock::given(method("REPORT"))
+        .and(path("/123/calendars/work/"))
+        .and(header("Authorization", "Basic secret"))
+        .respond_with(matches)
+        .mount(server)
+        .await;
+}
+
+async fn calls(server: &MockServer) -> Vec<String> {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.url.path()))
+        .collect()
+}
 
 #[tokio::test]
 async fn update_merges_into_an_event_moved_to_another_calendar() {
     let server = MockServer::start().await;
+    mount_missing_at_home(
+        &server,
+        multistatus(&[
+            ("/123/calendars/work/neighbour.ics", "someone-else"),
+            (MOVED_PATH, UID),
+        ]),
+    )
+    .await;
     Mock::given(method("GET"))
-        .and(path(EVENT_PATH))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&server)
-        .await;
-    // Recreating at home is refused because the UID now lives in "work".
-    Mock::given(method("PUT"))
-        .and(path(EVENT_PATH))
-        .and(header("If-None-Match", "*"))
-        .respond_with(ResponseTemplate::new(403).set_body_string(UID_CONFLICT))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/123/calendars/work/stable@omni-notify.ics"))
+        .and(path(MOVED_PATH))
         .and(header("Authorization", "Basic secret"))
         .respond_with(ics(server_copy("Front desk"), "\"w1\""))
         .mount(&server)
         .await;
     Mock::given(method("PUT"))
-        .and(path("/123/calendars/work/stable@omni-notify.ics"))
+        .and(path(MOVED_PATH))
         .and(header("If-Match", "\"w1\""))
         .respond_with(ResponseTemplate::new(204))
         .expect(1)
@@ -300,52 +349,69 @@ async fn update_merges_into_an_event_moved_to_another_calendar() {
             event_uid: UID.to_owned()
         }
     );
-    let methods: Vec<String> = server
-        .received_requests()
-        .await
-        .unwrap()
-        .iter()
-        .map(|r| format!("{} {}", r.method, r.url.path()))
-        .collect();
+    // Found by reading: only the other event calendar is listed, around the
+    // event's date, and nothing is ever PUT at the old location.
     assert_eq!(
-        methods,
+        calls(&server).await,
         [
             "GET /123/calendars/home/stable@omni-notify.ics",
-            "PUT /123/calendars/home/stable@omni-notify.ics",
-            "GET /123/calendars/work/stable@omni-notify.ics",
-            "PUT /123/calendars/work/stable@omni-notify.ics",
+            "PROPFIND /123/calendars/",
+            "REPORT /123/calendars/work/",
+            "GET /123/calendars/work/renamed-by-calendar.ics",
+            "GET /123/calendars/work/renamed-by-calendar.ics",
+            "PUT /123/calendars/work/renamed-by-calendar.ics",
+        ]
+    );
+    let requests = server.received_requests().await.unwrap();
+    let query = String::from_utf8_lossy(&requests[2].body);
+    assert!(
+        query.contains(r#"<c:time-range start="20260831T000000Z" end="20260903T000000Z"/>"#),
+        "{query}"
+    );
+    assert!(
+        !query.contains("prop-filter"),
+        "iCloud answers 412: {query}"
+    );
+}
+
+#[tokio::test]
+async fn update_reports_a_deleted_event_missing_and_writes_nothing() {
+    let server = MockServer::start().await;
+    mount_missing_at_home(&server, multistatus(&[])).await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert_eq!(result, UpdateOutcome::Missing);
+    assert_eq!(
+        calls(&server).await,
+        [
+            "GET /123/calendars/home/stable@omni-notify.ics",
+            "PROPFIND /123/calendars/",
+            "REPORT /123/calendars/work/",
         ]
     );
 }
 
 #[tokio::test]
-async fn update_403_without_a_uid_conflict_is_an_error_and_deletes_nothing() {
+async fn update_ignores_lookup_matches_that_are_untrusted_or_another_event() {
     let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .respond_with(ResponseTemplate::new(403).set_body_string("<d:error xmlns:d=\"DAV:\"/>"))
-        .mount(&server)
-        .await;
-    let result = writer(&server)
-        .update(&session(), &event(), &moved(), UID)
-        .await
-        .unwrap();
-    assert_eq!(
-        result,
-        UpdateOutcome::Error {
-            code: 403,
-            message: "CalDAV 403: Forbidden".to_owned()
-        }
-    );
-    let requests = server.received_requests().await.unwrap();
-    assert!(requests.iter().all(|r| r.method.as_str() != "DELETE"));
-}
-
-#[tokio::test]
-async fn update_ignores_a_conflict_on_an_untrusted_host() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .respond_with(ResponseTemplate::new(403).set_body_string(
-            "<error><no-uid-conflict><href>https://attacker.example/x.ics</href></no-uid-conflict></error>",
+    mount_missing_at_home(
+        &server,
+        multistatus(&[
+            ("https://attacker.example/x.ics", UID),
+            ("/123/calendars/elsewhere/x.ics", UID),
+            // Listed with a UID this one merely starts.
+            ("/123/calendars/work/other.ics", "stable@omni-notify-2"),
+        ]),
+    )
+    .await;
+    // Its own body carries another UID.
+    Mock::given(method("GET"))
+        .and(path("/123/calendars/work/other.ics"))
+        .respond_with(ics(
+            server_copy("Front desk").replace("UID:stable@omni-notify", "UID:stable@omni-notify-2"),
+            "\"o1\"",
         ))
         .mount(&server)
         .await;
@@ -353,9 +419,79 @@ async fn update_ignores_a_conflict_on_an_untrusted_host() {
         .update(&session(), &event(), &moved(), UID)
         .await
         .unwrap();
-    assert!(matches!(result, UpdateOutcome::Error { code: 403, .. }));
-    // GET (404 by default) and the refused recreate; nothing else.
-    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    assert_eq!(result, UpdateOutcome::Missing);
+    assert_eq!(
+        calls(&server).await,
+        [
+            "GET /123/calendars/home/stable@omni-notify.ics",
+            "PROPFIND /123/calendars/",
+            "REPORT /123/calendars/work/",
+            "GET /123/calendars/work/other.ics",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn update_skips_a_calendar_that_refuses_the_lookup() {
+    let server = MockServer::start().await;
+    mount_missing_at_home(&server, ResponseTemplate::new(403)).await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert_eq!(result, UpdateOutcome::Missing);
+}
+
+#[tokio::test]
+async fn update_does_not_call_an_event_deleted_when_its_calendar_is_gone() {
+    let server = MockServer::start().await;
+    // Every event 404s, and the account no longer lists the write calendar.
+    Mock::given(method("PROPFIND"))
+        .and(path("/123/calendars/"))
+        .respond_with(ResponseTemplate::new(207).set_body_string(
+            COLLECTIONS.replace("/123/calendars/home/", "/123/calendars/renamed/"),
+        ))
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert!(
+        matches!(&result, UpdateOutcome::Error { code: 404, message } if message.contains("not in the account's calendar list")),
+        "{result:?}"
+    );
+    assert_eq!(
+        calls(&server).await,
+        [
+            "GET /123/calendars/home/stable@omni-notify.ics",
+            "PROPFIND /123/calendars/",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn update_that_cannot_finish_the_lookup_is_an_error_and_writes_nothing() {
+    let server = MockServer::start().await;
+    mount_missing_at_home(&server, ResponseTemplate::new(503)).await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        UpdateOutcome::Error {
+            code: 503,
+            message: "could not look for the moved event (CalDAV 503: Service Unavailable)"
+                .to_owned()
+        }
+    );
+    let requests = server.received_requests().await.unwrap();
+    assert!(
+        requests
+            .iter()
+            .all(|r| !matches!(r.method.as_str(), "PUT" | "DELETE"))
+    );
 }
 
 #[tokio::test]

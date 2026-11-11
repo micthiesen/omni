@@ -84,9 +84,51 @@ emails attendees. Scheduling writes beyond that are not implemented.
 The pipeline never overwrites a calendar event wholesale. It GETs the event,
 merges only the groups whose extracted values changed (title, time, location,
 notes, recurrence, and its own alarm), and PUTs with If-Match. A 412 re-reads
-and merges again, up to three attempts. A 404 recreates with If-None-Match. A
-403 `no-uid-conflict` on the trusted iCloud host means Michael moved the event
-to another calendar; the merge targets that copy in place.
+and merges again, up to three attempts.
+
+An update never recreates a missing event. On a 404 it looks the UID up, by
+reading only, in the account's other event calendars: a time-range
+`calendar-query` around the event's date per collection beside the write
+calendar (iCloud answers a UID `prop-filter` with 412), each match confirmed
+by its own `UID` line on the trusted iCloud host. A copy found there means
+Michael moved the
+event to another calendar; the merge targets that copy in place. No copy means
+the event was deleted (or moved to another calendar and another date, which
+makes it Michael's to manage): nothing is written and its tracked row is
+tombstoned. "Deleted" is concluded only while the account still lists the
+write calendar; a stale or removed calendar is an error, so its 404s never
+tombstone anything. A calendar that refuses the query (4xx) is skipped; a
+5xx or transport failure is an error for the retry queue, never a guess.
+
+## Deleted events stay deleted
+
+A tracked row (`calendar-created-event`) is retired with `status: cancelled`.
+`deletedAt` is added when the calendar event itself was deleted: by
+`calendar_event_delete` of the whole event (stored in the same transaction as
+the confirmed operation, including one settled later by reading after a lost
+response, so a delete is never confirmed without its tombstone), or when an
+update finds it gone. Deleting one occurrence or truncating a series is a PUT
+and leaves the series tracked. Only the event's active row is tombstoned; rows
+an earlier reschedule left behind describe other times and stay cancelled.
+Record mode never tombstones.
+
+A create is suppressed only for the exact event (same normalized title, start
+date and start time):
+
+- an active row: `duplicate, skipped`;
+- a row with `deletedAt`: `deleted from the calendar, not recreated`, for any
+  email;
+- a row cancelled or moved away by an email: suppressed only when the email
+  being processed is one that wrote the row (`emailId` or
+  `earlierEmailIds`, a replay), so it cannot undo a later cancellation or
+  reschedule. Any other email may book that slot again.
+
+A different date or time is a different event and is created as usual; a
+tombstoned row is never a reschedule target. A create that would have moved a
+tracked event which turns out to be retired or deleted creates the new time
+as its own event. An explicit update of such an event is skipped. Event writes of one pipeline
+are serialized, so the dispatcher, the retry task and a manual reprocess
+holding the same email create an event once.
 
 A create for a title that matches exactly one active tracked event updates that
 event instead of creating a duplicate when it is on the same day at another
