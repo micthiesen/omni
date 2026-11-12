@@ -47,6 +47,66 @@ fn tools(h: &common::Harness) -> Vec<McpTool> {
 }
 
 #[tokio::test]
+async fn older_waiting_addition_can_be_found_and_cancelled_by_public_id() {
+    use omni_media::audiobooks::pending::{AudiobookPendingData, PendingStage};
+
+    let h = common::Harness::new().await;
+    h.app
+        .ctx
+        .store
+        .write(|tx| {
+            for n in 0..31 {
+                let row = AudiobookPendingData {
+                    release_id: format!("{n:032x}"),
+                    query: "book".into(),
+                    title: "Internal release details".into(),
+                    book: Some(format!("Book {n}")),
+                    author: None,
+                    stage: PendingStage::Waiting,
+                    created_at: n,
+                    updated_at: n,
+                    attempts: 1,
+                    next_attempt_at: 100,
+                    grab_id: None,
+                    detail: Some("private service details".into()),
+                    extra: Default::default(),
+                };
+                tx.upsert(&row, UpsertOpts::default())?;
+            }
+            Ok::<_, omni_store::StoreError>(())
+        })
+        .await
+        .expect("seed");
+    let public_id = omni_core::digest::sha256_hex(format!("library-addition\n{:032x}", 0));
+    let tools = tools(&h);
+    let status = call(
+        &tools,
+        "library_additions_list",
+        json!({"query": public_id}),
+    )
+    .await
+    .expect("status");
+    assert_eq!(status["pending"][0]["title"], "Book 0");
+    assert!(!status.to_string().contains("private service"));
+    let cancelled = call(
+        &tools,
+        "library_addition_cancel",
+        json!({"additionId": public_id}),
+    )
+    .await
+    .expect("cancel");
+    assert_eq!(cancelled["outcome"], "cancelled");
+    let status = call(
+        &tools,
+        "library_additions_list",
+        json!({"query": public_id}),
+    )
+    .await
+    .expect("status after cancel");
+    assert_eq!(status["pending"][0]["stage"], "cancelled");
+}
+
+#[tokio::test]
 async fn registers_the_media_tools_in_serving_order() {
     let h = common::Harness::new().await;
     let names: Vec<String> = tools(&h).iter().map(|t| t.meta.name.clone()).collect();
@@ -76,11 +136,11 @@ async fn registers_the_media_tools_in_serving_order() {
             "media_movies_search",
             "media_movie_releases",
             "media_movie_release_grab",
-            "media_audiobooks_search",
-            "media_audiobook_grab",
-            "media_audiobooks_status",
-            "media_audiobook_cancel",
-            "media_audiobooks_list",
+            "archive_search",
+            "library_add",
+            "library_additions_list",
+            "library_addition_cancel",
+            "library_items_list",
             "media_recommendations_list",
             "media_recommendation_get",
             "media_recommendation_feedback",

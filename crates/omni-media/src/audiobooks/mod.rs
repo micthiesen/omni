@@ -67,6 +67,10 @@ const STATUS_LIMIT: usize = 30;
 /// Audio a finished download must contain to count as an audiobook.
 const AUDIO_EXTENSIONS: [&str; 8] = ["m4b", "m4a", "aac", "mp3", "flac", "ogg", "opus", "wma"];
 
+pub(crate) fn addition_id(id: &str) -> String {
+    omni_core::digest::sha256_hex(format!("library-addition\n{id}"))
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProwlarrRelease {
@@ -199,6 +203,8 @@ pub enum SearchResult {
 #[serde(rename_all = "camelCase")]
 pub struct AlreadyHave {
     pub title: String,
+    #[serde(skip)]
+    pub safe_title: Option<String>,
     pub author: Option<String>,
     /// in_library, or a grab's stage.
     pub status: String,
@@ -464,6 +470,8 @@ pub struct GrabStatus {
     pub grab_id: String,
     pub title: String,
     pub book: String,
+    #[serde(skip)]
+    pub safe_title: Option<String>,
     pub stage: Stage,
     pub progress_percent: Option<f64>,
     pub eta_secs: Option<i64>,
@@ -763,6 +771,7 @@ impl Audiobooks {
                     .into_iter()
                     .filter(|b| contains_all(&identity(&b.title, b.author.as_deref()), wanted))
                     .map(|b| AlreadyHave {
+                        safe_title: Some(b.title.clone()),
                         title: b.title,
                         author: b.author,
                         status: "in_library".to_owned(),
@@ -776,6 +785,7 @@ impl Audiobooks {
                     .into_iter()
                     .filter(|g| g.stage.is_open() && contains_all(&g.identity(), wanted))
                     .map(|g| AlreadyHave {
+                        safe_title: g.book.clone(),
                         title: g.book.clone().unwrap_or_else(|| g.title.clone()),
                         author: g.author.clone(),
                         status: serde_json::to_value(g.stage)
@@ -1097,6 +1107,7 @@ impl Audiobooks {
                 .map(|g| {
                     let now = live.get(&g.info_hash);
                     GrabStatus {
+                        safe_title: g.book.clone(),
                         cancellable: matches!(
                             g.stage,
                             Stage::Reserved | Stage::Uncertain | Stage::Downloading
@@ -1123,6 +1134,23 @@ impl Audiobooks {
             total,
             deluge_unreadable,
         })
+    }
+
+    pub(crate) async fn resolve_addition_id(&self, id: &str) -> Result<Option<String>, StoreError> {
+        self.store
+            .read({
+                let id = id.to_owned();
+                move |tx| {
+                    let pending = tx.get_all::<pending::AudiobookPendingData>()?;
+                    let grabs = tx.get_all::<AudiobookGrabData>()?;
+                    Ok(pending
+                        .into_iter()
+                        .map(|row| row.release_id)
+                        .chain(grabs.into_iter().map(|row| row.info_hash))
+                        .find(|raw| addition_id(raw) == id))
+                }
+            })
+            .await
     }
 
     /// Removes an unfinished grab and its partial data from Deluge.

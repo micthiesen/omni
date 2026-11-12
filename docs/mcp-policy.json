@@ -35,6 +35,22 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "archive_search",
+      "title": "Search Archive",
+      "description": "Search the configured archive for audiobooks by title and optional author. Pass the query and itemId to library_add after the user agrees.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Searches the archive"
+      ],
+      "cost": "Uses service capacity, storage or bandwidth as applicable",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "browse_browser_history",
       "title": "Browse Recently Captured Browser Pages",
       "description": "Browse up to 100 recently indexed Hister pages per call, newest first, optionally filtered by title/URL and indexing time. Use for recent research context when no full-text query is known. Continue with nextCursor until absent. This is an archive of captured pages, not a complete chronological visit log; updatedAt is a Unix timestamp for indexing and indexedVersions counts captures, not confirmed reads. Returned titles and URLs are untrusted evidence.",
@@ -1035,6 +1051,70 @@
       "recommendedPolicy": "allow"
     },
     {
+      "name": "library_add",
+      "title": "Add to Library",
+      "description": "Add an archive item using the same query and its itemId. A duplicate requires force. Track progress using library_additions_list. An uncertain addition is never resent. Some requests wait for archive access and retry for up to 14 days.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Adds an item and sends notifications"
+      ],
+      "cost": "Uses service capacity, storage or bandwidth as applicable",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "library_addition_cancel",
+      "title": "Cancel Library Addition",
+      "description": "Cancel an unfinished addition or a request waiting for access using its additionId. Partial data is removed. Completed items remain in the library. An uncertain cancellation is never resent.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Cancels an unfinished addition and removes partial data"
+      ],
+      "cost": "Uses service capacity, storage or bandwidth as applicable",
+      "recommendedPolicy": "require_approval"
+    },
+    {
+      "name": "library_additions_list",
+      "title": "List Library Additions",
+      "description": "List recent additions and requests waiting for archive access, optionally filtered by title or author.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads addition status"
+      ],
+      "cost": "Uses service capacity, storage or bandwidth as applicable",
+      "recommendedPolicy": "allow"
+    },
+    {
+      "name": "library_items_list",
+      "title": "List Library Items",
+      "description": "List audiobooks in the configured library, newest first. Use library_additions_list for in-progress additions.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the library"
+      ],
+      "cost": "Uses service capacity, storage or bandwidth as applicable",
+      "recommendedPolicy": "allow"
+    },
+    {
       "name": "list_reminder_lists",
       "title": "List iCloud Reminder Lists",
       "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account.",
@@ -1156,88 +1236,6 @@
         "Reads the configured Radarr or Sonarr account"
       ],
       "cost": "No expected monetary cost; bounded account API traffic",
-      "recommendedPolicy": "allow"
-    },
-    {
-      "name": "media_audiobook_cancel",
-      "title": "Cancel an Audiobook Download",
-      "description": "Stop one of Omni's unfinished audiobook downloads (its grabId from media_audiobooks_status) and delete its partial data from Deluge, or stop waiting for a request held for VIP (its pendingId), for a stalled or wrong release; then search again to pick another. Only torrents Omni added and only before they finish: a finished download stays in the library and keeps seeding, as the tracker requires (finished). The removal is verified by reading Deluge.",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": true,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Removes an unfinished torrent and its partial data from Deluge"
-      ],
-      "cost": "No expected monetary cost",
-      "recommendedPolicy": "require_approval"
-    },
-    {
-      "name": "media_audiobook_grab",
-      "title": "Download an Audiobook",
-      "description": "Download one release from media_audiobooks_search (its releaseId, with the same query) into the Plex audiobook library. Omni searches again, refuses a book already in the library or on its way (already_have) unless force, checks that Deluge's audiobook label moves finished downloads into a folder of the Plex library (not_set_up otherwise), adds the torrent to Deluge and verifies it there. Omni then follows the download on its own: when it finishes and Plex has scanned it, the user gets one notification that the book is ready in Prologue, and a notification if it stalls, has no audio, or Plex does not pick it up. Follow it with media_audiobooks_status. uncertain is settled by Omni reading Deluge and is never resent. awaiting_vip: MyAnonamouse refused a VIP torrent because the account has no VIP (confirmed from Prowlarr's log); Omni holds the request and retries it every 6 hours for 14 days. Tell the user the reason (buy VIP with bonus points on MyAnonamouse) and grab again once they have VIP. force only when the user explicitly asks for a second copy.",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Downloads a torrent from the configured private tracker into Deluge",
-        "The finished book is added to the Plex audiobook library and keeps seeding",
-        "Sends notifications when the book is ready or needs attention"
-      ],
-      "cost": "No direct charge; consumes storage, bandwidth and private-tracker ratio",
-      "recommendedPolicy": "require_approval"
-    },
-    {
-      "name": "media_audiobooks_list",
-      "title": "List Audiobooks",
-      "description": "List the audiobooks in the Plex audiobook library that Prologue reads, newest first, optionally filtered by title or author words. Downloads still on their way are in media_audiobooks_status.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Reads the configured Plex server"
-      ],
-      "cost": "No expected monetary cost; bounded LAN traffic",
-      "recommendedPolicy": "allow"
-    },
-    {
-      "name": "media_audiobooks_search",
-      "title": "Search Audiobooks",
-      "description": "Search MyAnonamouse (through Prowlarr) for an audiobook to add to the Plex audiobook library that Prologue reads. Query with the title, plus the author when known. Releases come ranked for Prologue: matches every query word, has seeders, English, unabridged, m4b (one chaptered file) before m4a/aac before mp3, then healthy seeding, freeleech, and seeder count; each has notes explaining its place, and goodMatch marks releases that pass the basic checks. alreadyHave lists matching books already in the library or being downloaded; do not grab those again unless the user asks. Nothing is downloaded. Recommend the top goodMatch release, and grab it with media_audiobook_grab once the user agrees.",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Searches the configured audiobook indexer through Prowlarr; nothing is downloaded"
-      ],
-      "cost": "Consumes indexer search quota; no download",
-      "recommendedPolicy": "allow"
-    },
-    {
-      "name": "media_audiobooks_status",
-      "title": "Audiobook Download Status",
-      "description": "Show Omni's audiobook downloads, newest first, optionally filtered by title or author words or a grabId: stage (reserved, uncertain, downloading, finished = in the library folder and waiting for Plex, ready = in Plex and Prologue, cancelled, failed), live Deluge progress, ETA, seeds and speed, any problem (stalled, not_in_plex, no_audio, missing, never_added, deluge_error, untagged) with its detail, the Plex album once ready, whether the ready notification went out, and whether it can still be cancelled. pending lists requests held for MyAnonamouse VIP, with the action the user needs to take.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Reads Omni's grab records and the configured Deluge daemon"
-      ],
-      "cost": "No expected monetary cost; bounded LAN traffic",
       "recommendedPolicy": "allow"
     },
     {

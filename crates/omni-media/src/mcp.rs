@@ -568,7 +568,7 @@ struct AudiobooksSearchInput {
 #[serde(rename_all = "camelCase")]
 struct AudiobookGrabInput {
     query: String,
-    release_id: String,
+    item_id: String,
     #[serde(default)]
     force: bool,
 }
@@ -585,7 +585,6 @@ struct AudiobooksListInput {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AudiobooksListOutput {
-    library: String,
     #[serde(flatten)]
     page: Page<LibraryAudiobook>,
 }
@@ -598,7 +597,35 @@ struct AudiobooksStatusInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AudiobookCancelInput {
-    grab_id: String,
+    addition_id: String,
+}
+
+fn archive_item(item: &crate::audiobooks::AudiobookRelease) -> serde_json::Value {
+    serde_json::json!({
+        "itemId": item.release_id, "title": item.book.as_deref().map(crate::arr::inspect::redact), "author": item.author.as_deref().map(crate::arr::inspect::redact),
+        "language": item.language, "formats": item.formats, "sizeMb": item.size_mb,
+        "goodMatch": item.good_match,
+    })
+}
+
+fn existing_item(item: &crate::audiobooks::AlreadyHave) -> serde_json::Value {
+    serde_json::json!({
+        "title": crate::arr::inspect::redact(item.safe_title.as_deref().unwrap_or("Title unavailable")), "author": item.author.as_deref().map(crate::arr::inspect::redact), "status": item.status,
+        "additionId": item.grab_id.as_deref().map(crate::audiobooks::addition_id),
+    })
+}
+
+fn library_problem(problem: crate::audiobooks::Problem) -> &'static str {
+    use crate::audiobooks::Problem;
+    match problem {
+        Problem::Stalled => "stalled",
+        Problem::NotInPlex => "not_in_library",
+        Problem::NoAudio => "no_audio",
+        Problem::Missing => "missing",
+        Problem::NeverAdded => "never_added",
+        Problem::DelugeError => "transfer_error",
+        Problem::Untagged => "missing_metadata",
+    }
 }
 
 /// The most movies one `detail` page reads in depth.
@@ -1434,7 +1461,14 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 let s = s.clone();
                 async move {
                     let query = non_empty_trimmed(&input.query, "query")?;
-                    Ok(s.audiobooks.search(&query).await)
+                    let result = s.audiobooks.search(&query).await;
+                    Ok(serde_json::json!({
+                        "result": result.result,
+                        "items": result.releases.iter().map(archive_item).collect::<Vec<_>>(),
+                        "total": result.total,
+                        "alreadyHave": result.already_have.iter().map(existing_item).collect::<Vec<_>>(),
+                        "reason": result.reason.map(|_| "Archive search is unavailable."),
+                    }))
                 }
             }
         })?,
@@ -1444,13 +1478,52 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 let s = s.clone();
                 async move {
                     let query = non_empty_trimmed(&input.query, "query")?;
-                    Ok(s.audiobooks
+                    let result = s
+                        .audiobooks
                         .grab(AudiobookGrabRequest {
                             query,
-                            release_id: input.release_id,
+                            release_id: input.item_id,
                             force: input.force,
                         })
-                        .await)
+                        .await;
+                    use crate::audiobooks::GrabOutcome;
+                    let outcome = match result.outcome {
+                        GrabOutcome::Grabbed => "added",
+                        GrabOutcome::Uncertain => "uncertain",
+                        GrabOutcome::Failed => "failed",
+                        GrabOutcome::ReleaseNotFound => "item_not_found",
+                        GrabOutcome::AlreadyHave => "already_have",
+                        GrabOutcome::AlreadyGrabbed | GrabOutcome::AlreadyInDeluge => {
+                            "already_added"
+                        }
+                        GrabOutcome::NotSetUp => "not_set_up",
+                        GrabOutcome::AwaitingVip => "awaiting_access",
+                        GrabOutcome::Unavailable => "unavailable",
+                        GrabOutcome::Error => "error",
+                    };
+                    let reason = match result.outcome {
+                        GrabOutcome::AwaitingVip => Some(
+                            "Additional archive access is required. The request will retry for up to 14 days.",
+                        ),
+                        GrabOutcome::NotSetUp => {
+                            Some("The library is not configured for additions.")
+                        }
+                        GrabOutcome::Failed | GrabOutcome::Unavailable | GrabOutcome::Error => {
+                            Some("The addition could not be completed.")
+                        }
+                        _ => None,
+                    };
+                    Ok(serde_json::json!({
+                        "outcome": outcome,
+                        "additionId": result.grab_id.as_deref().or_else(|| {
+                            matches!(result.outcome, GrabOutcome::AwaitingVip)
+                                .then(|| result.release.as_ref().map(|item| item.release_id.as_str()))
+                                .flatten()
+                        }).map(crate::audiobooks::addition_id),
+                        "item": result.release.as_ref().map(archive_item),
+                        "alreadyHave": result.already_have.iter().map(existing_item).collect::<Vec<_>>(),
+                        "reason": reason,
+                    }))
                 }
             }
         })?,
@@ -1459,10 +1532,48 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
             move |input: AudiobooksStatusInput, _cx| {
                 let s = s.clone();
                 async move {
-                    s.audiobooks
-                        .status(input.query.as_deref().map(trim))
-                        .await
-                        .map_err(|e| ToolError::execute(e.to_string()))
+                    let raw_id = if let Some(query) = input
+                        .query
+                        .as_deref()
+                        .filter(|q| q.len() == 64 && q.bytes().all(|b| b.is_ascii_hexdigit()))
+                    {
+                        s.audiobooks.resolve_addition_id(query).await.map_err(|_| {
+                            ToolError::execute("Library addition status is unavailable")
+                        })?
+                    } else {
+                        None
+                    };
+                    let query = raw_id
+                        .as_deref()
+                        .or_else(|| input.query.as_deref().map(trim));
+                    let result = s.audiobooks.status(query).await.map_err(|_| {
+                        ToolError::execute("Library addition status is unavailable")
+                    })?;
+                    let additions = result
+                        .grabs
+                        .iter()
+                        .map(|item| {
+                            serde_json::json!({
+                                "additionId": crate::audiobooks::addition_id(&item.grab_id),
+                                "title": crate::arr::inspect::redact(item.safe_title.as_deref().unwrap_or("Title unavailable")), "stage": item.stage,
+                                "progressPercent": item.progress_percent, "etaSecs": item.eta_secs,
+                                "problem": item.problem.map(library_problem),
+                                "notified": item.notified, "requestedAt": item.requested_at,
+                                "finishedAt": item.finished_at, "cancellable": item.cancellable,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let pending = result.pending.iter().map(|item| serde_json::json!({
+                        "additionId": crate::audiobooks::addition_id(&item.pending_id),
+                        "title": crate::arr::inspect::redact(item.safe_title.as_deref().unwrap_or("Title unavailable")), "stage": item.stage,
+                        "createdAt": item.created_at, "nextAttemptAt": item.next_attempt_at,
+                        "resumedAdditionId": item.grab_id.as_deref().map(crate::audiobooks::addition_id),
+                        "action": if item.action.is_some() { Some("Additional archive access is required.") } else { None },
+                    })).collect::<Vec<_>>();
+                    Ok(serde_json::json!({
+                        "additions": additions, "total": result.total,
+                        "pending": pending, "liveStatusAvailable": result.deluge_unreadable.is_none(),
+                    }))
                 }
             }
         })?,
@@ -1470,7 +1581,31 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
             let s = s.clone();
             move |input: AudiobookCancelInput, _cx| {
                 let s = s.clone();
-                async move { Ok(s.audiobooks.cancel(&input.grab_id).await) }
+                async move {
+                    let raw_id = s
+                        .audiobooks
+                        .resolve_addition_id(&input.addition_id)
+                        .await
+                        .map_err(|_| {
+                            ToolError::execute("Library addition status is unavailable")
+                        })?;
+                    let Some(raw_id) = raw_id else {
+                        return Ok(
+                            serde_json::json!({ "outcome": "not_found", "additionId": input.addition_id, "title": null, "reason": null }),
+                        );
+                    };
+                    let result = s.audiobooks.cancel(&raw_id).await;
+                    Ok(serde_json::json!({
+                        "outcome": result.outcome, "additionId": input.addition_id,
+                        "title": null,
+                        "reason": match result.outcome {
+                            crate::audiobooks::CancelOutcome::Finished => Some("This item has already completed and remains in the library."),
+                            crate::audiobooks::CancelOutcome::Uncertain => Some("The cancellation may have completed; check its status."),
+                            crate::audiobooks::CancelOutcome::Unavailable | crate::audiobooks::CancelOutcome::Error => Some("The cancellation could not be completed."),
+                            _ => None,
+                        },
+                    }))
+                }
             }
         })?,
         typed_tool(&defs::MEDIA_AUDIOBOOKS_LIST, {
@@ -1478,14 +1613,12 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
             move |input: AudiobooksListInput, _cx| {
                 let s = s.clone();
                 async move {
-                    let query = input.query.as_deref().map(trim);
                     let library = s
                         .audiobooks
-                        .library(query)
+                        .library(input.query.as_deref().map(trim))
                         .await
-                        .map_err(|e| ToolError::execute(e.to_string()))?;
+                        .map_err(|_| ToolError::execute("Library is unavailable"))?;
                     Ok(AudiobooksListOutput {
-                        library: library.library,
                         page: paginate(library.books, input.cursor, input.limit),
                     })
                 }
@@ -1608,4 +1741,64 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
             }
         })?,
     ])
+}
+
+#[cfg(test)]
+mod archive_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn archive_result_exposes_only_user_facing_metadata() {
+        let release = crate::audiobooks::AudiobookRelease {
+            rank: 1,
+            release_id: "item-id".into(),
+            title: "provider protocol details".into(),
+            book: Some("A Book".into()),
+            author: Some("An Author token=private".into()),
+            language: Some("ENG".into()),
+            formats: vec!["m4b".into()],
+            size_mb: Some(200),
+            files: Some(1),
+            seeders: Some(9),
+            leechers: Some(4),
+            grabs: Some(8),
+            freeleech: true,
+            published_at: None,
+            good_match: true,
+            notes: vec!["internal service detail".into()],
+        };
+        let projected = archive_item(&release);
+        assert_eq!(projected["title"], "A Book");
+        assert_eq!(projected["itemId"], "item-id");
+        assert!(!projected.to_string().contains("private"));
+        let text = projected.to_string();
+        for hidden in [
+            "provider",
+            "protocol",
+            "seeders",
+            "leechers",
+            "freeleech",
+            "notes",
+        ] {
+            assert!(!text.contains(hidden), "{hidden} leaked: {text}");
+        }
+    }
+
+    #[test]
+    fn existing_item_does_not_expose_raw_addition_identifier() {
+        let raw = "abcdef0123456789abcdef0123456789abcdef01";
+        let projected = existing_item(&crate::audiobooks::AlreadyHave {
+            title: "A Book".into(),
+            safe_title: Some("A Book".into()),
+            author: None,
+            status: "downloading".into(),
+            grab_id: Some(raw.into()),
+        });
+        assert_eq!(projected["additionId"], crate::audiobooks::addition_id(raw));
+        assert!(!projected.to_string().contains(raw));
+        assert_eq!(
+            library_problem(crate::audiobooks::Problem::DelugeError),
+            "transfer_error"
+        );
+    }
 }

@@ -84,6 +84,8 @@ pub struct PendingStatus {
     pub pending_id: String,
     pub title: String,
     pub book: String,
+    #[serde(skip)]
+    pub safe_title: Option<String>,
     pub stage: PendingStage,
     pub attempts: u32,
     pub created_at: i64,
@@ -244,6 +246,7 @@ impl Audiobooks {
             .map(|r| {
                 let waiting = r.stage == PendingStage::Waiting;
                 PendingStatus {
+                    safe_title: r.book.clone(),
                     pending_id: r.release_id.clone(),
                     book: r.display(),
                     title: r.title,

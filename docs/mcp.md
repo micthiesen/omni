@@ -52,7 +52,7 @@ families cover:
   see "Radarr movies" below), Radarr and Sonarr profiles, status and download
   queues (`media_arr_*`, `media_downloads_list`), queue removal
   (`media_downloads_remove`) and NZBGet status (`media_nzbget_status`, see
-  "Downloads and NZBGet" below), audiobooks (`media_audiobook*`, see
+  "Downloads and NZBGet" below), archive and library tools (see
   "Audiobooks" below), Apple Music link and id resolution
   (`media_apple_music_resolve`, see "Apple Music links" below), recommendations, podcast
   accounts, and podcast recommendations, including assistant-recorded
@@ -416,9 +416,10 @@ key-like URL query values (`apikey`, `passkey`, `token`, ...) and URL userinfo.
 
 ### Audiobooks
 
-`media_audiobooks_search`, `media_audiobook_grab`, `media_audiobooks_status`,
-`media_audiobook_cancel` and `media_audiobooks_list`
-(`crates/omni-media/src/audiobooks/`) take a book from MyAnonamouse into the
+`archive_search`, `library_add`, `library_additions_list`,
+`library_addition_cancel` and `library_items_list` expose a generic interface
+over the current audiobook implementation (`crates/omni-media/src/audiobooks/`).
+It takes a book from MyAnonamouse into the
 Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
 "Audiobooks"), which Prologue reads, and tell the owner when it is there.
 
@@ -429,12 +430,10 @@ Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
   VIP torrents) and orders releases by: every query word matched, seeded,
   `AUDIOBOOK_LANGUAGE` (default `ENG`), unabridged, m4b before m4a/aac before
   mp3 before other audio, at least three seeders, freeleech, then seeders.
-  Ebook-only releases are dropped. VIP releases rank like any other and carry
-  a note. Each release has notes explaining its place; `alreadyHave` lists
-  matching library albums and open grabs. Releases are named by an opaque
-  `releaseId`; guids and download URLs carry passkeys and never leave the
-  module. Search and grab failures carry Prowlarr's message (URLs dropped,
-  secrets redacted).
+  Ebook-only releases are dropped. The MCP response exposes parsed metadata,
+  match quality and an opaque `itemId`; it omits release names, transfer
+  statistics and provider errors. `alreadyHave` lists matching library albums
+  and open additions. Guids and download URLs never leave the module.
 - **Grab** checks that the Deluge label (`DELUGE_LABEL`, default `books`)
   moves finished torrents into a folder that is one of the Plex library's
   locations (`not_set_up` otherwise), searches again, refuses a book already
@@ -459,7 +458,7 @@ Plex music-type library named by `PLEX_AUDIOBOOKS_LIBRARY` (default
   (one row per release; a repeat refusal only counts another attempt) with an
   action for the owner (buy VIP with bonus points). `AudiobookWatch` retries a
   waiting request every 6 hours, stopping the run at the first refusal, until
-  it is grabbed, cancelled (`media_audiobook_cancel` with its `pendingId`) or
+  it is grabbed, cancelled through `library_addition_cancel` or
   14 days pass; a grab of the same release settles it at once. Omni does not
   buy VIP itself: that needs its own MyAnonamouse session, which it does not
   have.
