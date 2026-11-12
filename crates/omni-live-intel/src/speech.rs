@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use omni_runtime::ports::{ChunkTranscript, PortError, SpeechSegment, SpeechTranscriber};
+use omni_runtime::ports::{
+    ChunkTranscript, PortError, SpeechGap, SpeechSegment, SpeechTranscriber,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::audio::SAMPLE_RATE;
@@ -212,42 +214,126 @@ pub struct SpeechSpan {
     pub end: usize,
 }
 
-/// Spans closer than this are transcribed together, so the recognizer sees
-/// whole sentences instead of fragments split at a breath.
-const SPAN_MERGE_GAP_SECONDS: f64 = 0.8;
-/// A merged span stops growing here, which bounds one recognizer call.
-const MAX_MERGED_SPAN_SECONDS: usize = 30;
+/// One recognizer call covers at most this much audio.
+const MAX_WINDOW_SECONDS: usize = 30;
+/// A window is cut at the widest pause between these lengths, so cuts fall
+/// between sentences and segments stay short enough to locate speech.
+const MIN_CUT_SECONDS: usize = 8;
+const PREFERRED_CUT_SECONDS: usize = 20;
+/// Windows are never shorter than this, except a whole chunk that is.
+const MIN_WINDOW_SECONDS: usize = 1;
 /// A final span ending this close to the end of a chunk is still being spoken.
 const OPEN_TAIL_SECONDS: f64 = 0.5;
+/// Detected speech shorter than this without text is not reported as a gap:
+/// a cough or a click.
+const MIN_GAP_SECONDS: usize = 1;
 
-/// Sorted, in-bounds spans with close neighbours merged
-/// ([`SPAN_MERGE_GAP_SECONDS`], [`MAX_MERGED_SPAN_SECONDS`]).
-pub fn merge_spans(spans: &[SpeechSpan], total_samples: usize) -> Vec<SpeechSpan> {
+/// A stretch of audio handed to the recognizer in one call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TranscriptionWindow {
+    pub start: usize,
+    pub end: usize,
+    /// From the start of the first detected speech in the window to the end
+    /// of the last; `None` when the voice detector found none.
+    pub speech: Option<SpeechSpan>,
+    /// Samples of detected speech in the window.
+    pub speech_samples: usize,
+}
+
+/// How a chunk is cut for the recognizer.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WindowPlan {
+    /// Back-to-back windows covering `0..consumed`.
+    pub windows: Vec<TranscriptionWindow>,
+    pub consumed: usize,
+}
+
+/// Cuts a chunk into recognizer windows that together cover all of it. The
+/// voice detector's spans never decide what is transcribed, only where the
+/// cuts go: in the middle of a pause, the widest one between
+/// [`MIN_CUT_SECONDS`] and [`PREFERRED_CUT_SECONDS`] into the window when
+/// there is one, otherwise the last pause before [`MAX_WINDOW_SECONDS`], and
+/// only without any pause at that limit.
+///
+/// Unless `last`, speech still running at the end of the chunk is left for
+/// the next one (`consumed` is the pause before it), provided that leaves at
+/// least half the chunk, so every chunk advances.
+pub fn plan_windows(spans: &[SpeechSpan], total_samples: usize, last: bool) -> WindowPlan {
+    let rate = SAMPLE_RATE as usize;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let gap = (SPAN_MERGE_GAP_SECONDS * f64::from(SAMPLE_RATE)) as usize;
-    let max_len = MAX_MERGED_SPAN_SECONDS * SAMPLE_RATE as usize;
-    let mut sorted: Vec<SpeechSpan> = spans
-        .iter()
-        .map(|s| SpeechSpan {
-            start: s.start,
-            end: s.end.min(total_samples),
-        })
-        .filter(|s| s.start < s.end)
-        .collect();
+    let open_tail = (OPEN_TAIL_SECONDS * f64::from(SAMPLE_RATE)) as usize;
+    let mut sorted: Vec<SpeechSpan> = spans.to_vec();
     sorted.sort_by_key(|s| s.start);
-    let mut merged: Vec<SpeechSpan> = Vec::new();
+    let mut speech: Vec<SpeechSpan> = Vec::new();
     for span in sorted {
-        match merged.last_mut() {
-            Some(last)
-                if span.start <= last.end + gap
-                    && span.end.saturating_sub(last.start) <= max_len =>
-            {
-                last.end = last.end.max(span.end);
-            }
-            _ => merged.push(span),
+        let start = span.start.max(speech.last().map_or(0, |s| s.end));
+        let end = span.end.min(total_samples);
+        if start < end {
+            speech.push(SpeechSpan { start, end });
         }
     }
-    merged
+    // The middle of each pause, with the pause's length.
+    let cuts: Vec<(usize, usize)> = speech
+        .windows(2)
+        .map(|pair| {
+            let gap = pair[1].start - pair[0].end;
+            (pair[0].end + gap / 2, gap)
+        })
+        .collect();
+    let mut consumed = total_samples;
+    if !last
+        && let Some(tail) = speech.last()
+        && tail.end + open_tail >= total_samples
+    {
+        let before_tail = cuts.last().map_or(tail.start, |(at, _)| *at);
+        if before_tail >= total_samples / 2 {
+            consumed = before_tail;
+        }
+    }
+    let mut windows = Vec::new();
+    let mut start = 0;
+    while start < consumed {
+        let limit = start + MAX_WINDOW_SECONDS * rate;
+        let mut end = if limit >= consumed {
+            consumed
+        } else {
+            let within = |from: usize, to: usize| {
+                cuts.iter()
+                    .filter(move |(at, _)| *at >= start + from && *at <= start + to)
+            };
+            within(MIN_CUT_SECONDS * rate, PREFERRED_CUT_SECONDS * rate)
+                .max_by_key(|(at, gap)| (*gap, *at))
+                .or_else(|| {
+                    within(MIN_WINDOW_SECONDS * rate, MAX_WINDOW_SECONDS * rate).next_back()
+                })
+                .map_or(limit, |(at, _)| *at)
+        };
+        if consumed - end < MIN_WINDOW_SECONDS * rate {
+            end = consumed;
+        }
+        let inside: Vec<SpeechSpan> = speech
+            .iter()
+            .filter(|s| s.start < end && s.end > start)
+            .map(|s| SpeechSpan {
+                start: s.start.max(start),
+                end: s.end.min(end),
+            })
+            .collect();
+        windows.push(TranscriptionWindow {
+            start,
+            end,
+            speech: inside
+                .first()
+                .zip(inside.last())
+                .map(|(first, last)| SpeechSpan {
+                    start: first.start,
+                    end: last.end,
+                }),
+            speech_samples: inside.iter().map(|s| s.end - s.start).sum(),
+        });
+        start = end;
+    }
+    WindowPlan { windows, consumed }
 }
 
 /// The native operations the runtime needs. All calls block.
@@ -604,43 +690,42 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
         Ok(omni_core::js::trim(&self.backend.transcribe(samples)?).to_owned())
     }
 
-    /// Transcribes each stretch of speech in one chunk of a longer recording.
-    /// Unless `last`, an utterance still being spoken at the end of the chunk
-    /// is left for the next one: `consumed_samples` is where it starts. A
-    /// tail starting in the first half of the chunk is transcribed anyway, so
-    /// every chunk advances by at least half its length.
+    /// Transcribes one chunk of a longer recording, all of it up to
+    /// `consumed_samples` ([`plan_windows`]). Speech the voice detector missed
+    /// is still heard by the recognizer; speech the detector found that the
+    /// recognizer returned nothing for is reported as a gap.
     pub fn transcribe_chunk(
         &self,
         samples: &[f32],
         last: bool,
     ) -> Result<ChunkTranscript, SpeechRecognitionError> {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let open_tail = (OPEN_TAIL_SECONDS * f64::from(SAMPLE_RATE)) as usize;
-        let mut spans = merge_spans(&self.backend.speech_spans(samples)?, samples.len());
-        let mut consumed_samples = samples.len();
-        if !last
-            && let Some(tail) = spans.last().copied()
-            && tail.end + open_tail >= samples.len()
-            && tail.start >= samples.len() / 2
-        {
-            consumed_samples = tail.start;
-            spans.pop();
-        }
-        let mut segments = Vec::new();
-        for span in spans {
-            let text = self.transcribe(&samples[span.start..span.end])?;
+        let plan = plan_windows(&self.backend.speech_spans(samples)?, samples.len(), last);
+        let mut chunk = ChunkTranscript {
+            consumed_samples: plan.consumed,
+            ..ChunkTranscript::default()
+        };
+        for window in plan.windows {
+            chunk.speech_samples += window.speech_samples;
+            let text = self.transcribe(&samples[window.start..window.end])?;
+            let heard = window.speech.unwrap_or(SpeechSpan {
+                start: window.start,
+                end: window.end,
+            });
             if !text.is_empty() {
-                segments.push(SpeechSegment {
-                    start_sample: span.start,
-                    end_sample: span.end,
+                chunk.segments.push(SpeechSegment {
+                    start_sample: heard.start,
+                    end_sample: heard.end,
                     text,
+                    detected: window.speech.is_some(),
+                });
+            } else if window.speech_samples >= MIN_GAP_SECONDS * SAMPLE_RATE as usize {
+                chunk.gaps.push(SpeechGap {
+                    start_sample: heard.start,
+                    end_sample: heard.end,
                 });
             }
         }
-        Ok(ChunkTranscript {
-            segments,
-            consumed_samples,
-        })
+        Ok(chunk)
     }
 }
 

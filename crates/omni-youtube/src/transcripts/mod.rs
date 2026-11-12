@@ -31,7 +31,9 @@ use tokio::sync::{Semaphore, watch};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::records::{TranscriptSegmentData, TranscriptState, YoutubeTranscriptData};
+use crate::records::{
+    TranscriptGapData, TranscriptSegmentData, TranscriptState, YoutubeTranscriptData,
+};
 use crate::transcripts::media::{MediaError, MediaSource};
 
 const LOG: &str = "YouTubeTranscripts";
@@ -299,6 +301,8 @@ impl Transcripts {
                     transcribed_ms: 0,
                     attempts: 0,
                     segments: Vec::new(),
+                    gaps: Vec::new(),
+                    speech_ms: Some(0),
                     model: None,
                     error_code: None,
                     error: None,
@@ -600,13 +604,27 @@ impl Transcripts {
                     start_ms: base_ms + samples_to_ms(segment.start_sample),
                     end_ms: base_ms + samples_to_ms(segment.end_sample),
                     text: segment.text,
+                    undetected: !segment.detected,
                 })
                 .collect();
+            let gaps: Vec<TranscriptGapData> = chunk
+                .gaps
+                .iter()
+                .filter(|gap| gap.start_sample < consumed)
+                .map(|gap| TranscriptGapData {
+                    start_ms: base_ms + samples_to_ms(gap.start_sample),
+                    end_ms: base_ms + samples_to_ms(gap.end_sample),
+                })
+                .collect();
+            let speech_ms = samples_to_ms(chunk.speech_samples);
             offset_ms += advance_ms;
             let transcribed_ms = offset_ms;
             let stored = self
                 .update(video_id, move |row| {
                     row.segments.extend(segments);
+                    row.gaps.extend(gaps);
+                    // A transcript begun before coverage was recorded stays unknown.
+                    row.speech_ms = row.speech_ms.map(|ms| ms + speech_ms);
                     row.transcribed_ms = transcribed_ms;
                 })
                 .await?;

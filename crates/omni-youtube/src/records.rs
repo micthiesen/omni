@@ -155,13 +155,25 @@ impl TranscriptState {
     }
 }
 
-/// One stretch of speech, in milliseconds from the start of the video.
+/// One stretch of recognized text, in milliseconds from the start of the video.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegmentData {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
+    /// The recognizer heard this in audio the voice detector did not take
+    /// for speech.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub undetected: bool,
+}
+
+/// Speech the voice detector found that the recognizer returned no text for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptGapData {
+    pub start_ms: i64,
+    pub end_ms: i64,
 }
 
 /// A video's locally transcribed speech and the job that produces it. The
@@ -196,6 +208,13 @@ pub struct YoutubeTranscriptData {
     pub attempts: u32,
     #[serde(default)]
     pub segments: Vec<TranscriptSegmentData>,
+    /// Known holes: detected speech without text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<TranscriptGapData>,
+    /// Detected speech in the transcribed audio. `None` on transcripts made
+    /// before coverage was recorded, whose coverage is unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speech_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

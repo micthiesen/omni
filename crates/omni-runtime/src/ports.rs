@@ -170,20 +170,36 @@ pub trait LiveIntelligence: Send + Sync {
 /// Sample rate of the mono `f32` audio a [`SpeechTranscriber`] takes.
 pub const SPEECH_SAMPLE_RATE: u32 = 16_000;
 
-/// One stretch of speech in a transcribed chunk, as sample offsets into it.
+/// Recognized text of one stretch of a transcribed chunk, as sample offsets
+/// into it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpeechSegment {
     pub start_sample: usize,
     pub end_sample: usize,
     pub text: String,
+    /// The voice detector found speech here. `false` for text the recognizer
+    /// heard in audio the detector took for silence, noise or music.
+    pub detected: bool,
 }
 
-/// The speech of one audio chunk.
+/// Speech the voice detector found but the recognizer returned no text for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpeechGap {
+    pub start_sample: usize,
+    pub end_sample: usize,
+}
+
+/// What the recognizer made of one audio chunk. Every consumed sample went
+/// through the recognizer, whether or not the voice detector found speech.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ChunkTranscript {
     pub segments: Vec<SpeechSegment>,
-    /// Samples the segments cover. Less than the chunk when it ended inside
-    /// an utterance: the caller starts its next chunk here so no sentence is
+    /// Detected speech without text: known holes in the transcript.
+    pub gaps: Vec<SpeechGap>,
+    /// Samples of detected speech among the consumed ones.
+    pub speech_samples: usize,
+    /// Samples transcribed. Less than the chunk when it ended inside an
+    /// utterance: the caller starts its next chunk here so no sentence is
     /// cut at a chunk boundary.
     pub consumed_samples: usize,
 }
@@ -194,8 +210,10 @@ pub struct ChunkTranscript {
 pub trait SpeechTranscriber: Send + Sync {
     /// The transcription model's name.
     fn model(&self) -> &'static str;
-    /// Transcribes one chunk of [`SPEECH_SAMPLE_RATE`] mono audio. `last`
-    /// marks the end of the recording, where everything is consumed.
+    /// Transcribes one chunk of [`SPEECH_SAMPLE_RATE`] mono audio, all of
+    /// it: voice detection only chooses where to cut and what to report as
+    /// a gap. `last` marks the end of the recording, where everything is
+    /// consumed.
     fn transcribe_chunk(
         &self,
         samples: Arc<Vec<f32>>,

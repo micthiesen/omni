@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use omni_core::process::{ProcessError, run_bounded};
 use omni_runtime::ports::SPEECH_SAMPLE_RATE;
 use serde::Deserialize;
 use tokio::process::Command;
@@ -214,26 +213,93 @@ impl YtDlpMedia {
         stdout_cap: usize,
         timeout: Duration,
     ) -> Result<Vec<u8>, MediaError> {
-        let output = run_bounded(cmd, None, stdout_cap, MAX_STDERR_BYTES, timeout)
-            .await
-            .map_err(|error| match error {
-                ProcessError::Timeout(_) => MediaError::Tool {
-                    tool,
-                    message: format!("timed out after {} s", timeout.as_secs()),
-                },
-                other => MediaError::Tool {
-                    tool,
-                    message: other.to_string(),
-                },
-            })?;
-        if output.status == 0 {
-            Ok(output.stdout)
-        } else {
-            Err(MediaError::Tool {
-                tool,
-                message: error_line(&output.stderr),
-            })
+        run_group(tool, cmd, stdout_cap, timeout).await
+    }
+}
+
+/// Kills a process group when dropped while armed.
+struct GroupKill(Option<rustix::process::Pid>);
+
+impl Drop for GroupKill {
+    fn drop(&mut self) {
+        if let Some(group) = self.0 {
+            // Nothing to do when the group is already gone.
+            let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
         }
+    }
+}
+
+async fn read_capped<R: tokio::io::AsyncRead + Unpin>(
+    pipe: Option<R>,
+    cap: usize,
+) -> std::io::Result<Option<Vec<u8>>> {
+    use tokio::io::AsyncReadExt as _;
+    let Some(pipe) = pipe else {
+        return Ok(Some(Vec::new()));
+    };
+    let mut buffer = Vec::new();
+    pipe.take(u64::try_from(cap).unwrap_or(u64::MAX).saturating_add(1))
+        .read_to_end(&mut buffer)
+        .await?;
+    Ok((buffer.len() <= cap).then_some(buffer))
+}
+
+/// Runs `cmd` in its own process group with capped output and a timeout, and
+/// returns its stdout on a zero exit.
+///
+/// The production yt-dlp is a self-extracting binary whose real work runs in
+/// a child process, and it starts ffmpeg and node itself. Killing only the
+/// process this spawned (tokio's `kill_on_drop`) leaves that child
+/// downloading into the work directory after the job is over, so a timeout,
+/// an output overflow, a failed read or a dropped future (shutdown) kills
+/// the whole group.
+pub async fn run_group(
+    tool: &'static str,
+    mut cmd: Command,
+    stdout_cap: usize,
+    timeout: Duration,
+) -> Result<Vec<u8>, MediaError> {
+    let fail = |message: String| MediaError::Tool { tool, message };
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .process_group(0);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| fail(format!("could not start: {e}")))?;
+    // With process_group(0) the child's pid is its group's id.
+    let mut group = GroupKill(
+        child
+            .id()
+            .and_then(|id| i32::try_from(id).ok())
+            .and_then(rustix::process::Pid::from_raw),
+    );
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let io = async {
+        let (out, err) = tokio::try_join!(
+            read_capped(stdout, stdout_cap),
+            read_capped(stderr, MAX_STDERR_BYTES)
+        )?;
+        let status = child.wait().await?;
+        Ok::<_, std::io::Error>((status, out, err))
+    };
+    let (status, out, err) = match tokio::time::timeout(timeout, io).await {
+        Err(_) => return Err(fail(format!("timed out after {} s", timeout.as_secs()))),
+        Ok(Err(error)) => return Err(fail(format!("process I/O failed: {error}"))),
+        Ok(Ok(finished)) => finished,
+    };
+    let (Some(out), Some(err)) = (out, err) else {
+        return Err(fail("produced more output than allowed".to_owned()));
+    };
+    // The process ended by itself and was reaped: its id may be reused, so
+    // the group is no longer ours to kill.
+    group.0 = None;
+    if status.success() {
+        Ok(out)
+    } else {
+        Err(fail(error_line(&err)))
     }
 }
 
@@ -390,5 +456,80 @@ mod tests {
             watch_url("jNQXAC9IVRw"),
             "https://www.youtube.com/watch?v=jNQXAC9IVRw"
         );
+    }
+
+    /// A shell that leaves a background child behind: the shape of the
+    /// production yt-dlp, whose download runs in a child process.
+    fn straggler(marker: &Path) -> Command {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(format!(
+            "(sleep 1; echo late > '{}') & sleep 30",
+            marker.display()
+        ));
+        cmd
+    }
+
+    #[tokio::test]
+    async fn a_timeout_kills_the_children_a_tool_started() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let marker = dir.path().join("written-after-the-kill");
+        let result = run_group("sh", straggler(&marker), 1024, Duration::from_millis(200)).await;
+        assert_eq!(
+            result,
+            Err(MediaError::Tool {
+                tool: "sh",
+                message: "timed out after 0 s".into()
+            })
+        );
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(
+            !marker.exists(),
+            "a child outlived the kill and wrote a file"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dropped_run_kills_the_children_a_tool_started() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let marker = dir.path().join("written-after-the-drop");
+        let run = run_group("sh", straggler(&marker), 1024, Duration::from_secs(60));
+        // Dropped while the tool runs, as a shutdown drops a job.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), run)
+                .await
+                .is_err()
+        );
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(
+            !marker.exists(),
+            "a child outlived the drop and wrote a file"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tool_that_finishes_returns_its_output_or_its_error() {
+        let mut ok = Command::new("sh");
+        ok.arg("-c").arg("printf hello");
+        assert_eq!(
+            run_group("sh", ok, 1024, Duration::from_secs(10)).await,
+            Ok(b"hello".to_vec())
+        );
+        let mut failing = Command::new("sh");
+        failing
+            .arg("-c")
+            .arg("echo 'ERROR: no such video' >&2; exit 3");
+        assert_eq!(
+            run_group("sh", failing, 1024, Duration::from_secs(10)).await,
+            Err(MediaError::Tool {
+                tool: "sh",
+                message: "no such video".into()
+            })
+        );
+        let mut loud = Command::new("sh");
+        loud.arg("-c").arg("printf 0123456789");
+        assert!(matches!(
+            run_group("sh", loud, 4, Duration::from_secs(10)).await,
+            Err(MediaError::Tool { message, .. }) if message.contains("more output")
+        ));
     }
 }

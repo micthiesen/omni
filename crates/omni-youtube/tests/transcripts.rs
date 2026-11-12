@@ -13,7 +13,8 @@ use omni_core::clock::SharedClock;
 use omni_http::SideEffectMode;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolOutput, ToolPhase};
 use omni_runtime::ports::{
-    ChunkTranscript, PortError, Ports, SPEECH_SAMPLE_RATE, SpeechSegment, SpeechTranscriber,
+    ChunkTranscript, PortError, Ports, SPEECH_SAMPLE_RATE, SpeechGap, SpeechSegment,
+    SpeechTranscriber,
 };
 use omni_store::cbor::Extra;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
@@ -119,6 +120,9 @@ impl MediaSource for Media {
 struct Speech {
     calls: AtomicUsize,
     hold_back: bool,
+    /// Reports detected speech without text at 60-66 s of every full chunk,
+    /// and its first remark as not detected as speech.
+    patchy: bool,
     error: Option<String>,
 }
 
@@ -126,6 +130,7 @@ fn speech() -> Arc<Speech> {
     Arc::new(Speech {
         calls: AtomicUsize::new(0),
         hold_back: false,
+        patchy: false,
         error: None,
     })
 }
@@ -155,6 +160,7 @@ impl SpeechTranscriber for Speech {
                     start_sample: 5 * RATE,
                     end_sample: 8 * RATE,
                     text: format!("chunk {call}"),
+                    detected: !self.patchy,
                 });
             }
             let mut consumed_samples = len;
@@ -166,11 +172,22 @@ impl SpeechTranscriber for Speech {
                         start_sample: len - 4 * RATE,
                         end_sample: len - RATE,
                         text: format!("tail {call}"),
+                        detected: true,
                     });
                 }
             }
+            let mut gaps = Vec::new();
+            if self.patchy && len == CHUNK_SAMPLES {
+                gaps.push(SpeechGap {
+                    start_sample: 60 * RATE,
+                    end_sample: 66 * RATE,
+                });
+            }
             Ok(ChunkTranscript {
                 segments,
+                gaps,
+                // Half of every chunk is detected speech.
+                speech_samples: consumed_samples / 2,
                 consumed_samples,
             })
         })
@@ -328,6 +345,8 @@ fn stored(video_id: &str, state: TranscriptState, last_read_at: i64) -> YoutubeT
         transcribed_ms: 0,
         attempts: 1,
         segments: Vec::new(),
+        gaps: Vec::new(),
+        speech_ms: Some(0),
         model: None,
         error_code: None,
         error: None,
@@ -381,6 +400,7 @@ async fn speech_cut_by_a_chunk_boundary_is_transcribed_in_the_next_chunk() {
     let speech = Arc::new(Speech {
         calls: AtomicUsize::new(0),
         hold_back: true,
+        patchy: false,
         error: None,
     });
     let f = fixture_with(media(200, None), Some(speech), SideEffectMode::Live).await;
@@ -576,6 +596,7 @@ async fn a_speech_failure_fails_the_job_and_removes_the_audio() {
     let broken = Arc::new(Speech {
         calls: AtomicUsize::new(0),
         hold_back: false,
+        patchy: false,
         error: Some("no recognition result".into()),
     });
     let f = fixture_with(media(30, None), Some(broken), SideEffectMode::Live).await;
@@ -777,6 +798,127 @@ async fn reading_a_transcript_keeps_it_and_the_oldest_go_beyond_the_limit() {
     assert!(f.row("bulk-0002").await.is_some());
 }
 
+#[tokio::test(start_paused = true)]
+async fn what_the_recognizer_could_not_account_for_is_stored_and_reported() {
+    let patchy = Arc::new(Speech {
+        calls: AtomicUsize::new(0),
+        hold_back: false,
+        patchy: true,
+        error: None,
+    });
+    // The video claims 200 s; its audio runs 150 s.
+    let media = media(150, None);
+    media.info.lock().unwrap().duration_ms = Some(200_000);
+    let f = fixture_with(media, Some(patchy), SideEffectMode::Live).await;
+    f.transcripts.start(VIDEO, false).await.unwrap();
+    let row = finished(&f.transcripts, VIDEO).await;
+    assert_eq!(row.state, TranscriptState::Ready);
+    assert_eq!(row.transcribed_ms, 150_000);
+    assert_eq!(row.speech_ms, Some(75_000));
+    let gaps: Vec<(i64, i64)> = row.gaps.iter().map(|g| (g.start_ms, g.end_ms)).collect();
+    assert_eq!(gaps, vec![(60_000, 66_000)]);
+    assert!(row.segments[0].undetected);
+    assert!(!row.segments[1].undetected);
+
+    let tools = transcript_tools(&f.transcripts).unwrap();
+    let out = call(
+        &tool(&tools, "youtube_transcript_get"),
+        json!({"video": VIDEO}),
+    )
+    .await
+    .unwrap();
+    // The job is finished, and the result still says what is missing.
+    assert_eq!(out["complete"], json!(true));
+    let coverage = &out["transcript"]["coverage"];
+    assert_eq!(coverage["status"], json!("flagged"));
+    assert_eq!(coverage["audioSeconds"], json!(150));
+    assert_eq!(coverage["detectedSpeechSeconds"], json!(75));
+    assert_eq!(coverage["unrecognizedSpeechSeconds"], json!(6));
+    assert_eq!(coverage["undetectedTextSeconds"], json!(6));
+    assert_eq!(coverage["flagCount"], json!(4));
+    assert_eq!(
+        coverage["flags"],
+        json!([
+            {"startSeconds": 8, "endSeconds": 60, "kind": "no_speech_recognized"},
+            {"startSeconds": 60, "endSeconds": 66, "kind": "unrecognized_speech"},
+            {"startSeconds": 66, "endSeconds": 116, "kind": "no_speech_recognized"},
+            {"startSeconds": 150, "endSeconds": 200, "kind": "audio_ends_early"},
+        ])
+    );
+    assert_eq!(
+        out["text"],
+        json!(
+            "[0:05] (not detected as speech) chunk 1\n\
+             [0:08] (no speech recognized for 0:52)\n\
+             [1:00] (speech detected but not transcribed: 6 s)\n\
+             [1:06] (no speech recognized for 0:50)\n\
+             [1:56] tail 1\n\
+             [2:05] (not detected as speech) chunk 2\n\
+             [2:30] (the audio ends here, 50 s before the video's reported length)"
+        )
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn coverage_is_never_claimed_from_timestamps_alone() {
+    let f = fixture(30).await;
+    let tools = transcript_tools(&f.transcripts).unwrap();
+    let get = tool(&tools, "youtube_transcript_get");
+
+    // Text from start to end, nothing flagged: no known gaps, not "complete coverage".
+    let mut clean = stored(VIDEO, TranscriptState::Ready, TEST_EPOCH_MS);
+    clean.duration_ms = Some(20_000);
+    clean.transcribed_ms = 20_000;
+    clean.speech_ms = Some(18_000);
+    clean.segments = vec![TranscriptSegmentData {
+        start_ms: 500,
+        end_ms: 19_500,
+        text: "All of it.".into(),
+        undetected: false,
+    }];
+    f.insert(clean.clone()).await;
+    let out = call(&get, json!({"video": VIDEO})).await.unwrap();
+    assert_eq!(
+        out["transcript"]["coverage"]["status"],
+        json!("no_known_gaps")
+    );
+    assert_eq!(out["transcript"]["coverage"]["flags"], json!([]));
+
+    // The same text on a transcript made before coverage was recorded, where
+    // undetected speech was dropped silently: unknown.
+    let mut legacy = clean.clone();
+    legacy.speech_ms = None;
+    f.insert(legacy).await;
+    let out = call(&get, json!({"video": VIDEO})).await.unwrap();
+    assert_eq!(out["transcript"]["coverage"]["status"], json!("unknown"));
+    assert_eq!(
+        out["transcript"]["coverage"]["detectedSpeechSeconds"],
+        Value::Null
+    );
+
+    // The same text ending eleven seconds into nineteen: flagged.
+    let mut short = clean.clone();
+    short.duration_ms = Some(19_000);
+    short.transcribed_ms = 11_000;
+    short.segments[0].end_ms = 11_000;
+    f.insert(short).await;
+    let out = call(&get, json!({"video": VIDEO})).await.unwrap();
+    assert_eq!(out["transcript"]["coverage"]["status"], json!("flagged"));
+    assert_eq!(
+        out["transcript"]["coverage"]["flags"],
+        json!([{"startSeconds": 11, "endSeconds": 19, "kind": "audio_ends_early"}])
+    );
+
+    // A running job is partial whatever it has so far.
+    let mut running = clean;
+    running.state = TranscriptState::Transcribing;
+    running.finished_at = None;
+    f.insert(running).await;
+    let out = call(&get, json!({"video": VIDEO})).await.unwrap();
+    assert_eq!(out["transcript"]["coverage"]["status"], json!("partial"));
+    assert_eq!(out["complete"], json!(false));
+}
+
 fn tool(tools: &[McpTool], name: &str) -> McpTool {
     tools.iter().find(|t| t.meta.name == name).unwrap().clone()
 }
@@ -814,6 +956,7 @@ fn talk() -> YoutubeTranscriptData {
             start_ms: start * 1000,
             end_ms: end * 1000,
             text: (*text).to_owned(),
+            undetected: false,
         })
         .collect();
     row
@@ -915,7 +1058,10 @@ async fn the_start_tool_reports_progress_for_a_job_that_outlasts_the_wait() {
     )
     .await
     .unwrap();
-    assert_eq!(partial["text"], json!("[0:05] chunk 1\n[1:56] tail 1"));
+    assert_eq!(
+        partial["text"],
+        json!("[0:05] chunk 1\n[0:08] (no speech recognized for 1:48)\n[1:56] tail 1")
+    );
     assert_eq!(partial["complete"], json!(false));
     assert_eq!(partial["nextCursor"], json!(2));
     f.media.gate.as_ref().unwrap().add_permits(10);
@@ -946,7 +1092,10 @@ async fn the_get_tool_pages_by_cursor_and_slices_by_time() {
     let rest = call(&get, json!({"video": VIDEO, "cursor": 4}))
         .await
         .unwrap();
-    assert_eq!(rest["text"], json!("[1:01:40] Thanks for watching."));
+    assert_eq!(
+        rest["text"],
+        json!("[1:20] (no speech recognized for 1:00:20)\n[1:01:40] Thanks for watching.")
+    );
 
     let slice = call(
         &get,

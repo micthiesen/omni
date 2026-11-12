@@ -122,6 +122,7 @@ pub fn transcript_tools(transcripts: &Transcripts) -> Result<Vec<McpTool>, ToolM
                 } else {
                     text::page(
                         &row.segments,
+                        &text::flags(&row),
                         PageRequest {
                             cursor: 0,
                             start_ms: None,
@@ -154,6 +155,7 @@ pub fn transcript_tools(transcripts: &Transcripts) -> Result<Vec<McpTool>, ToolM
                 .map_err(|e| transcript_error(&e))?;
                 let page = text::page(
                     &row.segments,
+                    &text::flags(&row),
                     PageRequest {
                         cursor: i.cursor.unwrap_or(0) as usize,
                         start_ms: i.start_seconds.map(|s| i64::from(s) * 1000),

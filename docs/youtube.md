@@ -150,13 +150,20 @@ service (`crates/omni-youtube/src/transcripts/`).
    at 40 kbit/s or more when YouTube offers it, 1 GiB at most.
 3. `ffmpeg` decodes the file two minutes at a time to 16 kHz mono, and each
    chunk goes to the `SpeechTranscriber` port: the Parakeet TDT 0.6B v3 model
-   livestream intelligence already loads. Silero VAD finds the stretches of
-   speech, stretches less than 0.8 s apart are transcribed together (30 s at
-   most), and an utterance still being spoken at the end of a chunk is left
-   for the next chunk, so no sentence is cut at a chunk boundary.
-4. The segments (start, end, text) and the progress are stored after every
-   chunk. When the last chunk is stored the audio is deleted and the row
-   becomes `ready`.
+   livestream intelligence already loads. The recognizer is given every
+   sample. Silero VAD does not decide what is transcribed, only where the
+   audio is cut (`plan_windows`): in the middle of a pause, the widest one
+   8 to 20 s into a window when there is one, 30 s per recognizer call at
+   most. Speech still running at the end of a chunk is left for the next
+   chunk, so no sentence is cut at a chunk boundary.
+4. The segments (start, end, text), the coverage flags and the progress are
+   stored after every chunk. When the last chunk is stored the audio is
+   deleted and the row becomes `ready`.
+
+The first version transcribed only the stretches VAD marked as speech. On
+real audio that dropped words without a trace: the ending of a 19 s clip with
+wind noise (text stopped at 0:11) and the first words of a talk after its
+intro music. The recognizer alone hears both, so VAD no longer gates it.
 
 No new model, download or service is involved: the image already carries
 yt-dlp, ffmpeg and the speech models. The models are loaded only when
@@ -192,8 +199,8 @@ starts no job.
 
 Every result carries `transcript`: `status` (`queued`, `downloading`,
 `transcribing`, `ready`, `failed`), title, channel, duration,
-`transcribedSeconds`, `percent`, size, `expiresAt`, the model, and `error`
-(`code`, `message`) for a failed job.
+`transcribedSeconds`, `percent`, size, `expiresAt`, the model, `error`
+(`code`, `message`) for a failed job, and `coverage`.
 
 | `error.code` | Meaning |
 | --- | --- |
@@ -209,6 +216,32 @@ Every result carries `transcript`: `status` (`queued`, `downloading`,
 
 Failures log at WARN and never alert: most are properties of the video.
 
+### Coverage
+
+A finished job means all the audio went through the recognizer, not that
+every word was heard, and timestamps alone cannot show the difference. So
+each transcript reports what it cannot account for, in `transcript.coverage`
+and as parenthesized note lines in the text where each stretch falls:
+
+| Flag | Meaning | Line in the text |
+| --- | --- | --- |
+| `unrecognized_speech` | VAD found a second or more of speech and the recognizer returned no text: words are missing | `(speech detected but not transcribed: 6 s)` |
+| `no_speech_recognized` | 30 s or more without text: silence or music, or speech both missed | `(no speech recognized for 0:52)` |
+| `audio_ends_early` | The audio is over 5 s shorter than the video's reported length | `(the audio ends here, 50 s before the video's reported length)` |
+
+Text the recognizer heard where VAD found no speech is kept and marked
+`(not detected as speech)`; it is less reliable (it can be words over music,
+or an artifact) and counted in `undetectedTextSeconds`.
+
+`coverage.status` is `partial` while the job runs, `flagged` when any flag
+exists, `no_known_gaps` otherwise, and `unknown` for a transcript made before
+coverage was recorded (`force` redoes it). `no_known_gaps` is deliberately
+not "complete": speech that both VAD and the recognizer missed leaves no
+trace shorter than 30 s. `detectedSpeechSeconds`,
+`unrecognizedSpeechSeconds` and `audioSeconds` give the totals, and `flags`
+lists the first 25 stretches. `complete` on a read or search means only that
+the job has finished.
+
 ### Limits and lifecycle
 
 - One job downloads and transcribes at a time; five may be queued or running
@@ -217,7 +250,14 @@ Failures log at WARN and never alert: most are properties of the video.
 - **Audio** exists only while its job runs. It is deleted when the job ends,
   whether it finished, failed or was stopped by a shutdown, and before the row
   reports `ready`. The work directory is emptied at boot before the server
-  accepts requests, and the daily cleanup removes any directory without a job. At most one audio file of
+  accepts requests, and the daily cleanup removes any directory without a job.
+- **Processes.** yt-dlp and ffmpeg run in their own process group
+  (`run_group`), and a timeout, an output overflow or a dropped job
+  (shutdown) kills the whole group. Killing only the spawned process is not
+  enough: the production yt-dlp is a self-extracting binary whose download
+  runs in a child process, which kept writing after its parent was killed
+  (measured in the container: 601,089 bytes grew to 846,845 in 6 s; with the
+  group killed, no process was left and the size stayed at 355,325). At most one audio file of
   1 GiB is on disk.
 - **A shutdown** (every deploy) stops the job and leaves its row active. The
   `youtube-transcripts` boot step resumes it after the server is up: the audio
@@ -232,8 +272,10 @@ Failures log at WARN and never alert: most are properties of the video.
 ### What the text is
 
 Machine transcription of the audio track: names, numbers and technical terms
-can be wrong, there are no speaker labels, and music or silence produces
-nothing. Parakeet v3 covers English and other European languages; it does not
+can be wrong and there are no speaker labels. Words at a window cut can be
+repeated or dropped when there was no pause to cut in. Segment times are
+those of the detected speech inside a window (up to 30 s), so a timestamp
+can precede a given word by that much. Parakeet v3 covers English and other European languages; it does not
 translate. The words are whatever the video says, so the tool descriptions
 mark them as untrusted third-party content that is never to be followed as
 instructions; the title and channel are the uploader's too, and are stored

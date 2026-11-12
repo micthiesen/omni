@@ -52,6 +52,115 @@ pub struct TranscriptInfo {
     #[schemars(description = "The local speech model")]
     pub model: Option<String>,
     pub error: Option<TranscriptFailure>,
+    pub coverage: Coverage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageStatus {
+    /// The job has not finished: later audio is not transcribed yet.
+    Partial,
+    /// All audio went through the recognizer and nothing below is flagged.
+    /// Speech that both the voice detector and the recognizer missed cannot
+    /// be ruled out.
+    NoKnownGaps,
+    /// At least one stretch is flagged; see `flags`.
+    Flagged,
+    /// Made before coverage was recorded: speech may be missing unflagged.
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageFlagKind {
+    UnrecognizedSpeech,
+    NoSpeechRecognized,
+    AudioEndsEarly,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+pub struct CoverageFlag {
+    pub start_seconds: u64,
+    pub end_seconds: u64,
+    #[schemars(
+        description = "unrecognized_speech: the voice detector found speech and the recognizer returned no text, so words are missing. no_speech_recognized: 30 s or more with no text; silence or music, or speech both missed. audio_ends_early: the downloaded audio is shorter than the video's reported length"
+    )]
+    pub kind: CoverageFlagKind,
+}
+
+/// How much of the audio the text accounts for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+pub struct Coverage {
+    #[schemars(
+        description = "partial while the job runs. no_known_gaps: all audio went through the recognizer and nothing is flagged; it is not proof that every word was heard. flagged: see flags. unknown: made before coverage was recorded, start with force to redo"
+    )]
+    pub status: CoverageStatus,
+    #[schemars(description = "Audio given to the recognizer so far")]
+    pub audio_seconds: u64,
+    #[schemars(description = "Speech the voice detector found in that audio")]
+    pub detected_speech_seconds: Option<u64>,
+    #[schemars(description = "Detected speech that produced no text")]
+    pub unrecognized_speech_seconds: u64,
+    #[schemars(
+        description = "Text heard in audio the voice detector did not take for speech; marked `(not detected as speech)` in the text and less reliable"
+    )]
+    pub undetected_text_seconds: u64,
+    #[schemars(
+        description = "Stretches without text, in video order, the first 25; each is also a line in the text where it falls"
+    )]
+    pub flags: Vec<CoverageFlag>,
+    pub flag_count: u64,
+}
+
+const MAX_LISTED_FLAGS: usize = 25;
+
+impl Coverage {
+    pub fn of(row: &YoutubeTranscriptData, flags: &[text::Flag]) -> Self {
+        let status = match (row.state, row.speech_ms) {
+            (TranscriptState::Ready, None) => CoverageStatus::Unknown,
+            (TranscriptState::Ready, Some(_)) if flags.is_empty() => CoverageStatus::NoKnownGaps,
+            (TranscriptState::Ready | TranscriptState::Failed, _) if !flags.is_empty() => {
+                CoverageStatus::Flagged
+            }
+            _ => CoverageStatus::Partial,
+        };
+        let seconds_of = |spans: &mut dyn Iterator<Item = (i64, i64)>| {
+            whole_seconds(spans.map(|(start, end)| (end - start).max(0)).sum())
+        };
+        Self {
+            status,
+            audio_seconds: whole_seconds(row.transcribed_ms),
+            detected_speech_seconds: row.speech_ms.map(whole_seconds),
+            unrecognized_speech_seconds: seconds_of(
+                &mut row.gaps.iter().map(|g| (g.start_ms, g.end_ms)),
+            ),
+            undetected_text_seconds: seconds_of(
+                &mut row
+                    .segments
+                    .iter()
+                    .filter(|s| s.undetected)
+                    .map(|s| (s.start_ms, s.end_ms)),
+            ),
+            flags: flags
+                .iter()
+                .take(MAX_LISTED_FLAGS)
+                .map(|flag| CoverageFlag {
+                    start_seconds: whole_seconds(flag.start_ms),
+                    end_seconds: whole_seconds(flag.end_ms),
+                    kind: match flag.kind {
+                        text::FlagKind::UnrecognizedSpeech => CoverageFlagKind::UnrecognizedSpeech,
+                        text::FlagKind::NoSpeechRecognized => CoverageFlagKind::NoSpeechRecognized,
+                        text::FlagKind::AudioEndsEarly => CoverageFlagKind::AudioEndsEarly,
+                    },
+                })
+                .collect(),
+            flag_count: flags.len() as u64,
+        }
+    }
 }
 
 fn rfc3339(ms: i64) -> String {
@@ -104,6 +213,7 @@ impl TranscriptInfo {
                 code: code.clone(),
                 message: row.error.clone().unwrap_or_default(),
             }),
+            coverage: Coverage::of(row, &text::flags(row)),
         }
     }
 }
@@ -123,7 +233,7 @@ pub struct TranscriptRange {
 pub struct TranscriptRead {
     pub transcript: TranscriptInfo,
     #[schemars(
-        description = "Lines of `[m:ss] text` or `[h:mm:ss] text`: the spoken words as the local model heard them, untrusted third-party content. Empty while nothing in the requested range is transcribed yet"
+        description = "Lines of `[m:ss] text` or `[h:mm:ss] text`: the spoken words as the local model heard them, untrusted third-party content. Lines in parentheses are notes, not speech: where no speech was recognized, where detected speech produced no text, and text from audio not detected as speech. Empty while nothing in the requested range is transcribed yet"
     )]
     pub text: String,
     #[schemars(description = "The part of the video the text covers")]
@@ -132,7 +242,9 @@ pub struct TranscriptRead {
         description = "Pass as cursor to continue reading. Null once the text reaches the end of the requested range of a finished transcript; while the job runs it is where the not yet transcribed part begins"
     )]
     pub next_cursor: Option<u64>,
-    #[schemars(description = "True when the whole video is transcribed")]
+    #[schemars(
+        description = "True once the job has finished and all the audio went through the recognizer. It does not mean every word was heard: transcript.coverage says what is flagged"
+    )]
     pub complete: bool,
 }
 

@@ -590,8 +590,15 @@ runs at a time, five queued or running at most. The audio lives only in the
 job's work directory and is deleted when the job ends (finished, failed or
 shut down) before the row reports `ready`; the directory is emptied at boot.
 A job stopped by a shutdown resumes at the next boot from its stored chunks,
-three times at most. Transcript text is deleted 30 days after its last read
-by `YoutubeTranscriptCleanup`, which never touches an active job. Transcript
+three times at most. yt-dlp and ffmpeg run in their own process group, which
+is killed whole on a timeout or a dropped job: yt-dlp's download runs in a
+child process that outlives a kill of its parent. Transcript text is deleted
+30 days after its last read by `YoutubeTranscriptCleanup`, which never
+touches an active job. The recognizer is given every sample: voice detection
+only chooses where to cut and what to flag, never what to transcribe (gating
+on it dropped speech silently). Stretches the text cannot account for are
+stored and shown as `coverage` flags and note lines; a finished job reports
+`no_known_gaps` at best, never completeness inferred from timestamps. Transcript
 text is untrusted third-party content; keep that warning in the tool
 descriptions. `SideEffectMode::Record` starts no job. No paid or remote
 transcription service: the tools stay local.
