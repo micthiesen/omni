@@ -707,21 +707,23 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
         for window in plan.windows {
             chunk.speech_samples += window.speech_samples;
             let text = self.transcribe(&samples[window.start..window.end])?;
-            let heard = window.speech.unwrap_or(SpeechSpan {
-                start: window.start,
-                end: window.end,
-            });
             if !text.is_empty() {
+                // The text belongs to the whole window the recognizer was
+                // given. The detected speech inside it is no bound: the
+                // recognizer hears words the detector missed, and nothing
+                // here aligns words to time.
                 chunk.segments.push(SpeechSegment {
-                    start_sample: heard.start,
-                    end_sample: heard.end,
+                    start_sample: window.start,
+                    end_sample: window.end,
                     text,
                     detected: window.speech.is_some(),
                 });
-            } else if window.speech_samples >= MIN_GAP_SECONDS * SAMPLE_RATE as usize {
+            } else if let Some(speech) = window.speech
+                && window.speech_samples >= MIN_GAP_SECONDS * SAMPLE_RATE as usize
+            {
                 chunk.gaps.push(SpeechGap {
-                    start_sample: heard.start,
-                    end_sample: heard.end,
+                    start_sample: speech.start,
+                    end_sample: speech.end,
                 });
             }
         }

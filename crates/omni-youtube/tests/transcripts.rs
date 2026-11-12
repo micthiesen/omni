@@ -919,6 +919,117 @@ async fn coverage_is_never_claimed_from_timestamps_alone() {
     assert_eq!(out["complete"], json!(false));
 }
 
+/// The recognizer's chunk for the 19 s clip whose voice detector marked only
+/// the first eleven seconds: one window, all of the audio.
+struct NineteenSeconds;
+
+const ZOO: &str = "Alright, so here we are. They have really long trunks. And that's pretty much all there is to say.";
+
+impl SpeechTranscriber for NineteenSeconds {
+    fn model(&self) -> &'static str {
+        "fake-model"
+    }
+
+    fn transcribe_chunk(
+        &self,
+        samples: Arc<Vec<f32>>,
+        _last: bool,
+    ) -> BoxFuture<'_, Result<ChunkTranscript, PortError>> {
+        Box::pin(async move {
+            Ok(ChunkTranscript {
+                segments: vec![SpeechSegment {
+                    start_sample: 0,
+                    end_sample: samples.len(),
+                    text: ZOO.to_owned(),
+                    detected: true,
+                }],
+                gaps: Vec::new(),
+                speech_samples: 11 * RATE,
+                consumed_samples: samples.len(),
+            })
+        })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn words_after_the_detected_speech_are_inside_the_range_slices_and_search() {
+    let media = media(19, None);
+    let clock = test_clock(TEST_EPOCH_MS);
+    let shared: SharedClock = clock.clone();
+    let store = TestStore::new(shared.clone()).await;
+    let ports = Ports::default();
+    assert!(
+        ports
+            .set_speech_transcriber(Arc::new(NineteenSeconds))
+            .is_ok()
+    );
+    let work = tempfile::tempdir().unwrap();
+    let transcripts = Transcripts::new(TranscriptDeps {
+        store: store.store.clone(),
+        clock: shared,
+        ports,
+        media,
+        work_dir: work.path().to_owned(),
+        tracker: TaskTracker::new(),
+        shutdown: CancellationToken::new(),
+        mode: SideEffectMode::Live,
+    });
+    transcripts.start(VIDEO, false).await.unwrap();
+    let row = finished(&transcripts, VIDEO).await;
+    assert_eq!(row.state, TranscriptState::Ready);
+    // Eleven seconds of detected speech, nineteen of audio behind the text.
+    assert_eq!(row.speech_ms, Some(11_000));
+    assert_eq!(
+        (row.segments[0].start_ms, row.segments[0].end_ms),
+        (0, 19_000)
+    );
+
+    let tools = transcript_tools(&transcripts).unwrap();
+    let get = tool(&tools, "youtube_transcript_get");
+    let whole = call(&get, json!({"video": VIDEO})).await.unwrap();
+    assert_eq!(whole["range"], json!({"startSeconds": 0, "endSeconds": 19}));
+    assert_eq!(whole["text"], json!(format!("[0:00] {ZOO}")));
+    assert_eq!(
+        whole["transcript"]["coverage"]["detectedSpeechSeconds"],
+        json!(11)
+    );
+    assert_eq!(
+        whole["transcript"]["coverage"]["status"],
+        json!("no_known_gaps")
+    );
+
+    // A slice of the seconds the detector missed still returns the text.
+    let tail = call(
+        &get,
+        json!({"video": VIDEO, "startSeconds": 12, "endSeconds": 19}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(tail["text"], json!(format!("[0:00] {ZOO}")));
+    assert_eq!(tail["range"], json!({"startSeconds": 0, "endSeconds": 19}));
+    let last_second = call(&get, json!({"video": VIDEO, "startSeconds": 18}))
+        .await
+        .unwrap();
+    assert_eq!(last_second["text"], json!(format!("[0:00] {ZOO}")));
+    // Past the audio there is nothing.
+    let beyond = call(&get, json!({"video": VIDEO, "startSeconds": 19}))
+        .await
+        .unwrap();
+    assert_eq!(beyond["text"], json!(""));
+    assert_eq!(beyond["range"], Value::Null);
+
+    let search = tool(&tools, "youtube_transcript_search");
+    let found = call(
+        &search,
+        json!({"video": VIDEO, "query": "pretty much all there is to say"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(found["totalMatches"], json!(1));
+    assert_eq!(found["matches"][0]["exactPhrase"], json!(true));
+    assert_eq!(found["matches"][0]["startSeconds"], json!(0));
+}
+
 fn tool(tools: &[McpTool], name: &str) -> McpTool {
     tools.iter().find(|t| t.meta.name == name).unwrap().clone()
 }

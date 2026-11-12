@@ -170,8 +170,9 @@ pub trait LiveIntelligence: Send + Sync {
 /// Sample rate of the mono `f32` audio a [`SpeechTranscriber`] takes.
 pub const SPEECH_SAMPLE_RATE: u32 = 16_000;
 
-/// Recognized text of one stretch of a transcribed chunk, as sample offsets
-/// into it.
+/// Recognized text of one window of a transcribed chunk. The offsets are
+/// the audio the recognizer was given for it, in samples of the chunk: the
+/// text was spoken somewhere inside, and no finer timing exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpeechSegment {
     pub start_sample: usize,

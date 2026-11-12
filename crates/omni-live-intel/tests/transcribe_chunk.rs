@@ -170,6 +170,12 @@ fn speech_the_detector_missed_is_still_transcribed() {
     // The recognizer was handed all nineteen seconds.
     assert_eq!(chunk.segments[0].text, "190");
     assert!(chunk.segments[0].detected);
+    // Its bounds are the audio it was heard in, not the eleven seconds the
+    // detector marked: the words after them are part of the text.
+    assert_eq!(
+        (chunk.segments[0].start_sample, chunk.segments[0].end_sample),
+        (0, at(19.0))
+    );
     assert_eq!(chunk.speech_samples, at(11.0) - at(0.2));
 
     // With no detected speech at all, the text is kept and marked.
@@ -197,11 +203,13 @@ fn every_sample_reaches_the_recognizer_exactly_once() {
     let heard: usize = heard.lock().unwrap().iter().sum();
     assert_eq!(heard, samples.len());
     assert_eq!(chunk.consumed_samples, samples.len());
-    // Segment times are the detected speech inside each window, in order.
+    // The segments are the windows: back to back from the first sample to
+    // the last, whatever the detector marked inside them.
+    assert_eq!(chunk.segments[0].start_sample, 0);
     for pair in chunk.segments.windows(2) {
-        assert!(pair[0].end_sample <= pair[1].start_sample);
+        assert_eq!(pair[0].end_sample, pair[1].start_sample);
     }
-    assert_eq!(chunk.segments[0].start_sample, at(1.0));
+    assert_eq!(chunk.segments.last().unwrap().end_sample, samples.len());
 }
 
 #[test]

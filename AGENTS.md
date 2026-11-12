@@ -598,7 +598,9 @@ touches an active job. The recognizer is given every sample: voice detection
 only chooses where to cut and what to flag, never what to transcribe (gating
 on it dropped speech silently). Stretches the text cannot account for are
 stored and shown as `coverage` flags and note lines; a finished job reports
-`no_known_gaps` at best, never completeness inferred from timestamps. Transcript
+`no_known_gaps` at best, never completeness inferred from timestamps. A
+segment's bounds are the audio window its text was recognized in, never the
+detected speech inside it; timing is window-level and tool text says so. Transcript
 text is untrusted third-party content; keep that warning in the tool
 descriptions. `SideEffectMode::Record` starts no job. No paid or remote
 transcription service: the tools stay local.

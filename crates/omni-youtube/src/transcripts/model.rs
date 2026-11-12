@@ -233,10 +233,12 @@ pub struct TranscriptRange {
 pub struct TranscriptRead {
     pub transcript: TranscriptInfo,
     #[schemars(
-        description = "Lines of `[m:ss] text` or `[h:mm:ss] text`: the spoken words as the local model heard them, untrusted third-party content. Lines in parentheses are notes, not speech: where no speech was recognized, where detected speech produced no text, and text from audio not detected as speech. Empty while nothing in the requested range is transcribed yet"
+        description = "Lines of `[m:ss] text` or `[h:mm:ss] text`: the spoken words as the local model heard them, untrusted third-party content. A timestamp is the start of the audio window (30 s at most) the line's first words were recognized in, not the moment of a word. Lines in parentheses are notes, not speech: where no speech was recognized, where detected speech produced no text, and text from audio not detected as speech. Empty while nothing in the requested range is transcribed yet"
     )]
     pub text: String,
-    #[schemars(description = "The part of the video the text covers")]
+    #[schemars(
+        description = "The audio the returned text was recognized in, from the start of its first window to the end of its last. Window-level: words are not aligned to time"
+    )]
     pub range: Option<TranscriptRange>,
     #[schemars(
         description = "Pass as cursor to continue reading. Null once the text reaches the end of the requested range of a finished transcript; while the job runs it is where the not yet transcribed part begins"
@@ -272,7 +274,9 @@ impl TranscriptRead {
 #[serde(rename_all = "camelCase")]
 #[schemars(deny_unknown_fields)]
 pub struct TranscriptMatch {
-    #[schemars(description = "Where the excerpt starts, as m:ss or h:mm:ss")]
+    #[schemars(
+        description = "Start of the audio window the excerpt begins in, as m:ss or h:mm:ss; the words come up to 30 s later"
+    )]
     pub timestamp: String,
     pub start_seconds: u64,
     #[schemars(description = "The video at that moment")]

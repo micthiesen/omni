@@ -273,9 +273,16 @@ the job has finished.
 
 Machine transcription of the audio track: names, numbers and technical terms
 can be wrong and there are no speaker labels. Words at a window cut can be
-repeated or dropped when there was no pause to cut in. Segment times are
-those of the detected speech inside a window (up to 30 s), so a timestamp
-can precede a given word by that much. Parakeet v3 covers English and other European languages; it does not
+repeated or dropped when there was no pause to cut in.
+
+Timing is window-level. A segment's start and end are the audio window the
+recognizer was given for its text (30 s at most, usually 8 to 20 s), not the
+stretch VAD marked inside it: VAD misses speech, and bounding a segment by it
+made a clip whose text ran to 0:19 report a range ending at 0:11 and hid its
+last words from a time slice. So a timestamp is the start of a window and the
+words come up to 30 s later; `range`, a `startSeconds`/`endSeconds` slice and
+a search match's link all work on whole windows, and a slice returns every
+window that overlaps it. Nothing aligns words to time, and no tool claims to. Parakeet v3 covers English and other European languages; it does not
 translate. The words are whatever the video says, so the tool descriptions
 mark them as untrusted third-party content that is never to be followed as
 instructions; the title and channel are the uploader's too, and are stored

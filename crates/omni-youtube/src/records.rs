@@ -155,7 +155,9 @@ impl TranscriptState {
     }
 }
 
-/// One stretch of recognized text, in milliseconds from the start of the video.
+/// The text recognized in one window of audio. `start_ms` and `end_ms` are
+/// that window, from the start of the video: all the audio the recognizer was
+/// given for the text, not the stretch a voice detector marked inside it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegmentData {
