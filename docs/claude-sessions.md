@@ -107,7 +107,12 @@ Targets are Rakazo bot webhooks (`https://<rakazo>/api/v1/bots/<botId>/webhook`)
 the request carries `Authorization: Bearer <token>` and
 `Idempotency-Key: omni-claude-turn:<sessionId>:<revision>`, which Rakazo uses to
 collapse repeated deliveries into one run. The URL may resolve to the LAN, since
-targets come from configuration rather than callers; it must be HTTPS. A 2xx is
+targets come from configuration rather than callers; it must be HTTPS. An
+optional `"connect": "<host>"` makes Omni connect to that host (resolved per
+request) while TLS and `Host` keep the URL's host. Production uses
+`"connect": "npm.compose_default"`: Nginx Proxy Manager admits Rakazo only from
+the LAN and the `compose_default` network, and Omni's default route to the LAN
+address leaves through `compose_agent-integrations`, which NPM refuses with 403. A 2xx is
 delivered (or `ignored` when Rakazo answers that no webhook routine is active);
 a timeout, network failure, 408, 425, 429 or 5xx is retried after 30 seconds,
 doubling to 30 minutes, at most 8 attempts; any other answer fails at once.

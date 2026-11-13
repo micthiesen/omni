@@ -221,6 +221,7 @@ fn targets() -> ClaudeNotifyTargets {
         ClaudeNotifyTarget {
             url: url::Url::parse(CHIEF_URL).unwrap(),
             token: "chief-webhook-key-0123456789".to_owned(),
+            connect: None,
         },
     )]))
 }

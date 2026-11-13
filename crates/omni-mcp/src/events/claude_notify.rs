@@ -16,7 +16,7 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use omni_config::{ClaudeNotifyTarget, ClaudeNotifyTargets};
 use omni_core::clock::SharedClock;
-use omni_http::{HttpClient, HttpError, Method, RedirectRule, SideEffectMode};
+use omni_http::{HttpClient, HttpConfig, HttpError, Method, RedirectRule, SideEffectMode};
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps, EntityWrite, UpsertOpts};
 use omni_store::{Store, StoreError};
@@ -213,8 +213,15 @@ impl NotifyTransport for LiveNotifyTransport {
                     ignored: false,
                 });
             }
-            let response = self
-                .client
+            let pinned;
+            let client = match &target.connect {
+                None => &self.client,
+                Some(connect) => {
+                    pinned = pinned_client(target, connect).await?;
+                    &pinned
+                }
+            };
+            let response = client
                 .request(Method::POST, target.url.clone())
                 .redirect(RedirectRule::None)
                 .timeout(REQUEST_TIMEOUT)
@@ -238,6 +245,29 @@ impl NotifyTransport for LiveNotifyTransport {
             })
         })
     }
+}
+
+/// A client that reaches `target`'s URL host at `connect`, resolved now so a
+/// recreated proxy container's new address is picked up.
+async fn pinned_client(
+    target: &ClaudeNotifyTarget,
+    connect: &str,
+) -> Result<HttpClient, NotifyTransportError> {
+    let host = target.url.host_str().unwrap_or_default();
+    let port = target.url.port_or_known_default().unwrap_or(443);
+    let addr = tokio::net::lookup_host((connect, port))
+        .await
+        .ok()
+        .and_then(|mut addrs| addrs.next())
+        .ok_or_else(|| {
+            tracing::info!(target: LOG, connect = %connect, "Notify target connect host did not resolve");
+            NotifyTransportError::Network
+        })?;
+    let config = HttpConfig {
+        connect_timeout: Some(REQUEST_TIMEOUT),
+        offline: false,
+    };
+    HttpClient::pinned(&config, host, addr).map_err(|_| NotifyTransportError::Network)
 }
 
 /// How one attempt ended.

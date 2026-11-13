@@ -117,6 +117,26 @@ impl HttpClient {
         })
     }
 
+    /// A client that connects to `addr` for `host` instead of resolving it,
+    /// while TLS and the Host header still use `host` (like curl's
+    /// `--resolve`). The port in `addr` is ignored: the URL's port applies.
+    pub fn pinned(
+        cfg: &HttpConfig,
+        host: &str,
+        addr: std::net::SocketAddr,
+    ) -> Result<Self, HttpError> {
+        let inner = client_builder(cfg)
+            .resolve(host, addr)
+            .build()
+            .map_err(|e| HttpError::Network(error_chain(&e)))?;
+        Ok(Self {
+            public: inner.clone(),
+            public_loopback: inner.clone(),
+            inner,
+            overrides: Arc::new(HttpOverrides::default()),
+        })
+    }
+
     /// Applies test base-URL rewrites to every request built afterwards.
     pub fn with_overrides(self, o: HttpOverrides) -> Self {
         Self {

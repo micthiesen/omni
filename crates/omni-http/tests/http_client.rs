@@ -326,3 +326,32 @@ async fn offline_clients_refuse_dns_and_overrides_reach_the_mock() {
         .unwrap();
     assert_eq!(rewritten.status.as_u16(), 200);
 }
+
+#[tokio::test]
+async fn a_pinned_client_connects_to_the_given_address_and_keeps_the_host() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/hook"))
+        .and(wiremock::matchers::header(
+            "host",
+            format!("pinned.invalid:{}", server.address().port()).as_str(),
+        ))
+        .respond_with(ResponseTemplate::new(202))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client =
+        HttpClient::pinned(&HttpConfig::default(), "pinned.invalid", *server.address()).unwrap();
+    let url = Url::parse(&format!(
+        "http://pinned.invalid:{}/hook",
+        server.address().port()
+    ))
+    .unwrap();
+    let response = client
+        .request(Method::POST, url)
+        .timeout(Duration::from_secs(5))
+        .send_bounded(1024)
+        .await
+        .unwrap();
+    assert_eq!(response.status.as_u16(), 202);
+}

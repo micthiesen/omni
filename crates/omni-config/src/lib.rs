@@ -113,6 +113,10 @@ impl fmt::Debug for WhiskerCredentials {
 pub struct ClaudeNotifyTarget {
     pub url: url::Url,
     pub token: String,
+    /// Connect to this host (resolved per request) instead of the URL's,
+    /// keeping the URL's host for TLS and `Host`: reaches a LAN reverse proxy
+    /// over a chosen Docker network, such as `npm` on the shared network.
+    pub connect: Option<String>,
 }
 
 impl fmt::Debug for ClaudeNotifyTarget {
@@ -136,6 +140,16 @@ pub fn is_notify_target_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
+/// A host name or IP address without port, path or credentials.
+fn is_connect_host(host: &str) -> bool {
+    host.parse::<std::net::IpAddr>().is_ok()
+        || (!host.is_empty()
+            && host.len() <= 253
+            && host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')))
+}
+
 impl ClaudeNotifyTargets {
     const KEY: &'static str = "CLAUDE_NOTIFY_TARGETS";
 
@@ -145,6 +159,8 @@ impl ClaudeNotifyTargets {
         struct RawTarget {
             url: String,
             token: String,
+            #[serde(default)]
+            connect: Option<String>,
         }
         // The decode error is dropped: serde quotes the offending value, which may be a token.
         let decoded: BTreeMap<String, RawTarget> = serde_json::from_str(raw).map_err(|_| {
@@ -182,11 +198,22 @@ impl ClaudeNotifyTargets {
                     format!("target {name}: token must be at least 16 characters without spaces"),
                 ));
             }
+            let connect = match target.connect {
+                None => None,
+                Some(host) if is_connect_host(&host) => Some(host),
+                Some(_) => {
+                    return Err(invalid(
+                        Self::KEY,
+                        format!("target {name}: connect must be a bare host name or IP address"),
+                    ));
+                }
+            };
             targets.insert(
                 name,
                 ClaudeNotifyTarget {
                     url,
                     token: target.token,
+                    connect,
                 },
             );
         }
@@ -1340,6 +1367,12 @@ mod tests {
         let chief = &targets.0["chief"];
         assert_eq!(chief.url.host_str(), Some("rakazo.example"));
         assert_eq!(chief.token, token);
+        assert_eq!(chief.connect, None);
+        let pinned = ClaudeNotifyTargets::parse(&format!(
+            r#"{{"chief": {{"url": "https://rakazo.example/hook", "token": "{token}", "connect": "npm"}}}}"#
+        ))
+        .unwrap();
+        assert_eq!(pinned.0["chief"].connect.as_deref(), Some("npm"));
         assert!(!format!("{targets:?}").contains(token));
 
         for bad in [
@@ -1348,6 +1381,8 @@ mod tests {
             r#"{"chief": {"url": "https://u:p@a.example/hook", "token": "0123456789abcdef"}}"#,
             r#"{"chief": {"url": "https://a.example/hook", "token": "short"}}"#,
             r#"{"chief": {"url": "https://a.example/hook"}}"#,
+            r#"{"chief": {"url": "https://a.example/hook", "token": "0123456789abcdef", "connect": "npm:443"}}"#,
+            r#"{"chief": {"url": "https://a.example/hook", "token": "0123456789abcdef", "connect": "a/b"}}"#,
             r#"["chief"]"#,
         ] {
             let error = ClaudeNotifyTargets::parse(bad).unwrap_err().to_string();
