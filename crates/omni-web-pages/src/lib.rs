@@ -12,7 +12,7 @@
 //! | [`FeedbackPage`] | `/feedback/(recommendations\|podcasts)/:id` | `kind`, `id` |
 //! | [`PodsPage`] | `/pods` | none |
 //! | [`PodsDetailPage`] | `/pods/:id` | `id` |
-//! | [`DeliveriesPage`], [`CalendarPage`] | `/deliveries` (`?tracking=`), `/calendar` (`?day=`) | none |
+//! | [`CalendarPage`] | `/calendar` (`?day=`) | none |
 //! | [`StreamerConfigPage`] | `/live/streamers` | none |
 //! | [`StylistPage`] | `/stylist` (`?ns=` picks a namespace) | none |
 //! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
@@ -24,7 +24,6 @@
 pub mod calendar;
 mod claude;
 mod common;
-pub mod deliveries;
 mod feedback;
 mod gateway;
 mod mcp;
@@ -42,7 +41,6 @@ mod taste_brain;
 
 pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_status};
 pub use claude::ClaudePage;
-pub use deliveries::{DeliveriesPage, DeliveriesTile, ParcelCacheFacts, use_parcels};
 pub use feedback::{FeedbackKind, FeedbackPage};
 pub use gateway::GatewayPage;
 pub use mcp::McpPage;

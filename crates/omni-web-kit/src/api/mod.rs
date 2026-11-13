@@ -26,7 +26,6 @@ use omni_api::media::{
     RecommendationFeedback, RecommendationResponse, RecommendationsResponse, RunResponse,
     TasteProfileResponse,
 };
-use omni_api::parcels::{PARCELS, ParcelsResponse};
 use omni_api::pets::PetHealthResponse;
 use omni_api::podcasts::{
     PodcastFeedback, PodcastRecommendationResponse, PodcastRecommendationsResponse,
@@ -145,15 +144,10 @@ pub async fn run_task_request(
     post(&format!("/api/tasks/{}/run", enc(name)), NO_BODY).await
 }
 
-// ----- personal: pets, parcels, calendar -----
+// ----- personal: pets, calendar -----
 
 pub async fn fetch_pet_health() -> Result<PetHealthResponse, ApiClientError> {
     get("/api/pets/health").await
-}
-
-/// Omni's cached Parcel read; never calls Parcel.
-pub async fn fetch_parcels() -> Result<ParcelsResponse, ApiClientError> {
-    get(PARCELS).await
 }
 
 pub async fn fetch_calendar_status() -> Result<CalendarStatusResponse, ApiClientError> {

@@ -77,36 +77,6 @@ final class WidgetSnapshotTests: XCTestCase {
         try writeSheet(sheet, name: "sheet-on-air")
     }
 
-    func testRenderDeliveries() throws {
-        let families: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge]
-        let states: [(String, DeliveriesEntry)] = [
-            ("many", .fixture(WidgetFixtures.deliveries())),
-            ("one", .fixture(WidgetFixtures.deliveriesOne())),
-            ("none", .fixture(WidgetFixtures.deliveriesNone())),
-            ("stale", .fixture(WidgetFixtures.deliveries(), stale: true)),
-            ("unconfigured", .fixture(WidgetFixtures.deliveriesUnconfigured())),
-        ]
-        var sheet: [(String, AnyView, CGSize)] = []
-        for (name, entry) in states {
-            for family in families {
-                for mode in [Mode.full, .accented] where mode == .full || name == "many" {
-                    let view = framed(DeliveriesView(entry: entry, family: family), family: family, mode: mode)
-                    let label = "deliveries-\(family.omniName)-\(name)-\(mode.rawValue)"
-                    try write(view, size: Self.size(family), name: label)
-                    sheet.append((label, AnyView(view), Self.size(family)))
-                }
-            }
-            if ["many", "none"].contains(name) {
-                let view = framed(DeliveriesView(entry: entry, family: .accessoryRectangular),
-                                  family: .accessoryRectangular, mode: .vibrant)
-                let label = "deliveries-accessoryRectangular-\(name)-vibrant"
-                try write(view, size: Self.size(.accessoryRectangular), name: label)
-                sheet.append((label, AnyView(view), Self.size(.accessoryRectangular)))
-            }
-        }
-        try writeSheet(sheet, name: "sheet-deliveries")
-    }
-
     // MARK: Rendering
 
     /// Recreates what WidgetKit adds around the view: the container background, the

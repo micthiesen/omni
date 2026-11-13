@@ -13,14 +13,11 @@ use std::time::Duration;
 
 use futures::future::join_all;
 use omni_api::ios::{
-    ApnsEnvironment, DeliveriesWidgetResponse, IOS_CONTROL_SLOT_COUNT, IosDiagnostics,
-    LiveSlotState, OnAirResponse,
+    ApnsEnvironment, IOS_CONTROL_SLOT_COUNT, IosDiagnostics, LiveSlotState, OnAirResponse,
 };
-use omni_api::parcels::ParcelsResponse;
 use omni_core::clock::SharedClock;
 use omni_live::Roster;
 use omni_live::error::LiveError;
-use omni_runtime::ports::Ports;
 use omni_store::Store;
 
 use crate::apns::{ApnsPush, ApnsPushResult, ApnsSender};
@@ -33,7 +30,7 @@ use crate::persistence::{
     replace_device_registrations,
 };
 use crate::slots::{build_live_control_slots, live_control_slot_hash};
-use crate::widgets::{build_on_air, deliveries_widget, on_air_hash};
+use crate::widgets::{build_on_air, on_air_hash};
 
 const LOG: &str = "IOSControls";
 const RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -47,8 +44,6 @@ pub enum IosControlError {
     Status(#[from] LiveError),
     #[error(transparent)]
     Registrations(#[from] RegistrationStoreError),
-    #[error("cached deliveries unavailable: {0}")]
-    Deliveries(String),
 }
 
 /// The permanent-failure key prefix of a device's widget push token.
@@ -74,7 +69,6 @@ pub struct IosControlService {
     home_url: String,
     clock: SharedClock,
     apns: Option<Arc<dyn ApnsSender>>,
-    ports: Option<Ports>,
     permanent_failures: Mutex<HashSet<String>>,
     last_reconciled_at: Mutex<Option<i64>>,
 }
@@ -93,17 +87,9 @@ impl IosControlService {
             home_url: home_url.into(),
             clock,
             apns,
-            ports: None,
             permanent_failures: Mutex::default(),
             last_reconciled_at: Mutex::default(),
         }
-    }
-
-    /// Reads the cached deliveries through `ports` (set later in wiring).
-    #[must_use]
-    pub fn with_ports(mut self, ports: Ports) -> Self {
-        self.ports = Some(ports);
-        self
     }
 
     pub fn apns_enabled(&self) -> bool {
@@ -199,21 +185,6 @@ impl IosControlService {
             }
         };
         Ok(build_on_air(&self.store, &streamers, &avatars, self.clock.now_ms()).await?)
-    }
-
-    /// The Deliveries widget timeline from the cached Parcel read.
-    pub async fn deliveries(&self) -> Result<DeliveriesWidgetResponse, IosControlError> {
-        let now = self.clock.now_ms();
-        let Some(source) = self.ports.as_ref().and_then(Ports::deliveries_source) else {
-            return Ok(deliveries_widget(None, now));
-        };
-        let value = source
-            .deliveries()
-            .await
-            .map_err(|e| IosControlError::Deliveries(e.to_string()))?;
-        let cached: ParcelsResponse = serde_json::from_value(value)
-            .map_err(|e| IosControlError::Deliveries(e.to_string()))?;
-        Ok(deliveries_widget(Some(cached), now))
     }
 
     /// Pushes `widgets` to every widget push token whose On Air hash changed.

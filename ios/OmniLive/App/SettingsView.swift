@@ -171,7 +171,7 @@ struct SettingsView: View {
 
     private var widgetsSection: some View {
         Section("Widgets and controls") {
-            Text("Add On Air and Deliveries from the Home Screen or Lock Screen widget gallery. Tapping a stream opens it in its app.")
+            Text("Add On Air from the Home Screen or Lock Screen widget gallery. Tapping a stream opens it in its app.")
             Text("For Control Center, add Omni Live Stream up to four times and set each copy to Live Slot 1, 2, 3, or 4. Open this app after changing controls so their push tokens sync.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)

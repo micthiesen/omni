@@ -279,7 +279,7 @@ and no sub-tab strip (`SectionNav` is removed).
 | **On air** *(from C)* | Header links to `/live`; below it one row per live streamer: platform tick, name, `read-s` viewer count updated in place. The row is the Watch target (see Watch targets, section 12); a chevron at its end links to `/streamers/:id`. When nobody is live: "Nobody live" in `--text-3`. | live count in `--live` |
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
-| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
+| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
 | **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
@@ -342,7 +342,7 @@ The active tab gets a Signal 2 px top tick and `--text`; inactive tabs are
 | Keys | Action |
 |---|---|
 | ⌘K / Ctrl-K, `/` | Palette (or focus the page filter when one exists) |
-| `g` then `h` `l` `m` `p` `e` `a` `v` `o` `c` `d` | Home, Live, Media, Podcasts, Email, Calendar, Deliveries, Operations, Costs, Data |
+| `g` then `h` `l` `m` `p` `e` `a` `o` `c` `d` | Home, Live, Media, Podcasts, Email, Calendar, Operations, Costs, Data |
 | `j` / `k`, Enter | Move row focus in the page's primary table, open or inspect |
 | `[` | Collapse or expand the rail |
 | Esc | Close palette, sheet, inspector or modal |
@@ -392,7 +392,7 @@ modifier, replacing every `format!("prefix-{}")` tone class.
 | **Toast** | one global region in the shell, bottom-right (above the tab bar on phone) | Status shape plus one line; 4 s; `role="status"`, fault uses `role="alert"` and stays until dismissed. Replaces per-page `use_toast` instances (the API can stay, backed by a shell context). |
 | **Tooltip** | chart tooltip (`.chart-tooltip`) and hint tooltip | `--overlay`, `--e-2`, value line `read-s` in `--text`, context line `small` in `--text-3`. |
 | **Skeleton** | text line, readout, poster, row | `--raised` block with a 1.4 s shimmer; geometry matches the final layout. |
-| **EmptyState** | glyph tile, one sentence, one action; `compact` (one line in a panel); `title` (page-level empty and setup states) | e.g. "Paste an article URL to make your first episode". With `title`, the 40 px glyph tile sits left of an h3 heading and the sentence, top-aligned with the heading, inside an unpadded Panel; the page title stays the plain page name ("Deliveries") so the heading is not repeated. |
+| **EmptyState** | glyph tile, one sentence, one action; `compact` (one line in a panel); `title` (page-level empty and setup states) | e.g. "Paste an article URL to make your first episode". With `title`, the 40 px glyph tile sits left of an h3 heading and the sentence, top-aligned with the heading, inside an unpadded Panel; the page title stays the plain page name so the heading is not repeated. |
 | **ErrorState** | inline (in a panel) and page | What failed, why if known, Retry, and a link to Operations or setup. Never shows a raw API string as the headline (raw detail goes in a Disclosure). Defines the missing `.error-banner` look. |
 | **StatusSentence** | the hero of overview pages | `display` type; deviating words take their hue and link to the cause. Loading is a skeleton line, never "Checking in…". |
 | **Poster** | 2:3 (movies), 1:1 (podcasts, episodes) | Real TMDB or artwork with `loading="lazy"`, explicit aspect ratio, `--r-lg`, 1 px inner `--line`. Fallback: a typographic tile always sits under the image (shown while it loads, when there is none and after it fails): muted gradient from the title hash, a large dim initial (skipping The/A/An) and the title clamped to four lines; `captioned` drops the title when it is already shown beside the poster. Hover: lift 2 px and a `--line-strong` outline (no blurred color bloom; it costs too much on phones). In a poster rail the cards share three grid rows (art, title clamped to two lines, caption), so captions start on one line whatever each title's length. |
@@ -504,7 +504,7 @@ Any panel whose data is older than twice its refresh interval shows
   stale), RunStrip and TimeLane cells, the run log, the inspector and Home. The
   word "Degraded" always travels with the reason ("Skipped: …"); a degraded
   task joins the attention list.
-- **Task-backed reads**: panels fed by a task's cache (parcels, calendar, pet
+- **Task-backed reads**: panels fed by a task's cache (calendar, pet
   health) refetch when that task's `lastRun.finishedAt` changes in the live
   snapshot (`use_task_backed`), never on a timer of their own.
 
@@ -525,7 +525,7 @@ Loaders keep the previous value while refetching instead of resetting to `None`.
 
 The Home status sentence and the "Needs you" panel aggregate: failing, degraded and stale tasks, email failures, MCP errors in 24 h,
 an unconfigured or offline Claude host link when sessions are expected,
-deliveries that need you (pickup, failed attempt, exception), unhealthy calendar
+unhealthy calendar
 sync and active pet health alerts. Each item
 links to the filtered view (`/operations?filter=attention`, `/emails?outcome=failed`).
 
@@ -617,8 +617,7 @@ hairline dividers (2 columns on phone).
      chips (primary first) with last-live time.
    - Right: **Needs you / Nothing needs you** panel (check rows: task failures, stale tasks, email failures, each linking) and
      **Agenda** (today plus the next days, at most six lines, linking
-     `/calendar?day=`), **Deliveries** (only while something is active: status,
-     expected date with "Was due" in warn, cache age) and **Up next** (next
+     `/calendar?day=`) and **Up next** (next
      non-realtime runs with countdowns; realtime tasks collapsed to one line
      "Realtime checks ×4 · 15–30 s").
 3. **On deck**: four real posters (2:3) with title, year, one-line why, picked
@@ -873,22 +872,6 @@ usual week, and finding rows (warn diamond, message, notified time). Below:
 Segmented Weight / Visits and range Segmented (7D, 30D, 90D, All), line chart
 (Signal line, neutral area, brush per section 7), CSV export as a ghost button.
 Two pets side by side on wide.
-
-### `/deliveries`
-
-Status sentence ("1 delivery needs you.", "1 delivery is late.", "2 arriving
-today.", "Nothing on the way.") with a `body` count line that also counts late
-parcels, so it agrees with their warn "Was due" dates. Backoff and failed reads show a warn
-ErrorState above the list; unconfigured shows the setup EmptyState. Panel "On
-the way · N" with the cache age ("updated 12m ago") in the header: rows with a
-fixed-width Status (In transit idle ring, Out for delivery info, Ready for
-pickup warn, Failed attempt and Exception fault), description (or carrier
-package), mono carrier and tracking number, the latest event, the expected date
-on the right ("Was due Oct 8" in warn only while the parcel is still moving),
-and a Disclosure with the event rail plus a link to the source email
-(`/emails#inspect=`). Delivered parcels sit in a collapsed Disclosure.
-`?tracking=` highlights `#delivery-<number>`. The ParcelDeliveries inspector
-shows the cache facts.
 
 ### `/calendar`
 

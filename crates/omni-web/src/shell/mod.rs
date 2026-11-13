@@ -163,8 +163,8 @@ fn install_shortcuts(shell: ShellContext) {
 const SHORTCUTS: [(&str, &str); 8] = [
     ("⌘K  /", "Search and go anywhere"),
     (
-        "g then h l m p e a v o c d",
-        "Home, Live, Media, Podcasts, Email, Calendar, Deliveries, Operations, Costs, Data",
+        "g then h l m p e a o c d",
+        "Home, Live, Media, Podcasts, Email, Calendar, Operations, Costs, Data",
     ),
     ("j  k", "Move through the page's rows"),
     ("Enter", "Open or inspect the focused row"),

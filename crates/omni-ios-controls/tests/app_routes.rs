@@ -251,12 +251,4 @@ async fn serves_the_widget_timelines() {
         on_air,
         json!({"generatedAt": 0, "liveCount": 0, "totalViewers": 0, "live": [], "recent": []})
     );
-    let (status, deliveries, _) = send(
-        &h.router,
-        signed(&h.clock, "/api/ios-controls/widgets/deliveries", "GET", ""),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(deliveries["configured"], false);
-    assert_eq!(deliveries["deliveries"], json!([]));
 }

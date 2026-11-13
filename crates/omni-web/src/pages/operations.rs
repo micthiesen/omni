@@ -724,12 +724,6 @@ fn TaskInspector(
                         <omni_web_pages::CalendarSyncFacts/>
                     </section>
                 }.into_any()),
-                omni_web_pages::deliveries::PARCEL_TASK => Some(view! {
-                    <section class="inspector-section">
-                        <h3 class="label">"Parcel cache"</h3>
-                        <omni_web_pages::ParcelCacheFacts/>
-                    </section>
-                }.into_any()),
                 _ => None,
             }}
             <section class="inspector-section">

@@ -62,8 +62,10 @@ families cover:
   `docs/exa-podcasts.md`)
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
-- Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
-  `parcels_get`); these tools never call Parcel
+- adding one delivery to the Parcel app (`parcels_add`): validated tracking
+  number and carrier code, deduplicated against the email pipeline's
+  submissions, and limited to 15 of Parcel's 20 daily adds so email keeps
+  headroom. Omni does not read delivery status back from Parcel
 - optional fixed-printer status and bounded PDF printing (public URL or inline bytes)
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
 - Amazon search and product pages read through a headless browser

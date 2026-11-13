@@ -5,8 +5,8 @@ use omni_web_kit::components::{ButtonLink, ButtonVariant, Glyph, Icon, IconSize}
 use omni_web_kit::live::provide_live_data;
 use omni_web_kit::router::{Link, provide_router};
 use omni_web_pages::{
-    CalendarPage, ClaudePage, DeliveriesPage, FeedbackPage, GatewayPage, McpPage, MediaDetailPage,
-    MediaPage, PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage, PodsPage, RemindersPage,
+    CalendarPage, ClaudePage, FeedbackPage, GatewayPage, McpPage, MediaDetailPage, MediaPage,
+    PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage, PodsPage, RemindersPage,
     StreamerConfigPage, StylistPage,
 };
 use wasm_bindgen::JsCast as _;
@@ -83,7 +83,6 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::Operations => view! { <OperationsPage/> }.into_any(),
         Route::Reminders => view! { <RemindersPage/> }.into_any(),
         Route::Pets => view! { <PetsPage/> }.into_any(),
-        Route::Deliveries => view! { <DeliveriesPage/> }.into_any(),
         Route::Calendar => view! { <CalendarPage/> }.into_any(),
         Route::Stylist => view! { <StylistPage/> }.into_any(),
         Route::Mcp => view! { <McpPage/> }.into_any(),

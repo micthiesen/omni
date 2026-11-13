@@ -85,8 +85,8 @@ pub fn all_entities(subsystems: &[Subsystem]) -> Vec<EntityDescriptor> {
     entities
 }
 
-/// Entities of removed features (briefings, workspaces). Their rows are
-/// deleted at boot; nothing reads them.
+/// Entities of removed features (briefings, workspaces, the Parcel delivery
+/// cache). Their rows are deleted at boot; nothing reads them.
 pub const RETIRED_ENTITIES: &[&str] = &[
     "briefing-history",
     "briefing-delivery",
@@ -98,6 +98,8 @@ pub const RETIRED_ENTITIES: &[&str] = &[
     "workspace-email-scope",
     "workspace-papercut",
     "workspace-notification",
+    "parcel-deliveries-snapshot",
+    "parcel-deliveries-read-state",
 ];
 
 /// Deletes retired entities, then `Entity.migrateAll()` and

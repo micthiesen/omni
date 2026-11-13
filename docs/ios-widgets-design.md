@@ -11,7 +11,7 @@ decisions. Setup and Control Center are in `docs/ios-app.md`.
 | Target | Bundle | Sources | Role |
 |---|---|---|---|
 | `OmniLive` (app) | `com.micthiesen.OmniLive` | `Shared`, `SharedControls`, `DesignKit`, `App` | Web shell, settings sheet, APNs registration, notification routing, `omni://` links |
-| `OmniLiveControls` (WidgetKit) | `.controls` | `Shared`, `SharedControls`, `DesignKit`, `Controls`, `Widgets` | Live Slot control, On Air and Deliveries widgets, `WidgetPushHandler` |
+| `OmniLiveControls` (WidgetKit) | `.controls` | `Shared`, `SharedControls`, `DesignKit`, `Controls`, `Widgets` | Live Slot control, On Air widget, `WidgetPushHandler` |
 | `OmniNotificationService` | `.notification-service` | `Shared`, `NotificationService` | Sender avatars, action category, widget reloads |
 | `OmniLiveTests` | | `Tests` | Contract and policy unit tests (hosted by the app) |
 | `OmniWidgetSnapshotTests` | | `Shared`, `DesignKit`, `Widgets`, `SnapshotTests` | Hostless; renders every widget family to PNG |
@@ -43,7 +43,7 @@ too. iOS 26.0 is the deployment target (WidgetKit push needs it).
 `omni://open?u=<url>&a=<app url>` (`OmniDeepLink`) is the widget URL for
 single-target families. Values are escaped with the strict RFC 3986 unreserved
 set so embedded `&`, `?` and `#` survive. `OmniRoute.decide` loads URLs on the
-Omni host in the web view (Deliveries opens `/deliveries`); anything else goes to
+Omni host in the web view; anything else goes to
 `UIApplication.open`, trying the app-scheme URL first (`twitch://...`) and the
 https universal link if that fails, and an in-app Safari sheet if iOS refuses
 both. Only `twitch`, `youtube`, `vnd.youtube` and `kick` app schemes are accepted
@@ -89,19 +89,17 @@ custom scheme has a handler.
 ## Widgets
 
 **On Air** (`com.micthiesen.OmniLive.on-air`): small, medium, large, extra
-large, circular, rectangular, inline. **Deliveries**
-(`com.micthiesen.OmniLive.deliveries`): small, medium, large, rectangular.
+large, circular, rectangular, inline.
 
 - Timeline: one entry; On Air reloads after 15 min while anyone is live, else
-  30 min; Deliveries after 30 min (out for delivery or pickup), 1 h (active)
-  or 3 h. Widget pushes and `omni.refreshWidgets` reload sooner. Uptime is
+  30 min. Widget pushes and `omni.refreshWidgets` reload sooner. Uptime is
   `Text(.timer)`, so it ticks without reloads. Relevance is 1 with a primary
   streamer live.
 - The last good payload is cached in the App Group; a failed fetch shows it with
-  a warn diamond and "as of 14:05" once it is older than 15 min (Deliveries: 2 h),
-  and drops it past 3 h (Deliveries: 24 h) so old live data never looks current.
+  a warn diamond and "as of 14:05" once it is older than 15 min,
+  and drops it past 3 h so old live data never looks current.
   With no copy at all the widget says what is wrong ("Connect Omni",
-  "Omni is out of reach", "Parcel isn't set up"). It is never blank.
+  "Omni is out of reach"). It is never blank.
 - Avatars: only as many as the family draws (4, 3, 6, 8, 1), three
   downloads at a time. Each URL is downloaded once and cached as a 288 px
   source; every family derives its 3x-point-size thumbnail from that file. The ~30 MB extension budget
@@ -122,11 +120,6 @@ large, circular, rectangular, inline. **Deliveries**
 - Platform color fills only the small platform glyph (YouTube `#ff0033`, Twitch
   `#a970ff`, Kick `#53fc18`). Missing avatars become monograms on a muted
   gradient from the id hash, with a faint tier edge.
-- Deliveries: a four-pip journey meter (info received, in transit, out for
-  delivery or pickup, delivered), a fault square or warn diamond for parcels that
-  need attention, and the status word in its tone. Expected dates read "Today",
-  "Tomorrow", "Thu", "Wed – Fri", or "Was due Oct 10" in warn ("Late" on
-  the Lock Screen).
 - Accented (tinted) Home Screen: the system removes the container; avatars use
   `.desaturated`, and the ring, dot, LIVE and journey glyphs are
   `widgetAccentable`. Lock Screen families are monochrome text with an
@@ -151,7 +144,7 @@ scripts/ios-live/test.sh        # unit + snapshot tests on iPhone 17 Pro and iPa
 ```
 
 Snapshots land in `/tmp/omni-widget-snapshots` (one PNG per family, state and
-mode, plus `sheet-on-air.png` and `sheet-deliveries.png`). Accented and Lock
+mode, plus `sheet-on-air.png`). Accented and Lock
 Screen renders there are approximations, made by desaturating and tinting.
 
 In Debug builds, `simctl launch <device> com.micthiesen.OmniLive -OmniOpenURL

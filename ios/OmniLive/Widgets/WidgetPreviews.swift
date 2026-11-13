@@ -16,14 +16,6 @@ private let onAirStates: [OnAirEntry] = [
     OnAirEntry(date: .now, snapshot: nil, fetchedAt: nil, isStale: false, avatars: [:], problem: .unreachable),
 ]
 
-private let deliveryStates: [DeliveriesEntry] = [
-    .fixture(WidgetFixtures.deliveries()),
-    .fixture(WidgetFixtures.deliveriesOne()),
-    .fixture(WidgetFixtures.deliveriesNone()),
-    .fixture(WidgetFixtures.deliveries(), stale: true),
-    .fixture(WidgetFixtures.deliveriesUnconfigured()),
-]
-
 #Preview("On Air small", as: .systemSmall) { OnAirWidget() } timeline: { for e in onAirStates { e } }
 #Preview("On Air medium", as: .systemMedium) { OnAirWidget() } timeline: { for e in onAirStates { e } }
 #Preview("On Air large", as: .systemLarge) { OnAirWidget() } timeline: { for e in onAirStates { e } }
@@ -31,10 +23,3 @@ private let deliveryStates: [DeliveriesEntry] = [
 #Preview("On Air circular", as: .accessoryCircular) { OnAirWidget() } timeline: { for e in onAirStates { e } }
 #Preview("On Air rectangular", as: .accessoryRectangular) { OnAirWidget() } timeline: { for e in onAirStates { e } }
 #Preview("On Air inline", as: .accessoryInline) { OnAirWidget() } timeline: { for e in onAirStates { e } }
-
-#Preview("Deliveries small", as: .systemSmall) { DeliveriesWidget() } timeline: { for e in deliveryStates { e } }
-#Preview("Deliveries medium", as: .systemMedium) { DeliveriesWidget() } timeline: { for e in deliveryStates { e } }
-#Preview("Deliveries large", as: .systemLarge) { DeliveriesWidget() } timeline: { for e in deliveryStates { e } }
-#Preview("Deliveries rectangular", as: .accessoryRectangular) { DeliveriesWidget() } timeline: {
-    for e in deliveryStates { e }
-}

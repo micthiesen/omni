@@ -24,7 +24,7 @@ use omni_web_kit::utils::js::now_ms;
 use omni_web_kit::utils::tasks::{
     Cadence, TaskHealth, cadence, format_next, next_run_ms, period_ms, task_health,
 };
-use omni_web_pages::{AgendaTile, DeliveriesTile, use_calendar_status, use_parcels};
+use omni_web_pages::{AgendaTile, use_calendar_status};
 
 use super::live::{
     LeadStage, LiveRow, LiveSort, live_list, on_air_meta, sort_options, use_live_order,
@@ -45,11 +45,10 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// Personal sources that can need you: deliveries waiting on a pickup or
-/// with a problem, a failing calendar sync, pets with a tripped health rule.
+/// Personal sources that can need you: a failing calendar sync, pets with a
+/// tripped health rule.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PersonalAttention {
-    pub deliveries: usize,
     pub calendar: bool,
     pub pets: usize,
 }
@@ -102,13 +101,6 @@ pub fn attention_items(
             "emails failed today",
             "/emails?outcome=failed",
             StatusKind::Fault,
-        ),
-        (
-            personal.deliveries,
-            "delivery needs you",
-            "deliveries need you",
-            "/deliveries",
-            StatusKind::Warn,
         ),
         (
             usize::from(personal.calendar),
@@ -511,7 +503,6 @@ pub fn HomePage() -> impl IntoView {
     let now = use_now(30_000);
     let emails = RwSignal::new(None::<Vec<EmailActivity>>);
     let email_error = RwSignal::new(None::<String>);
-    let parcels = use_parcels();
     let calendar = use_calendar_status();
     let pet_health = use_task_backed(omni_web_pages::pets::PET_TASK, api::fetch_pet_health);
     let newest_run = Memo::new(move |_| {
@@ -535,10 +526,6 @@ pub fn HomePage() -> impl IntoView {
         let now = now.get();
         let failures = emails.with(|e| e.as_deref().map_or(0, |e| email_failures(e, now)));
         let personal = PersonalAttention {
-            deliveries: parcels.data.with(|p| {
-                p.as_ref()
-                    .map_or(0, omni_web_pages::deliveries::attention_count)
-            }),
             calendar: calendar.data.with(|c| {
                 c.as_ref()
                     .is_some_and(|c| omni_web_pages::calendar::sync_needs_you(c, now))
@@ -612,7 +599,6 @@ pub fn HomePage() -> impl IntoView {
                     <div class="sticky-side">
                         <NeedsYou items=items.into() loading/>
                         <AgendaTile status=calendar/>
-                        <DeliveriesTile parcels/>
                         <UpNext/>
                     </div>
                 </div>
@@ -656,7 +642,6 @@ mod tests {
         assert_eq!(head, "2 things need you.");
         assert_eq!(line, "2 emails failed today; nobody on air.");
         let personal = PersonalAttention {
-            deliveries: 1,
             calendar: true,
             pets: 2,
         };
@@ -664,14 +649,7 @@ mod tests {
             .into_iter()
             .map(|i| i.label)
             .collect();
-        assert_eq!(
-            labels,
-            [
-                "1 delivery needs you",
-                "1 calendar sync failing",
-                "2 pet health alerts"
-            ]
-        );
+        assert_eq!(labels, ["1 calendar sync failing", "2 pet health alerts"]);
     }
 
     #[test]

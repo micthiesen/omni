@@ -16,6 +16,14 @@ pub enum SubmissionStatus {
     Rejected,
 }
 
+/// Who submitted a delivery; absent on email submissions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubmissionOrigin {
+    /// The `parcels_add` MCP tool (`emailId` is empty).
+    ParcelsAdd,
+}
+
 /// A submitted delivery (entity `parcel-submitted-delivery`, key `trackingNumber`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +38,8 @@ pub struct SubmittedDelivery {
     pub status: Option<SubmissionStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempts: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<SubmissionOrigin>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -43,9 +53,12 @@ impl Entity for SubmittedDelivery {
 }
 
 impl SubmittedDelivery {
-    /// Terminal (submitted, rejected or legacy) rows block resubmission.
+    /// Terminal (submitted, rejected or legacy) rows block resubmission. So
+    /// does a `parcels_add` reservation: it is in flight or its outcome was
+    /// lost, and an uncertain add is never resent, not even by a later email.
     pub fn is_terminal(&self) -> bool {
         self.status != Some(SubmissionStatus::Pending)
+            || self.origin == Some(SubmissionOrigin::ParcelsAdd)
     }
 }
 
@@ -128,6 +141,7 @@ pub async fn record(
                 email_id: attempt.email_id,
                 status: Some(status),
                 attempts,
+                origin: None,
                 extra,
             };
             tx.upsert(&row, UpsertOpts::default())?;
@@ -153,6 +167,7 @@ pub async fn reserve(
                 email_id: attempt.email_id,
                 status: Some(SubmissionStatus::Pending),
                 attempts: Some(prior.as_ref().and_then(|p| p.attempts).unwrap_or(0) + 1),
+                origin: None,
                 extra: prior.map(|p| p.extra).unwrap_or_default(),
             };
             tx.upsert(&row, UpsertOpts::default())?;

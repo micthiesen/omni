@@ -1676,32 +1676,21 @@
       "recommendedPolicy": "allow"
     },
     {
-      "name": "parcels_get",
-      "title": "Get a Parcel Delivery",
-      "description": "Read one delivery from Omni's cached Parcel data by tracking number (spaces and case ignored), with up to 30 carrier events, newest first. Also reports whether Omni submitted that tracking number from an email, even when the cache does not include it yet.",
+      "name": "parcels_add",
+      "title": "Add a Parcel Delivery",
+      "description": "Add one package to the owner's Parcel app (the iOS package tracker) so Parcel tracks it. Example: {\"trackingNumber\": \"1Z999AA10123456784\", \"carrier\": \"ups\", \"description\": \"Uniqlo order\"}. You must name the carrier with Parcel's code; Parcel cannot detect it. Omni already adds tracking numbers it finds in email, so check the result rather than retrying. Results: status \"accepted\" (Parcel added it), \"duplicate\" (Omni already submitted it, from email or this tool, or Parcel already has it; nothing changed), or \"error\" with errorKind: rate_limited (Parcel allows 20 adds per day for email and this tool together; this tool stops at 15 and reports retryAfter), rejected (Parcel refused the number or carrier; parcelMessage says why, e.g. an unknown number format), uncertain (no answer; Omni will not resend, check the app), in_progress, not_configured or carrier_list_unavailable. An unknown carrier code or a malformed tracking number is an input error that lists close carrier codes. Omni never resends a request on its own.",
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
+        "openWorldHint": true
       },
-      "sideEffects": [],
-      "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
-      "recommendedPolicy": "allow"
-    },
-    {
-      "name": "parcels_list",
-      "title": "List Parcel Deliveries",
-      "description": "List package deliveries tracked in the Parcel app with carrier, status, expected date and recent carrier events, plus the email Omni submitted each tracking number from. Data comes from Omni's cache, refreshed on a schedule (every 30 minutes while anything is active, every 3 hours otherwise); fetchedAt says how old it is and nothing here can force a refresh.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [],
-      "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
-      "recommendedPolicy": "allow"
+      "sideEffects": [
+        "Adds a delivery to the owner's Parcel account, optionally with a push notification",
+        "Uses one of Parcel's 20 daily add requests"
+      ],
+      "cost": "No monetary cost; one Parcel API request per call that passes validation and deduplication",
+      "recommendedPolicy": "require_approval"
     },
     {
       "name": "pets_read",

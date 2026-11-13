@@ -392,13 +392,6 @@ async fn on_air(State(state): State<IosRoutesState>) -> Response {
     }
 }
 
-async fn deliveries(State(state): State<IosRoutesState>) -> Response {
-    match state.service.deliveries().await {
-        Ok(deliveries) => no_store(axum::Json(deliveries).into_response()),
-        Err(error) => omni_server_kit::ApiError::internal(error).into_response(),
-    }
-}
-
 async fn not_found() -> Response {
     api_error(StatusCode::NOT_FOUND, "Not Found")
 }
@@ -414,7 +407,6 @@ pub fn router(state: IosRoutesState) -> Router {
         .route("/device", put(register_device))
         .route("/widget-push", put(register_widget_push))
         .route("/widgets/on-air", get(on_air))
-        .route("/widgets/deliveries", get(deliveries))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state);

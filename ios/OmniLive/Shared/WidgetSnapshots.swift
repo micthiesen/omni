@@ -3,13 +3,11 @@ import Foundation
 /// Widget kinds. The control kind lives in `OmniControlDefinition`.
 enum OmniWidgetKind {
     static let onAir = "com.micthiesen.OmniLive.on-air"
-    static let deliveries = "com.micthiesen.OmniLive.deliveries"
 
     /// Maps the server's short names (`omni.refreshWidgets`) to widget kinds.
     static func kind(forServerName name: String) -> String? {
         switch name {
         case "on-air": onAir
-        case "deliveries": deliveries
         default: nil
         }
     }
@@ -223,155 +221,4 @@ struct OnAirSnapshot: Codable, Equatable, Sendable {
         let liveIds = Set(live.map(\.id))
         return recent.filter { !liveIds.contains($0.id) }
     }
-}
-
-/// Parcel's status codes as the server names them (`ParcelDeliveryStatus`).
-enum DeliveryStatus: String, Codable, Sendable, CaseIterable {
-    case completed
-    case frozen
-    case inTransit = "in_transit"
-    case awaitingPickup = "awaiting_pickup"
-    case outForDelivery = "out_for_delivery"
-    case notFound = "not_found"
-    case failedAttempt = "failed_attempt"
-    case exception
-    case infoReceived = "info_received"
-    case unknown
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = DeliveryStatus(rawValue: raw) ?? .unknown
-    }
-
-    /// Journey position, 0...4, or nil for states that are not on the happy path.
-    var progressStep: Int? {
-        switch self {
-        case .infoReceived: 1
-        case .inTransit: 2
-        case .outForDelivery, .awaitingPickup: 3
-        case .completed: 4
-        case .frozen, .notFound, .failedAttempt, .exception, .unknown: nil
-        }
-    }
-
-    enum Tone: Sendable { case neutral, info, warn, fault, done }
-
-    /// Deviation tone, matching the web `/deliveries` page.
-    var tone: Tone {
-        switch self {
-        case .inTransit, .infoReceived, .unknown, .notFound: .neutral
-        case .outForDelivery: .info
-        case .awaitingPickup, .frozen: .warn
-        case .failedAttempt, .exception: .fault
-        case .completed: .done
-        }
-    }
-}
-
-struct Delivery: Codable, Equatable, Sendable, Identifiable {
-    let trackingNumber: String
-    let carrier: String?
-    let description: String
-    let status: DeliveryStatus
-    let statusLabel: String
-    let active: Bool
-    let expected: String?
-    let expectedEnd: String?
-    let lastEvent: String?
-    let lastEventAt: String?
-    let lastLocation: String?
-
-    var id: String { trackingNumber }
-
-    init(
-        trackingNumber: String,
-        carrier: String?,
-        description: String,
-        status: DeliveryStatus,
-        statusLabel: String,
-        active: Bool,
-        expected: String?,
-        expectedEnd: String?,
-        lastEvent: String?,
-        lastEventAt: String?,
-        lastLocation: String?
-    ) {
-        self.trackingNumber = trackingNumber
-        self.carrier = carrier
-        self.description = description
-        self.status = status
-        self.statusLabel = statusLabel
-        self.active = active
-        self.expected = expected
-        self.expectedEnd = expectedEnd
-        self.lastEvent = lastEvent
-        self.lastEventAt = lastEventAt
-        self.lastLocation = lastLocation
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case trackingNumber, carrier, description, status, statusLabel, active
-        case expected, expectedEnd, lastEvent, lastEventAt, lastLocation
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        trackingNumber = try c.decode(String.self, forKey: .trackingNumber)
-        carrier = try c.decodeIfPresent(String.self, forKey: .carrier)
-        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
-        status = try c.decodeIfPresent(DeliveryStatus.self, forKey: .status) ?? .unknown
-        statusLabel = try c.decodeIfPresent(String.self, forKey: .statusLabel) ?? "Unknown"
-        active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? (status != .completed)
-        expected = try c.decodeIfPresent(String.self, forKey: .expected)
-        expectedEnd = try c.decodeIfPresent(String.self, forKey: .expectedEnd)
-        lastEvent = try c.decodeIfPresent(String.self, forKey: .lastEvent)
-        lastEventAt = try c.decodeIfPresent(String.self, forKey: .lastEventAt)
-        lastLocation = try c.decodeIfPresent(String.self, forKey: .lastLocation)
-    }
-
-    /// The description, or the carrier and tracking number when it is empty.
-    var displayTitle: String {
-        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return [carrier, "package"].compactMap(\.self).joined(separator: " ")
-    }
-}
-
-struct DeliveriesSnapshot: Codable, Equatable, Sendable {
-    let generatedAt: Double
-    let configured: Bool
-    let fetchedAt: Double?
-    let activeCount: Int
-    let deliveries: [Delivery]
-
-    init(
-        generatedAt: Double,
-        configured: Bool,
-        fetchedAt: Double?,
-        activeCount: Int,
-        deliveries: [Delivery]
-    ) {
-        self.generatedAt = generatedAt
-        self.configured = configured
-        self.fetchedAt = fetchedAt
-        self.activeCount = activeCount
-        self.deliveries = deliveries
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case generatedAt, configured, fetchedAt, activeCount, deliveries
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        generatedAt = try c.decode(Double.self, forKey: .generatedAt)
-        configured = try c.decodeIfPresent(Bool.self, forKey: .configured) ?? true
-        fetchedAt = try c.decodeIfPresent(Double.self, forKey: .fetchedAt)
-        deliveries = try c.decodeIfPresent([Delivery].self, forKey: .deliveries) ?? []
-        activeCount = try c.decodeIfPresent(Int.self, forKey: .activeCount)
-            ?? deliveries.filter(\.active).count
-    }
-
-    var active: [Delivery] { deliveries.filter(\.active) }
-    var completed: [Delivery] { deliveries.filter { !$0.active } }
 }

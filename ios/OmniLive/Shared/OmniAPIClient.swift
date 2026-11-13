@@ -123,10 +123,6 @@ struct OmniAPIClient: Sendable {
         try await get("api/ios-controls/widgets/on-air")
     }
 
-    func deliveries() async throws -> DeliveriesSnapshot {
-        try await get("api/ios-controls/widgets/deliveries")
-    }
-
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let data = try await send("GET", path, body: nil, timeout: 8)
         return try JSONDecoder().decode(T.self, from: data)

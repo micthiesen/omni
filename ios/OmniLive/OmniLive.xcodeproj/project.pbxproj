@@ -32,8 +32,6 @@
 		3F18337D38A940B3516F44FE /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
 		40470D43AA8E54B4B072889C /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
 		47EB88983BB92A39F4665599 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325D5B07AB0128E4E19CE83 /* PushPayload.swift */; };
-		4C4DF66D2D0BC43D673B4EDE /* DeliveriesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67500FCC3338661C6D21291 /* DeliveriesViews.swift */; };
-		4DBF6E2C0359C71DD2181128 /* DeliveriesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */; };
 		536230DD69DD547C1E896307 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA380A91BBC51E36A1B0F371 /* NotificationService.swift */; };
 		53C7910D5D33164D81EC9CF8 /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
 		5732F7CED06111AF237B5A7E /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
@@ -67,7 +65,6 @@
 		B0E27BAF683F8D40A43EC027 /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
 		B5F209440AA1F21435F461C6 /* WidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 039E0E4874FBC435E42C8876 /* WidgetSnapshotTests.swift */; };
 		B71CDC721EB703B7E52D58F4 /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
-		B788BEAB68E2D07CCC9FEF9E /* DeliveriesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */; };
 		B86BA2F4D018DAA2B404F236 /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
 		BA571E05EE03191808E5D401 /* WebShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470D4CD4E1E3AF352487CCE1 /* WebShell.swift */; };
 		BC49104C21C97FF917A0D5DC /* ControlDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */; };
@@ -92,7 +89,6 @@
 		E61602A6AEAAA4F550A56245 /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
 		E73C09D2C15B298A27DDA68B /* OmniLiveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175444263FE47569E16ED7AA /* OmniLiveApp.swift */; };
 		EEF7EEE2FF2D8D165D982BC8 /* WidgetPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */; };
-		F55DFBABE0E018A7CAAC34F0 /* DeliveriesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67500FCC3338661C6D21291 /* DeliveriesViews.swift */; };
 		F773CEB1AEDEA29B28CBB941 /* OnAirViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BE527CBA3078F4F2B494DF /* OnAirViews.swift */; };
 		F9D4E66D2BF7A502CFE35B3F /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
 		FE3170650A5CFA3EDEF8EC4E /* OnAirViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BE527CBA3078F4F2B494DF /* OnAirViews.swift */; };
@@ -179,8 +175,6 @@
 		BD67D8D7BC66F749CFC0E3E7 /* LiveSlotStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSlotStateTests.swift; sourceTree = "<group>"; };
 		C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSlotResolution.swift; sourceTree = "<group>"; };
 		CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Geist-Variable.ttf"; sourceTree = "<group>"; };
-		D67500FCC3338661C6D21291 /* DeliveriesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveriesViews.swift; sourceTree = "<group>"; };
-		D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveriesWidget.swift; sourceTree = "<group>"; };
 		DC051F5412F2A5FD4E3EB0EF /* OmniLiveControls.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OmniLiveControls.entitlements; sourceTree = "<group>"; };
 		E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlDefinitions.swift; sourceTree = "<group>"; };
 		E18554EC2FE52486689B4DA2 /* OmniNotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OmniNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -194,8 +188,6 @@
 		002DFCD7A51D8388EC900F58 /* Widgets */ = {
 			isa = PBXGroup;
 			children = (
-				D67500FCC3338661C6D21291 /* DeliveriesViews.swift */,
-				D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */,
 				03BE527CBA3078F4F2B494DF /* OnAirViews.swift */,
 				09C11EE9F127BE981E2DACA8 /* OnAirWidget.swift */,
 				53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */,
@@ -596,8 +588,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				919C40EB9348C3F89BF9780B /* DeepLink.swift in Sources */,
-				4C4DF66D2D0BC43D673B4EDE /* DeliveriesViews.swift in Sources */,
-				4DBF6E2C0359C71DD2181128 /* DeliveriesWidget.swift in Sources */,
 				D3B604646B92B104502916A2 /* DeviceRegistration.swift in Sources */,
 				03970805F9037B6B44B10397 /* LiveSlotResolution.swift in Sources */,
 				60505688C9491547F5BC5EC1 /* LiveSlotState.swift in Sources */,
@@ -625,8 +615,6 @@
 				DC68C96A258570D0BE0F0266 /* ControlDefinitions.swift in Sources */,
 				39ABF75B974A7A34C9BA76AE /* ControlRegistrationSync.swift in Sources */,
 				224B425D3A762CA49D8E3DCB /* DeepLink.swift in Sources */,
-				F55DFBABE0E018A7CAAC34F0 /* DeliveriesViews.swift in Sources */,
-				B788BEAB68E2D07CCC9FEF9E /* DeliveriesWidget.swift in Sources */,
 				3F18337D38A940B3516F44FE /* DeviceRegistration.swift in Sources */,
 				FFCF12DC1BFC69FD3F8774E6 /* LiveSlotResolution.swift in Sources */,
 				5732F7CED06111AF237B5A7E /* LiveSlotState.swift in Sources */,

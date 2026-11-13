@@ -1,7 +1,7 @@
 //! The Omni iOS app backend: signed routes for the app and its extensions,
 //! the device registry and APNs alert route that `omni_alerts::Pushover`
-//! tries before Pushover, the four live control slots, the On Air and
-//! Deliveries widget timelines, and APNs `controls` and `widgets` pushes
+//! tries before Pushover, the four live control slots, the On Air widget
+//! timeline, and APNs `controls` and `widgets` pushes
 //! reconciled after every live-check tick. See `docs/ios-app.md`.
 
 pub mod alerts;
@@ -88,16 +88,13 @@ impl IosControls {
         if complete && auth_token.is_none() {
             tracing::warn!(target: LOG, "iOS control APNs pushes disabled: IOS_CONTROL_AUTH_TOKEN is not set");
         }
-        let service = Arc::new(
-            IosControlService::new(
-                ctx.store.clone(),
-                roster,
-                config.ios_control_home_url.clone(),
-                ctx.clock.clone(),
-                apns,
-            )
-            .with_ports(ctx.ports.clone()),
-        );
+        let service = Arc::new(IosControlService::new(
+            ctx.store.clone(),
+            roster,
+            config.ios_control_home_url.clone(),
+            ctx.clock.clone(),
+            apns,
+        ));
         Self::from_service(service, auth_token, ctx.clock.clone())
     }
 

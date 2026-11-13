@@ -122,63 +122,6 @@ enum WidgetFixtures {
         OnAirSnapshot(generatedAt: ms(now), liveCount: 0, totalViewers: 0, live: [], recent: [])
     }
 
-    // MARK: Deliveries
-
-    static func day(_ offset: Int, _ now: Date = Date(), hour: Int = 0) -> String {
-        let date = Calendar.current.date(byAdding: .day, value: offset, to: Calendar.current.startOfDay(for: now))!
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d %02d:00:00", c.year!, c.month!, c.day!, hour)
-    }
-
-    static func deliveries(_ now: Date = Date()) -> DeliveriesSnapshot {
-        let items = [
-            Delivery(trackingNumber: "1Z999AA10123456784", carrier: "UPS", description: "Keyboard",
-                     status: .outForDelivery, statusLabel: "Out for delivery", active: true,
-                     expected: day(0, now), expectedEnd: nil, lastEvent: "Out for delivery",
-                     lastEventAt: day(0, now, hour: 8), lastLocation: "Richmond, BC"),
-            Delivery(trackingNumber: "LX123456789CN", carrier: "Canada Post",
-                     description: "USB-C hub and the long braided cable set",
-                     status: .inTransit, statusLabel: "In transit", active: true,
-                     expected: day(2, now), expectedEnd: day(4, now), lastEvent: "Departed facility",
-                     lastEventAt: day(-1, now, hour: 21), lastLocation: "Mississauga, ON"),
-            Delivery(trackingNumber: "9400111899223197428490", carrier: "Purolator", description: "Cat food",
-                     status: .awaitingPickup, statusLabel: "Ready for pickup", active: true,
-                     expected: nil, expectedEnd: nil, lastEvent: "Available at Shoppers Drug Mart",
-                     lastEventAt: day(-1, now, hour: 15), lastLocation: "Vancouver, BC"),
-            Delivery(trackingNumber: "TBA301234567000", carrier: "Amazon", description: "Desk lamp",
-                     status: .exception, statusLabel: "Exception", active: true,
-                     expected: day(-2, now), expectedEnd: nil, lastEvent: "Address issue, contact carrier",
-                     lastEventAt: day(-1, now, hour: 11), lastLocation: nil),
-            Delivery(trackingNumber: "CP0001", carrier: "FedEx", description: "Monitor arm",
-                     status: .infoReceived, statusLabel: "Label created", active: true,
-                     expected: day(6, now), expectedEnd: nil, lastEvent: "Shipment information sent",
-                     lastEventAt: day(-1, now, hour: 9), lastLocation: nil),
-            Delivery(trackingNumber: "DONE1", carrier: "UPS", description: "Headphones",
-                     status: .completed, statusLabel: "Delivered", active: false,
-                     expected: day(-1, now), expectedEnd: nil, lastEvent: "Delivered, front door",
-                     lastEventAt: day(-1, now, hour: 14), lastLocation: "Vancouver, BC"),
-        ]
-        return DeliveriesSnapshot(generatedAt: ms(now), configured: true, fetchedAt: ms(now.addingTimeInterval(-720)),
-                                  activeCount: 5, deliveries: items)
-    }
-
-    static func deliveriesOne(_ now: Date = Date()) -> DeliveriesSnapshot {
-        let all = deliveries(now).deliveries
-        return DeliveriesSnapshot(generatedAt: ms(now), configured: true, fetchedAt: ms(now),
-                                  activeCount: 1, deliveries: [all[1], all[5]])
-    }
-
-    static func deliveriesNone(_ now: Date = Date()) -> DeliveriesSnapshot {
-        let all = deliveries(now).deliveries
-        return DeliveriesSnapshot(generatedAt: ms(now), configured: true, fetchedAt: ms(now),
-                                  activeCount: 0, deliveries: [all[5]])
-    }
-
-    static func deliveriesUnconfigured(_ now: Date = Date()) -> DeliveriesSnapshot {
-        DeliveriesSnapshot(generatedAt: ms(now), configured: false, fetchedAt: nil, activeCount: 0,
-                           deliveries: [])
-    }
-
     // MARK: Avatars
 
     /// Synthetic "photos": soft two-tone portraits with a distinct hue per id.

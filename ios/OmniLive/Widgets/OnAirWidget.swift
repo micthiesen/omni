@@ -154,7 +154,6 @@ enum OmniWidgetLinks {
     }
 
     static var livePage: URL { server.appending(path: "live") }
-    static var deliveriesPage: URL { server.appending(path: "deliveries") }
 
     /// The single-target URL for a streamer, forwarded by the app.
     static func open(_ streamer: OnAirStreamer) -> URL {

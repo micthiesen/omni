@@ -1,6 +1,6 @@
 //! The Omni iOS app's signed API under `/api/ios-controls`: live control
 //! slots, diagnostics, control, device and widget-push registrations, and the
-//! On Air and Deliveries widget timelines.
+//! On Air widget timeline.
 
 use serde::{Deserialize, Serialize};
 
@@ -152,37 +152,6 @@ pub struct OnAirResponse {
     pub recent: Vec<OnAirRecent>,
 }
 
-/// One parcel in the Deliveries widget.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WidgetDelivery {
-    pub tracking_number: String,
-    pub carrier: Option<String>,
-    pub description: String,
-    pub status: crate::parcels::ParcelDeliveryStatus,
-    pub status_label: String,
-    pub active: bool,
-    /// Parcel's expected date, verbatim.
-    pub expected: Option<String>,
-    pub expected_end: Option<String>,
-    pub last_event: Option<String>,
-    /// The carrier's event date text, verbatim.
-    pub last_event_at: Option<String>,
-    pub last_location: Option<String>,
-}
-
-/// `GET /api/ios-controls/widgets/deliveries`: Omni's cached Parcel read.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeliveriesWidgetResponse {
-    pub generated_at: Ms,
-    pub configured: bool,
-    pub fetched_at: Option<Ms>,
-    pub active_count: u32,
-    /// Active first, then up to 3 recently completed, at most 8.
-    pub deliveries: Vec<WidgetDelivery>,
-}
-
 /// One control in a registration request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -214,7 +183,6 @@ pub mod paths {
     pub const DEVICE: &str = "/api/ios-controls/device";
     pub const WIDGET_PUSH: &str = "/api/ios-controls/widget-push";
     pub const WIDGET_ON_AIR: &str = "/api/ios-controls/widgets/on-air";
-    pub const WIDGET_DELIVERIES: &str = "/api/ios-controls/widgets/deliveries";
 
     /// `GET /api/ios-controls/slots/:slot`.
     pub fn slot(slot: u8) -> String {

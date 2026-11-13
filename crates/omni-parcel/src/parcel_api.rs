@@ -1,6 +1,6 @@
-//! Parcel `add-delivery` submission.
-//! In `SideEffectMode::Record` nothing is sent: the payload is recorded and
-//! reported as accepted.
+//! Parcel `add-delivery` submission, shared by the email pipeline and
+//! `parcels_add`. In `SideEffectMode::Record` nothing is sent: the payload is
+//! recorded and reported as accepted.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,8 +8,11 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use omni_core::js::{json_stringify, json_stringify_pretty2, to_iso_string};
 use omni_http::{HttpClient, HttpError, Method, SideEffectMode, Url};
+use omni_store::Store;
+use serde::Deserialize;
 use serde_json::json;
 
+use crate::add_ledger;
 use crate::log_file::{LogFile, code_block};
 
 const LOG: &str = "Main:ParcelTracker";
@@ -38,6 +41,29 @@ pub fn should_try_next_candidate(result: SubmitResult) -> bool {
     }
 }
 
+/// What Parcel answered: the classified result, the HTTP status and Parcel's
+/// own `error_message`, when it sent one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AddResponse {
+    pub result: SubmitResult,
+    pub status: Option<u16>,
+    pub error_message: Option<String>,
+    /// `Retry-After` in milliseconds, on a 429.
+    pub retry_after_ms: Option<i64>,
+}
+
+/// Parcel's documented response body (`success` is always present;
+/// `error_message` only on errors).
+#[derive(Deserialize)]
+struct AddBody {
+    success: Option<bool>,
+    error_message: Option<String>,
+}
+
+fn decode_body(body: &[u8]) -> Option<AddBody> {
+    serde_json::from_slice(body).ok()
+}
+
 /// One submission.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubmitParams {
@@ -63,6 +89,8 @@ pub struct ParcelApi {
     url: Url,
     clock: omni_core::clock::SharedClock,
     recorded: Arc<Mutex<Vec<serde_json::Value>>>,
+    /// Where pipeline submissions are counted against Parcel's daily limit.
+    ledger: Option<Store>,
 }
 
 impl ParcelApi {
@@ -80,7 +108,24 @@ impl ParcelApi {
             url,
             clock,
             recorded: Arc::new(Mutex::new(Vec::new())),
+            ledger: None,
         })
+    }
+
+    /// Counts every pipeline submission in the add ledger (`add_ledger`),
+    /// so `parcels_add` leaves room for email under Parcel's daily limit.
+    #[must_use]
+    pub fn with_ledger(mut self, store: Store) -> Self {
+        self.ledger = Some(store);
+        self
+    }
+
+    pub fn mode(&self) -> SideEffectMode {
+        self.mode
+    }
+
+    pub fn clock(&self) -> &omni_core::clock::SharedClock {
+        &self.clock
     }
 
     /// Payloads recorded instead of sent (`SideEffectMode::Record`).
@@ -91,12 +136,25 @@ impl ParcelApi {
             .clone()
     }
 
-    async fn send(&self, params: &SubmitParams, rejection_log: Option<&LogFile>) -> SubmitResult {
+    /// One `parcels_add` request: like a pipeline submission, but a failure
+    /// is the caller's answer, so it logs at WARN and never alerts.
+    pub async fn add(&self, params: &SubmitParams, send_push_confirmation: bool) -> AddResponse {
+        self.send(params, send_push_confirmation, None, false).await
+    }
+
+    /// Exactly one `add-delivery` request; never retries.
+    async fn send(
+        &self,
+        params: &SubmitParams,
+        send_push_confirmation: bool,
+        rejection_log: Option<&LogFile>,
+        alert_on_failure: bool,
+    ) -> AddResponse {
         let payload = json!({
             "tracking_number": params.tracking_number,
             "carrier_code": params.carrier_code,
             "description": params.description,
-            "send_push_confirmation": true,
+            "send_push_confirmation": send_push_confirmation,
         });
         tracing::info!(target: LOG, "Submitting delivery: {}", json_stringify(&payload));
         if self.mode == SideEffectMode::Record {
@@ -110,7 +168,12 @@ impl ParcelApi {
                 params.tracking_number,
                 params.carrier_code
             );
-            return SubmitResult::Success;
+            return AddResponse {
+                result: SubmitResult::Success,
+                status: None,
+                error_message: None,
+                retry_after_ms: None,
+            };
         }
         let response = self
             .http
@@ -120,30 +183,70 @@ impl ParcelApi {
             .timeout(SUBMIT_TIMEOUT)
             .send_bounded(RESPONSE_LIMIT)
             .await;
-        let (status, body, message) = match response {
+        let (status, body, message, decoded, retry_after_ms) = match response {
             Ok(response) if response.status.is_success() => {
+                let status = response.status.as_u16();
                 tracing::info!(
                     target: LOG,
-                    "Submitted delivery: {} ({}) → {}",
+                    "Submitted delivery: {} ({}) → {status}",
                     params.tracking_number,
                     params.carrier_code,
-                    response.status.as_u16()
                 );
-                return SubmitResult::Success;
+                let decoded = decode_body(&response.body);
+                return AddResponse {
+                    result: SubmitResult::Success,
+                    status: Some(status),
+                    // A 2xx is success for the pipeline; a `success: false`
+                    // body keeps its message for `parcels_add`.
+                    error_message: decoded
+                        .filter(|body| body.success == Some(false))
+                        .map(|body| body.error_message.unwrap_or_default()),
+                    retry_after_ms: None,
+                };
             }
             Ok(response) => {
                 let status = response.status.as_u16();
+                let retry_after_ms = response
+                    .headers
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.trim().parse::<i64>().ok())
+                    .map(|secs| secs.saturating_mul(1000));
+                let decoded = decode_body(&response.body);
                 let body = String::from_utf8_lossy(&response.body).into_owned();
-                (Some(status), body, format!("Response code {status}"))
+                (
+                    Some(status),
+                    body,
+                    format!("Response code {status}"),
+                    decoded,
+                    retry_after_ms,
+                )
             }
-            Err(error) => (None, "no response body".to_owned(), error.to_string()),
+            Err(error) => (
+                None,
+                "no response body".to_owned(),
+                error.to_string(),
+                None,
+                None,
+            ),
         };
-        tracing::error!(
-            target: LOG,
-            detail = %format!("Parcel submission failed: {message}\nResponse: {body}"),
-            "Failed to submit delivery {}",
-            params.tracking_number
-        );
+        let error_message = decoded.and_then(|body| body.error_message);
+        let detail = format!("Parcel submission failed: {message}\nResponse: {body}");
+        if alert_on_failure {
+            tracing::error!(
+                target: LOG,
+                detail = %detail,
+                "Failed to submit delivery {}",
+                params.tracking_number
+            );
+        } else {
+            tracing::warn!(
+                target: LOG,
+                detail = %detail,
+                "Parcel did not add delivery {}",
+                params.tracking_number
+            );
+        }
         match status {
             Some(status) if (400..500).contains(&status) => {
                 if let Some(log) = rejection_log {
@@ -161,9 +264,19 @@ impl ParcelApi {
                     )
                     .await;
                 }
-                SubmitResult::Rejected { status }
+                AddResponse {
+                    result: SubmitResult::Rejected { status },
+                    status: Some(status),
+                    error_message,
+                    retry_after_ms,
+                }
             }
-            _ => SubmitResult::Error,
+            _ => AddResponse {
+                result: SubmitResult::Error,
+                status,
+                error_message,
+                retry_after_ms: None,
+            },
         }
     }
 }
@@ -174,7 +287,15 @@ impl ParcelSubmitter for ParcelApi {
         params: &'a SubmitParams,
         rejection_log: Option<&'a LogFile>,
     ) -> BoxFuture<'a, SubmitResult> {
-        Box::pin(self.send(params, rejection_log))
+        Box::pin(async move {
+            if self.mode == SideEffectMode::Live
+                && let Some(store) = &self.ledger
+                && let Err(error) = add_ledger::note(store, self.clock.now_ms()).await
+            {
+                tracing::warn!(target: LOG, "Could not count the Parcel add: {error}");
+            }
+            self.send(params, true, rejection_log, true).await.result
+        })
     }
 }
 

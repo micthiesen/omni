@@ -3,7 +3,7 @@
 # Omni
 
 Omni is a personal automation service. It watches livestreams, reads email,
-keeps the calendar and deliveries current, recommends films, shows and podcast
+keeps the calendar current, sends shipments to Parcel, recommends films, shows and podcast
 episodes, turns articles into a private podcast, and exposes all of it to agents
 through an authenticated MCP endpoint. It runs as one container on a home
 server, with a web dashboard and a companion iOS app.
@@ -24,7 +24,7 @@ speakers, writes rolling summaries, and flags viewer surges and notable guests.
 dropping messages, triages it with one shared model call, and routes it to
 pipelines: parcel tracking numbers go to Parcel, appointments and reservations
 become calendar events over CalDAV (merged, never clobbering manual edits).
-Delivery status is cached within Parcel's strict rate limits. Agents can search
+Agents can add a delivery to Parcel within its daily limit, search
 mail, draft and send from `michael@thiesen.dev`, and read and edit the primary
 calendar with durable idempotency.
 

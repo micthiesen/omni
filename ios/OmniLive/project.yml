@@ -54,8 +54,8 @@ targets:
         embed: true
       - target: OmniNotificationService
         embed: true
-  # WidgetKit extension: the Control Center control plus the On Air and
-  # Deliveries widgets and their WidgetKit push handler.
+  # WidgetKit extension: the Control Center control plus the On Air
+  # widget and its WidgetKit push handler.
   OmniLiveControls:
     type: app-extension
     platform: iOS

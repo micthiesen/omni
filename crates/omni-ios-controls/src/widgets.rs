@@ -1,12 +1,9 @@
-//! The On Air and Deliveries widget timelines and the On Air content hash
-//! that decides widget pushes.
+//! The On Air widget timeline and the On Air content hash that decides
+//! widget pushes.
 
 use std::collections::HashMap;
 
-use omni_api::ios::{
-    DeliveriesWidgetResponse, OnAirLive, OnAirRecent, OnAirResponse, WidgetDelivery,
-};
-use omni_api::parcels::ParcelsResponse;
+use omni_api::ios::{OnAirLive, OnAirRecent, OnAirResponse};
 use omni_api::streamers::StreamerTier;
 use omni_live::Streamer;
 use omni_live::deep_link::app_url;
@@ -21,10 +18,6 @@ use serde_json::{Value, json};
 pub const ON_AIR_LIVE_LIMIT: usize = 8;
 /// Recently ended primary streamers in the On Air empty state.
 pub const ON_AIR_RECENT_LIMIT: usize = 4;
-/// Entries in the Deliveries widget.
-pub const DELIVERIES_LIMIT: usize = 8;
-/// Completed deliveries shown after the active ones.
-pub const COMPLETED_LIMIT: usize = 3;
 
 /// The current session's intelligence headline from the raw
 /// `livestream-intelligence` document, if it was produced during this session.
@@ -129,48 +122,4 @@ pub fn on_air_hash(on_air: &OnAirResponse) -> String {
         })
         .collect();
     omni_core::digest::sha256_hex(omni_core::js::json_stringify(&Value::Array(state)))
-}
-
-/// The Deliveries timeline from the cached Parcel view (`None` when the
-/// parcel subsystem provides none).
-pub fn deliveries_widget(cached: Option<ParcelsResponse>, now: i64) -> DeliveriesWidgetResponse {
-    let Some(cached) = cached else {
-        return DeliveriesWidgetResponse {
-            generated_at: now,
-            configured: false,
-            fetched_at: None,
-            active_count: 0,
-            deliveries: Vec::new(),
-        };
-    };
-    let (active, completed): (Vec<_>, Vec<_>) =
-        cached.deliveries.into_iter().partition(|d| d.active);
-    let deliveries = active
-        .into_iter()
-        .chain(completed.into_iter().take(COMPLETED_LIMIT))
-        .take(DELIVERIES_LIMIT)
-        .map(|delivery| {
-            let last = delivery.events.first();
-            WidgetDelivery {
-                tracking_number: delivery.tracking_number.clone(),
-                carrier: delivery.carrier_name.clone(),
-                description: delivery.description.clone(),
-                status: delivery.status,
-                status_label: delivery.status.label().to_owned(),
-                active: delivery.active,
-                expected: delivery.expected.clone(),
-                expected_end: delivery.expected_end.clone(),
-                last_event: last.map(|e| e.description.clone()),
-                last_event_at: last.and_then(|e| e.date.clone()),
-                last_location: last.and_then(|e| e.location.clone()),
-            }
-        })
-        .collect();
-    DeliveriesWidgetResponse {
-        generated_at: now,
-        configured: cached.configured,
-        fetched_at: cached.fetched_at,
-        active_count: cached.active_count,
-        deliveries,
-    }
 }

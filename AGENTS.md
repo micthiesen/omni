@@ -158,7 +158,8 @@ change; reuse authorization already given in the conversation.
   copies, compose, email MCP reads.
 - `omni-email`: email dispatch, retry queue, watchdog, activity, triage, sender
   rules, feedback.
-- `omni-parcel`: Parcel email handler and the budgeted delivery-status cache.
+- `omni-parcel`: Parcel email handler, the `parcels_add` tool and the shared
+  add ledger.
 - `omni-calendar`: calendar email handler, CalDAV writes, and the primary
   calendar mirror, change feed and MCP tools.
 - `omni-contacts`: iCloud contacts over CardDAV: every address book, lossless
@@ -167,7 +168,7 @@ change; reuse authorization already given in the conversation.
 - `omni-live`: database streamer configuration (UI and MCP), aggregate streamer state, notifications, viewer
   metrics and records, DGG discovery, `LiveCheckTask`, cached streamer avatars (`StreamerAvatars`).
 - `omni-ios-controls`: the iOS app backend: signed routes, device registry,
-  APNs alert route, live control slots, On Air and Deliveries widgets.
+  APNs alert route, live control slots, On Air widget.
 - `omni-live-intel`: livestream audio capture, local speech and speaker models,
   viewer anomalies, Destiny presence, summaries, alerts.
 - `omni-presspods`: article retrieval, narration, speech, audio chain, storage,
@@ -205,7 +206,7 @@ change; reuse authorization already given in the conversation.
   shell and ops pages, shared kit, domain pages), built by trunk.
 - `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP snapshots.
 - `ios/OmniLive` (not a crate): the iOS/iPadOS app, its WidgetKit extension
-  (Live Slot control, On Air and Deliveries widgets) and notification service
+  (Live Slot control, On Air widget) and notification service
   extension, built from XcodeGen `project.yml`. See `docs/ios-app.md`; verify
   with `scripts/ios-live/typecheck.sh` and `scripts/ios-live/test.sh`.
 - `slate/` (not a crate): Omni Slate, the battery e-paper display hardware project
@@ -357,17 +358,22 @@ values; pre-write card text lives only in the private, 30-day
 through MCP. Data iOS keeps outside the vCard (Contact Posters) is not
 visible to CardDAV; never claim it is preserved or verified.
 
-### Parcel delivery status
+### Parcel adds
 
-Parcel's API limits are very low (about 20 reads per hour and 20 adds per day,
-failed requests included). Only the `ParcelDeliveries` task reads deliveries:
-every 30 minutes while anything is active or Omni submitted a number since the
-last read, every 3 hours otherwise. A durable budget (at most 4 attempts per
-rolling hour) is reserved before each request, a 429 pauses reads for at least
-an hour, and `SideEffectMode::Record` never reads. `GET /api/parcels`,
-`parcels_list` and `parcels_get` serve only the cache; never add a manual or
-on-demand refresh. The add path (`parcel_api.rs`) is separate and unchanged.
-See `crates/omni-parcel/src/deliveries/`.
+Omni only adds deliveries to Parcel; it never reads delivery status back (the
+cache, `GET /api/parcels`, the Deliveries page and widget, `parcels_list` and
+`parcels_get` were removed). Parcel allows 20 add requests per day, failed ones
+included, shared by the email pipeline and `parcels_add` through one
+`ParcelApi`. Both count each live request in the `parcel-add-ledger` row
+(`add_ledger.rs`); only `parcels_add` is gated, at 15 per rolling 24 hours, plus
+a pause after a 429, so email keeps headroom. `parcels_add` dedups against the
+`parcel-submitted-delivery` rows (case-insensitive, near-duplicates included),
+reserves `pending` in the same transaction as the ledger slot, confirms on
+acceptance or Parcel's "already added" answer, restores the previous row on a
+refusal so a later email can still submit the number, and leaves an uncertain
+outcome (no answer, 5xx, 408) `pending`; the pipeline treats such a row as
+submitted, so neither path resends it. Its refusals log at WARN, not ERROR. See
+`crates/omni-parcel/src/add.rs`.
 
 ### Notifications and runs
 

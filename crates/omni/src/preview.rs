@@ -450,47 +450,6 @@ pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
             "attempts": 1,
         }),
     ));
-    docs.push((
-        "parcel-deliveries-snapshot",
-        json!({
-            "key": "parcel",
-            "fetchedAt": now - 12 * MIN,
-            "deliveries": [
-                {
-                    "trackingNumber": "1Z999AA10123456784",
-                    "carrierCode": "ups",
-                    "carrierName": "UPS",
-                    "description": "Camera",
-                    "statusCode": 4,
-                    "expected": "2026-10-09 00:00:00",
-                    "events": [
-                        {"description": "Out for delivery", "date": "2026-10-09 08:12:00", "location": "Springfield ST"},
-                        {"description": "Arrived at facility", "date": "2026-10-08 21:40:00", "location": "Shelbyville ST"},
-                    ],
-                    "eventCount": 2,
-                },
-                {
-                    "trackingNumber": "LP00123456789012CN",
-                    "carrierCode": "aliex",
-                    "carrierName": "AliExpress",
-                    "description": "Cable kit",
-                    "statusCode": 0,
-                    "events": [{"description": "Delivered", "date": "07.10.2026 15:44"}],
-                    "eventCount": 1,
-                },
-            ],
-        }),
-    ));
-    docs.push((
-        "parcel-deliveries-read-state",
-        json!({
-            "key": "parcel",
-            "attempts": [now - 12 * MIN],
-            "lastAttemptAt": now - 12 * MIN,
-            "lastSuccessAt": now - 12 * MIN,
-            "lastStatus": 200,
-        }),
-    ));
     docs
 }
 

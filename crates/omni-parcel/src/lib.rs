@@ -1,11 +1,12 @@
 //! Parcel tracker email pipeline: candidate filter, tracking-number
 //! extraction, carrier validation against the live Parcel list, durable
 //! dedup with reservation before submission, and the delivery-forget route.
-//! Also the budgeted, cached delivery-status read (`deliveries`) behind
-//! `GET /api/parcels` and the `parcels_list` / `parcels_get` MCP tools.
+//! Also the `parcels_add` MCP tool (`add`), which submits through the same
+//! client and dedup rows. Omni never reads deliveries back from Parcel.
 
+pub mod add;
+pub mod add_ledger;
 pub mod carriers;
-pub mod deliveries;
 pub mod error;
 pub mod extraction;
 pub mod filter;
@@ -29,10 +30,9 @@ use omni_server_kit::ApiError;
 use omni_store::Store;
 use omni_store::entity::EntityDescriptor;
 
+use crate::add::ParcelAdder;
+use crate::add_ledger::AddLedger;
 use crate::carriers::carrier_map::CarrierDirectory;
-use crate::deliveries::api::DeliveriesClient;
-use crate::deliveries::state::{DeliveriesSnapshot, ReadState};
-use crate::deliveries::task::{DeliveriesTask, DeliveriesTaskDeps};
 use crate::extraction::ModelExtractor;
 use crate::parcel_api::ParcelApi;
 use crate::persistence::SubmittedDelivery;
@@ -46,16 +46,13 @@ pub enum ParcelSetupError {
     #[error(transparent)]
     Http(#[from] omni_http::HttpError),
     #[error(transparent)]
-    Schedule(#[from] omni_tasks::InvalidScheduleError),
-    #[error(transparent)]
     ToolMeta(#[from] omni_mcp_kit::ToolMetaError),
 }
 
 pub fn entities() -> Vec<EntityDescriptor> {
     vec![
         EntityDescriptor::of::<SubmittedDelivery>(),
-        EntityDescriptor::of::<DeliveriesSnapshot>(),
-        EntityDescriptor::of::<ReadState>(),
+        EntityDescriptor::of::<AddLedger>(),
     ]
 }
 
@@ -105,11 +102,15 @@ fn api_key(ctx: &AppContext) -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
-/// The cached deliveries for the iOS widget (`DeliveriesSource` port).
-pub fn deliveries_source(ctx: &AppContext) -> Arc<dyn omni_runtime::ports::DeliveriesSource> {
-    Arc::new(deliveries::CachedDeliveries::new(
-        ctx.store.clone(),
-        api_key(ctx).is_some(),
+fn parcel_api(ctx: &AppContext, api_key: String) -> Result<Arc<ParcelApi>, ParcelSetupError> {
+    Ok(Arc::new(
+        ParcelApi::new(
+            ctx.http.clone(),
+            api_key,
+            ctx.side_effects,
+            ctx.clock.clone(),
+        )?
+        .with_ledger(ctx.store.clone()),
     ))
 }
 
@@ -126,15 +127,20 @@ pub fn handler(
         PublicHttpClient::new(&ctx.http),
         ctx.clock.clone(),
     )?);
-    pipeline(ctx, triage, api_key, carriers).map(Some)
+    Ok(Some(pipeline(
+        ctx,
+        triage,
+        parcel_api(ctx, api_key)?,
+        carriers,
+    )))
 }
 
 fn pipeline(
     ctx: &AppContext,
     triage: EmailTriage,
-    api_key: String,
+    submitter: Arc<ParcelApi>,
     carriers: Arc<CarrierDirectory>,
-) -> Result<Arc<DeliveryPipeline>, ParcelSetupError> {
+) -> Arc<DeliveryPipeline> {
     let deps = PipelineDeps {
         store: ctx.store.clone(),
         run_logs: ctx.run_logs(),
@@ -144,12 +150,7 @@ fn pipeline(
             ctx.config.clone(),
             carriers.clone(),
         )),
-        submitter: Arc::new(ParcelApi::new(
-            ctx.http.clone(),
-            api_key,
-            ctx.side_effects,
-            ctx.clock.clone(),
-        )?),
+        submitter,
         carriers,
         self_address: ctx.config.email_self_address().map(str::to_owned),
         logs_path: ctx
@@ -166,50 +167,38 @@ fn pipeline(
         ),
     };
     tracing::info!(target: LOG, "Pipeline created");
-    Ok(Arc::new(DeliveryPipeline::new(deps)))
+    Arc::new(DeliveryPipeline::new(deps))
 }
 
-/// The `ParcelDeliveries` read task; shares the carrier list with the pipeline.
-pub fn deliveries_task(
-    ctx: &AppContext,
-    api_key: String,
-    carriers: Arc<CarrierDirectory>,
-) -> Result<DeliveriesTask, ParcelSetupError> {
-    Ok(DeliveriesTask::new(DeliveriesTaskDeps {
-        store: ctx.store.clone(),
-        client: DeliveriesClient::new(ctx.http.clone(), api_key)?,
-        carriers,
-        clock: ctx.clock.clone(),
-        tracker: ctx.tracker.clone(),
-        mode: ctx.side_effects,
-        tz: jiff::tz::TimeZone::get(&ctx.config.tz).unwrap_or(jiff::tz::TimeZone::UTC),
-    })?)
-}
-
-/// The parcel subsystem: the forget and deliveries routes, the Parcel MCP
-/// tools, its entities and, when configured, the `ParcelTracker` email
-/// handler (share `triage` with the calendar pipeline) and the
-/// `ParcelDeliveries` read task.
+/// The parcel subsystem: the forget route, `parcels_add`, its entities and,
+/// when configured, the `ParcelTracker` email handler (share `triage` with
+/// the calendar pipeline). The handler and the tool share one Parcel client
+/// and carrier list.
 pub fn subsystem(ctx: &AppContext, triage: EmailTriage) -> Result<Subsystem, ParcelSetupError> {
-    let key = api_key(ctx);
-    let configured = key.is_some();
     let mut email_handlers: Vec<Arc<dyn omni_core::email::EmailHandler>> = Vec::new();
-    let mut tasks: Vec<Arc<dyn omni_tasks::Task>> = Vec::new();
-    match key {
+    let adder = match api_key(ctx) {
         Some(api_key) => {
             let carriers = Arc::new(CarrierDirectory::new(
                 PublicHttpClient::new(&ctx.http),
                 ctx.clock.clone(),
             )?);
-            email_handlers.push(pipeline(ctx, triage, api_key.clone(), carriers.clone())?);
-            tasks.push(Arc::new(deliveries_task(ctx, api_key, carriers)?));
+            let api = parcel_api(ctx, api_key)?;
+            email_handlers.push(pipeline(ctx, triage, api.clone(), carriers.clone()));
+            ParcelAdder::new(
+                ctx.store.clone(),
+                Some(api),
+                Some(carriers),
+                ctx.tracker.clone(),
+            )
         }
-        None => tracing::info!(target: LOG, "Disabled: missing PARCEL_API_KEY"),
-    }
+        None => {
+            tracing::info!(target: LOG, "Disabled: missing PARCEL_API_KEY");
+            ParcelAdder::new(ctx.store.clone(), None, None, ctx.tracker.clone())
+        }
+    };
     Ok(Subsystem {
-        router: router(ctx.store.clone()).merge(deliveries::router(ctx.store.clone(), configured)),
-        tasks,
-        mcp_tools: mcp::tools(ctx.store.clone(), configured)?,
+        router: router(ctx.store.clone()),
+        mcp_tools: mcp::tools(Arc::new(adder))?,
         entities: entities(),
         managed_entities: managed_entities(),
         email_handlers,

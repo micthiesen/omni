@@ -65,46 +65,6 @@ final class WidgetPayloadDecodingTests: XCTestCase {
         let decoded = try JSONDecoder().decode(OnAirSnapshot.self, from: JSONEncoder().encode(snapshot))
         XCTAssertEqual(decoded, snapshot)
     }
-
-    func testDecodesDeliveriesContract() throws {
-        let data = Data(#"""
-        {
-          "generatedAt": 1760000000000, "configured": true, "fetchedAt": 1759999000000,
-          "activeCount": 2,
-          "deliveries": [
-            {"trackingNumber": "1Z", "carrier": "UPS", "description": "Keyboard",
-             "status": "out_for_delivery", "statusLabel": "Out for delivery", "active": true,
-             "expected": "2026-10-14 00:00:00", "expectedEnd": null, "lastEvent": "Departed facility",
-             "lastEventAt": "2026-10-12 08:15", "lastLocation": "Richmond, BC"},
-            {"trackingNumber": "LX", "carrier": null, "description": "",
-             "status": "brand_new_status", "statusLabel": "Odd", "active": true,
-             "expected": null, "expectedEnd": null, "lastEvent": null, "lastEventAt": null,
-             "lastLocation": null},
-            {"trackingNumber": "D", "carrier": "FedEx", "description": "Lamp", "status": "completed",
-             "statusLabel": "Delivered", "active": false, "expected": null, "expectedEnd": null,
-             "lastEvent": "Delivered", "lastEventAt": null, "lastLocation": null}
-          ]
-        }
-        """#.utf8)
-        let snapshot = try JSONDecoder().decode(DeliveriesSnapshot.self, from: data)
-        XCTAssertTrue(snapshot.configured)
-        XCTAssertEqual(snapshot.activeCount, 2)
-        XCTAssertEqual(snapshot.deliveries[0].status, .outForDelivery)
-        XCTAssertEqual(snapshot.deliveries[0].status.progressStep, 3)
-        XCTAssertEqual(snapshot.deliveries[1].status, .unknown)
-        XCTAssertEqual(snapshot.deliveries[1].displayTitle, "package")
-        XCTAssertEqual(snapshot.active.count, 2)
-        XCTAssertEqual(snapshot.completed.map(\.trackingNumber), ["D"])
-    }
-
-    func testEveryServerStatusDecodes() throws {
-        for raw in ["completed", "frozen", "in_transit", "awaiting_pickup", "out_for_delivery",
-                    "not_found", "failed_attempt", "exception", "info_received", "unknown"]
-        {
-            let status = try JSONDecoder().decode(DeliveryStatus.self, from: Data("\"\(raw)\"".utf8))
-            XCTAssertEqual(status.rawValue, raw)
-        }
-    }
 }
 
 final class AlertPayloadTests: XCTestCase {
@@ -192,8 +152,8 @@ final class DeepLinkTests: XCTestCase {
     func testOmniPagesLoadInTheWebViewAndStreamsOpenOutside() {
         let server = URL(string: "http://omni.boris")!
         XCTAssertEqual(
-            OmniRoute.decide(target: URL(string: "http://omni.boris/deliveries")!, appURL: nil, server: server),
-            .webView(URL(string: "http://omni.boris/deliveries")!)
+            OmniRoute.decide(target: URL(string: "http://omni.boris/live")!, appURL: nil, server: server),
+            .webView(URL(string: "http://omni.boris/live")!)
         )
         let kick = URL(string: "https://kick.com/destiny")!
         XCTAssertEqual(OmniRoute.decide(target: kick, appURL: nil, server: server), .external([kick]))
@@ -323,12 +283,6 @@ final class WidgetPolicyTests: XCTestCase {
         XCTAssertEqual(OnAirPolicy.avatarBudget(familyRawName: "systemExtraLarge"), 8)
     }
 
-    func testDeliveriesRefreshByUrgency() {
-        XCTAssertEqual(DeliveriesPolicy.refreshInterval(for: WidgetFixtures.deliveries()), 30 * 60)
-        XCTAssertEqual(DeliveriesPolicy.refreshInterval(for: WidgetFixtures.deliveriesOne()), 60 * 60)
-        XCTAssertEqual(DeliveriesPolicy.refreshInterval(for: WidgetFixtures.deliveriesNone()), 3 * 60 * 60)
-    }
-
     func testCompactNumbers() {
         let locale = Locale(identifier: "en_US")
         XCTAssertEqual(OmniFormat.compact(999, locale: locale), "999")
@@ -344,49 +298,6 @@ final class WidgetPolicyTests: XCTestCase {
         XCTAssertEqual(OmniFormat.ago(now.addingTimeInterval(-12 * 60), now: now), "12m ago")
         XCTAssertEqual(OmniFormat.ago(now.addingTimeInterval(-3 * 3_600), now: now), "3h ago")
         XCTAssertEqual(OmniFormat.ago(now.addingTimeInterval(-50 * 3_600), now: now), "2d ago")
-    }
-}
-
-final class DeliveryDateTests: XCTestCase {
-    private var calendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Vancouver")!
-        return calendar
-    }
-
-    private let locale = Locale(identifier: "en_US")
-
-    /// Monday 2026-10-12 10:00 in Vancouver.
-    private var now: Date {
-        calendar.date(from: DateComponents(year: 2026, month: 10, day: 12, hour: 10))!
-    }
-
-    private func label(_ expected: String?, _ end: String? = nil) -> String? {
-        DeliveryDates.friendlyExpected(expected: expected, expectedEnd: end, now: now, calendar: calendar, locale: locale)
-    }
-
-    func testParsesParcelFormats() {
-        XCTAssertEqual(DeliveryDates.parse("2026-10-14 00:00:00", calendar: calendar)?.hasTime, false)
-        XCTAssertEqual(DeliveryDates.parse("2026-10-12 08:15", calendar: calendar)?.hasTime, true)
-        XCTAssertNotNil(DeliveryDates.parse("2026-10-14", calendar: calendar))
-        XCTAssertNil(DeliveryDates.parse("soon", calendar: calendar))
-        XCTAssertNil(DeliveryDates.parse(nil, calendar: calendar))
-    }
-
-    func testFriendlyDays() {
-        XCTAssertEqual(label("2026-10-12 00:00:00"), "Today")
-        XCTAssertEqual(label("2026-10-13 00:00:00"), "Tomorrow")
-        XCTAssertEqual(label("2026-10-15 00:00:00"), "Thu")
-        XCTAssertEqual(label("2026-10-25 00:00:00"), "Oct 25")
-        XCTAssertNil(label(nil))
-    }
-
-    func testRangesAndOverdue() {
-        XCTAssertEqual(label("2026-10-13 00:00:00", "2026-10-15 00:00:00"), "Tomorrow – Thu")
-        XCTAssertEqual(label("2026-10-10 00:00:00", "2026-10-13 00:00:00"), "Today – Tomorrow")
-        XCTAssertEqual(label("2026-10-08 00:00:00"), "Was due Oct 8")
-        XCTAssertTrue(DeliveryDates.isOverdue(expected: "2026-10-08 00:00:00", expectedEnd: nil, now: now, calendar: calendar))
-        XCTAssertFalse(DeliveryDates.isOverdue(expected: "2026-10-08", expectedEnd: "2026-10-12", now: now, calendar: calendar))
     }
 }
 
@@ -460,7 +371,7 @@ final class ReviewFixTests: XCTestCase {
         let old = CachedSnapshot(value: 1, fetchedAt: now.addingTimeInterval(-4 * 3_600))
         XCTAssertNotNil(SnapshotStore.usable(fresh, maxAge: OnAirPolicy.hardExpiry, now: now))
         XCTAssertNil(SnapshotStore.usable(old, maxAge: OnAirPolicy.hardExpiry, now: now))
-        XCTAssertNotNil(SnapshotStore.usable(old, maxAge: DeliveriesPolicy.hardExpiry, now: now))
+        XCTAssertNotNil(SnapshotStore.usable(old, maxAge: 5 * 3_600, now: now))
         XCTAssertNil(SnapshotStore.usable(Optional<CachedSnapshot<Int>>.none, maxAge: 1, now: now))
     }
 

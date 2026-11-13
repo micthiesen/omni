@@ -154,7 +154,6 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
         ctx.config.clone(),
         ctx.store.clone(),
     );
-    let _ = ports.set_deliveries_source(omni_parcel::deliveries_source(ctx));
     let mut parcel = wire!("parcel", omni_parcel::subsystem(ctx, triage.clone()));
     let parcel_handlers = take_handlers(&mut parcel);
     let _ = ports.set_calendar_connection(omni_calendar::calendar_connection(ctx));
@@ -242,7 +241,6 @@ pub const TASK_ORDER: &[&str] = &[
     "PodcastTasteReflection",
     "CodexResets",
     "ClaudeResets",
-    "ParcelDeliveries",
     "StylistBackup",
     "EmailArchive",
     "EmailWatchdog",

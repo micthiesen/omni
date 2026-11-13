@@ -1,23 +1,19 @@
-//! The On Air and Deliveries widget timelines, and widget pushes after live
+//! The On Air widget timeline, and widget pushes after live
 //! ticks when the On Air content changes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use omni_api::ios::ApnsEnvironment;
-use omni_api::parcels::{ParcelDelivery, ParcelDeliveryStatus, ParcelEvent, ParcelsResponse};
 use omni_api::streamers::StreamerTier;
 use omni_ios_controls::apns::{ApnsPushKind, ApnsPushResult};
 use omni_ios_controls::devices::list_widget_pushes;
-use omni_ios_controls::widgets::{build_on_air, deliveries_widget, on_air_hash};
+use omni_ios_controls::widgets::{build_on_air, on_air_hash};
 use omni_live::status::{LiveStatus, OfflineStatus, StreamerStatus, upsert_status};
 use omni_live::streamers::{DiscoverySource, Streamer};
 use omni_live::{Platform, PlatformBinding};
-use omni_runtime::ports::{DeliveriesSource, PortError, Ports};
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityWrite, UpsertOpts};
 use serde::{Deserialize, Serialize};
@@ -232,112 +228,6 @@ async fn the_on_air_hash_follows_the_live_set_and_titles_but_not_rank_or_viewers
             .unwrap(),
     );
     assert_ne!(replatformed, joined);
-}
-
-fn delivery(
-    number: &str,
-    status: ParcelDeliveryStatus,
-    events: Vec<ParcelEvent>,
-) -> ParcelDelivery {
-    ParcelDelivery {
-        tracking_number: number.into(),
-        carrier_code: "ups".into(),
-        carrier_name: Some("UPS".into()),
-        description: format!("Parcel {number}"),
-        status,
-        status_code: 0,
-        active: status.is_active(),
-        expected: Some("2026-10-14 00:00:00".into()),
-        expected_end: None,
-        extra_information: None,
-        events,
-        event_count: 0,
-        source: None,
-    }
-}
-
-fn parcels() -> ParcelsResponse {
-    let event = ParcelEvent {
-        description: "Departed facility".into(),
-        date: Some("2026-10-12 08:15".into()),
-        location: Some("Richmond, BC".into()),
-        additional: None,
-    };
-    let mut deliveries = vec![
-        delivery("A1", ParcelDeliveryStatus::OutForDelivery, vec![event]),
-        delivery("A2", ParcelDeliveryStatus::InTransit, vec![]),
-    ];
-    for i in 0..5 {
-        deliveries.push(delivery(
-            &format!("C{i}"),
-            ParcelDeliveryStatus::Completed,
-            vec![],
-        ));
-    }
-    ParcelsResponse {
-        configured: true,
-        fetched_at: Some(NOW - 1_000),
-        last_attempt_at: Some(NOW - 1_000),
-        next_read_after: None,
-        backoff_until: None,
-        last_error: None,
-        active_count: 2,
-        deliveries,
-    }
-}
-
-#[test]
-fn maps_cached_deliveries_active_first_then_three_completed() {
-    let widget = deliveries_widget(Some(parcels()), NOW);
-    let numbers: Vec<&str> = widget
-        .deliveries
-        .iter()
-        .map(|d| d.tracking_number.as_str())
-        .collect();
-    assert_eq!(numbers, ["A1", "A2", "C0", "C1", "C2"]);
-    assert_eq!(
-        serde_json::to_value(&widget).unwrap()["deliveries"][0],
-        json!({
-            "trackingNumber": "A1", "carrier": "UPS", "description": "Parcel A1",
-            "status": "out_for_delivery", "statusLabel": "Out for delivery", "active": true,
-            "expected": "2026-10-14 00:00:00", "expectedEnd": null,
-            "lastEvent": "Departed facility", "lastEventAt": "2026-10-12 08:15",
-            "lastLocation": "Richmond, BC"
-        })
-    );
-    assert_eq!(widget.active_count, 2);
-    assert_eq!(widget.fetched_at, Some(NOW - 1_000));
-    assert!(widget.configured);
-}
-
-#[test]
-fn reports_unconfigured_without_a_deliveries_source() {
-    assert_eq!(
-        serde_json::to_value(deliveries_widget(None, NOW)).unwrap(),
-        json!({"generatedAt": NOW, "configured": false, "fetchedAt": null, "activeCount": 0, "deliveries": []})
-    );
-}
-
-struct CachedParcels;
-
-impl DeliveriesSource for CachedParcels {
-    fn deliveries(&self) -> BoxFuture<'_, Result<Value, PortError>> {
-        Box::pin(async { Ok(serde_json::to_value(parcels()).unwrap()) })
-    }
-}
-
-#[tokio::test]
-async fn reads_deliveries_through_the_port_once_it_is_set() {
-    let (store, clock) = common::store(NOW).await;
-    let ports = Ports::default();
-    let service = common::service(&store.store, &clock, vec![], None).with_ports(ports.clone());
-    assert!(!service.deliveries().await.unwrap().configured);
-    ports
-        .set_deliveries_source(Arc::new(CachedParcels))
-        .unwrap();
-    let widget = service.deliveries().await.unwrap();
-    assert!(widget.configured);
-    assert_eq!(widget.deliveries.len(), 5);
 }
 
 const WIDGET_TOKEN: &str = "abababababababababababababababababababababababababababababababab";

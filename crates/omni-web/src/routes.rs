@@ -24,8 +24,6 @@ pub enum Route {
     Operations,
     Reminders,
     Pets,
-    /// Parcel deliveries (`?tracking=` selects one).
-    Deliveries,
     /// The read-only agenda (`?day=YYYY-MM-DD` selects a day).
     Calendar,
     /// The read-only stylist ledger (`?ns=` picks a namespace).
@@ -112,7 +110,6 @@ pub fn match_route(path: &str) -> Route {
     match path {
         "/reminders" => Route::Reminders,
         "/pets" => Route::Pets,
-        "/deliveries" => Route::Deliveries,
         "/calendar" => Route::Calendar,
         "/stylist" => Route::Stylist,
         "/media" => Route::Media,
@@ -139,7 +136,6 @@ pub fn page_title(path: &str) -> String {
         "/live/streamers" => Some("Streamers"),
         "/reminders" => Some("iCloud Reminders"),
         "/pets" => Some("Pets"),
-        "/deliveries" => Some("Deliveries"),
         "/calendar" => Some("Calendar"),
         "/stylist" => Some("Stylist"),
         "/media" => Some("Watch"),
@@ -212,9 +208,6 @@ mod tests {
         assert_eq!(route("/operations"), Route::Operations);
         assert_eq!(route("/reminders"), Route::Reminders);
         assert_eq!(route("/pets"), Route::Pets);
-        assert_eq!(route("/deliveries"), Route::Deliveries);
-        assert_eq!(route("/deliveries/"), Route::Deliveries);
-        assert_eq!(route("/deliveries/x"), Route::NotFound);
         assert_eq!(route("/calendar"), Route::Calendar);
         assert_eq!(route("/calendar/2026-10-09"), Route::NotFound);
         assert_eq!(route("/stylist"), Route::Stylist);
@@ -235,7 +228,6 @@ mod tests {
         assert_eq!(page_title("/costs"), "Costs · Omni");
         assert_eq!(page_title("/live"), "Live · Omni");
         assert_eq!(page_title("/live/streamers"), "Streamers · Omni");
-        assert_eq!(page_title("/deliveries"), "Deliveries · Omni");
         assert_eq!(page_title("/calendar"), "Calendar · Omni");
         assert_eq!(page_title("/stylist"), "Stylist · Omni");
         assert_eq!(page_title("/gateway"), "MCP Gateway · Omni");

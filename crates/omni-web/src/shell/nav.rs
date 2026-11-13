@@ -63,7 +63,7 @@ const fn item(
 }
 
 /// Every destination except `/live` (the On air header), in rail order.
-pub const NAV: [NavItem; 16] = [
+pub const NAV: [NavItem; 15] = [
     item("Home", "/", Icon::Home, Group::Top, Some('h')),
     item("Movies & TV", "/media", Icon::Film, Group::Watch, Some('m')),
     item(
@@ -88,13 +88,6 @@ pub const NAV: [NavItem; 16] = [
         Icon::Calendar,
         Group::Personal,
         Some('a'),
-    ),
-    item(
-        "Deliveries",
-        "/deliveries",
-        Icon::Package,
-        Group::Personal,
-        Some('v'),
     ),
     item("Pets", "/pets", Icon::Paw, Group::Personal, None),
     item("Stylist", "/stylist", Icon::Hanger, Group::Personal, None),
@@ -249,7 +242,6 @@ mod tests {
         assert_eq!(current_href("/briefings"), None);
         assert_eq!(current_href("/streamers/hutch"), Some("/live"));
         assert_eq!(current_href("/live/streamers"), Some("/live"));
-        assert_eq!(current_href("/deliveries"), Some("/deliveries"));
         assert_eq!(current_href("/calendar"), Some("/calendar"));
         assert_eq!(current_href("/stylist"), Some("/stylist"));
         assert_eq!(current_href("/stylistx"), None);
@@ -270,7 +262,6 @@ mod tests {
             ('c', "/costs"),
             ('d', "/data"),
             ('a', "/calendar"),
-            ('v', "/deliveries"),
         ] {
             assert_eq!(shortcut_target(key), Some(href), "g {key}");
         }

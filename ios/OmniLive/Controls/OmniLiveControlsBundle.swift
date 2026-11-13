@@ -5,7 +5,6 @@ import WidgetKit
 struct OmniLiveControlsBundle: WidgetBundle {
     var body: some Widget {
         OnAirWidget()
-        DeliveriesWidget()
         LiveStreamControl()
     }
 }

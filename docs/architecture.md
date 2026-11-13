@@ -56,7 +56,7 @@ Cross-subsystem calls go through the port traits in
 `crates/omni-runtime/src/ports.rs`: `EmailReader`, `ArchiveEcho`,
 `EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
 `SpeechTranscriber` (the local speech model, for YouTube transcripts),
-`OnDeckSource`, `DeliveriesSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
+`OnDeckSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
 port is set once during wiring (`crates/omni/src/wiring.rs`); a consumer
 must handle an unset port, because the providing subsystem may be disabled by

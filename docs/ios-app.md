@@ -7,7 +7,7 @@ name "Omni") for Michael's own devices. It has four parts:
   APNs. Pushover is only the fallback for when the app is not set up.
 - **Widgets.** "On Air" (top live streamers; tapping a row opens that stream in
   the Kick, Twitch or YouTube app) in every home-screen size and the lock-screen
-  accessory families, and "Deliveries" (parcels in transit).
+  accessory families.
 - **Control Center.** One configurable control, added four times as Live
   Slots 1 to 4.
 - **The app itself.** A full-screen web view of `http://omni.boris` plus a
@@ -25,7 +25,7 @@ client design decisions are in `docs/ios-widgets-design.md`.
 | Target | Bundle ID | Role |
 | --- | --- | --- |
 | `OmniLive` (product `OmniLive.app`) | `com.micthiesen.OmniLive` | Web view, settings, APNs registration, notification and `omni://` routing |
-| `OmniLiveControls` (WidgetKit) | `.controls` | Live Slot control, On Air and Deliveries widgets, widget push handler |
+| `OmniLiveControls` (WidgetKit) | `.controls` | Live Slot control, On Air widget, widget push handler |
 | `OmniNotificationService` | `.notification-service` | Sender avatars, action category, widget reloads |
 
 All three share the App Group `group.com.micthiesen.OmniLive` (settings,
@@ -159,16 +159,9 @@ tier and DGG discoveries. Each entry has the primary binding's `watchUrl`, an
 when one was produced this session. `recent` lists up to 4 most recently ended
 primary streamers for the empty state.
 
-`GET /api/ios-controls/widgets/deliveries` serves Omni's cached Parcel read
-through the `DeliveriesSource` port. That port only reads the cache, so the
-widget never causes a Parcel API call. It lists active deliveries first, then
-up to 3 completed ones, 8 at most. Without `PARCEL_API_KEY`, it reports
-`configured: false`.
-
-On the device, each widget keeps the last good payload. While `omni.boris` is
+On the device, the widget keeps the last good payload. While `omni.boris` is
 out of reach it shows that copy with "as of HH:mm" once it is 15 minutes old
-(Deliveries: 2 hours), and stops showing it after 3 hours (Deliveries: 24
-hours) in favour of "Omni is out of reach". On Air reloads every 15 minutes
+and stops showing it after 3 hours in favour of "Omni is out of reach". On Air reloads every 15 minutes
 while anyone is live and every 30 minutes otherwise; uptime ticks on its own.
 Rows in medium and larger widgets open the stream directly; small, circular
 and inline widgets go through the app, which forwards at once.

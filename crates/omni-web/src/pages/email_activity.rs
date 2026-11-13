@@ -322,7 +322,7 @@ pub fn EmailActivityPage() -> impl IntoView {
         spawn_scoped(async move {
             match api::fetch_email_activity(p, Some(500)).await {
                 Ok(res) => {
-                    // `#inspect=<activityId>` (Deliveries links its source email).
+                    // `#inspect=<activityId>` .
                     if selected.with_untracked(Option::is_none)
                         && let Some(id) = hash_param("inspect")
                         && let Some(hit) = res.activities.iter().find(|a| a.activity_id == id)

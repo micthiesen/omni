@@ -1,7 +1,8 @@
 //! The live Parcel carrier list:
 //! a 24-hour in-memory cache refreshed under a mutex (concurrent first
 //! refreshes coalesce), bounded reads, and a stale-cache fallback when a
-//! refresh fails.
+//! refresh fails. The email pipeline sees the list minus the blacklist below;
+//! `parcels_add` validates against everything Parcel supports.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -84,6 +85,14 @@ impl CarrierDirectory {
             .join("\n")
     }
 
+    /// Every carrier Parcel supports, blacklisted ones included, as code to
+    /// name; `None` when the list is unavailable.
+    pub async fn supported(&self) -> Option<std::collections::HashMap<String, String>> {
+        self.all_carriers()
+            .await
+            .map(|carriers| carriers.into_iter().map(|c| (c.code, c.name)).collect())
+    }
+
     /// `None` when the list is unavailable
     /// (fetch failed and nothing cached).
     pub async fn valid_codes(&self) -> Option<HashSet<String>> {
@@ -112,7 +121,17 @@ impl CarrierDirectory {
             .collect()
     }
 
+    /// The pipeline's carriers: the supported list minus the blacklist.
     async fn carriers(&self) -> Option<Vec<CarrierEntry>> {
+        self.all_carriers().await.map(|carriers| {
+            carriers
+                .into_iter()
+                .filter(|c| !is_blacklisted_carrier(&c.code))
+                .collect()
+        })
+    }
+
+    async fn all_carriers(&self) -> Option<Vec<CarrierEntry>> {
         let mut cache = self.cache.lock().await;
         let now = self.clock.now_ms();
         if let Some(carriers) = &cache.carriers
@@ -167,8 +186,7 @@ pub fn carrier_name_pattern(name: &str) -> Option<Regex> {
     }
 }
 
-/// Decodes `{code: name | {name?}}`, then applies the blacklist filter and the
-/// usable-name filter.
+/// Decodes `{code: name | {name?}}`, keeping entries with a usable name.
 pub fn decode_carriers(value: &Value) -> Result<Vec<CarrierEntry>, String> {
     let object = value
         .as_object()
@@ -184,9 +202,7 @@ pub fn decode_carriers(value: &Value) -> Result<Vec<CarrierEntry>, String> {
             },
             _ => return Err(format!("carrier {code:?}: expected a string or an object")),
         };
-        if let Some(name) = name
-            && !is_blacklisted_carrier(code)
-        {
+        if let Some(name) = name {
             carriers.push(CarrierEntry {
                 code: code.clone(),
                 name,
