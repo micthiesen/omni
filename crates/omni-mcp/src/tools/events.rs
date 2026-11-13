@@ -8,14 +8,25 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::conform;
+use crate::events::claude_notify::ClaudeNotify;
 use crate::events::service::McpEventService;
 
 #[derive(Deserialize)]
 struct EmptyInput {}
 
 /// The status body; `None` reports MCP Events as disabled.
-pub async fn events_status(events: Option<&McpEventService>) -> Result<Value, ToolError> {
-    let value = match events {
+pub async fn events_status(
+    events: Option<&McpEventService>,
+    notify: Option<&ClaudeNotify>,
+) -> Result<Value, ToolError> {
+    let notifications = match notify {
+        Some(notify) => notify
+            .status()
+            .await
+            .map_err(|e| ToolError::execute_from(&e))?,
+        None => Value::Null,
+    };
+    let mut value = match events {
         Some(events) => {
             let mut status = events
                 .status()
@@ -39,15 +50,22 @@ pub async fn events_status(events: Option<&McpEventService>) -> Result<Value, To
             },
         }),
     };
+    if let Some(map) = value.as_object_mut() {
+        map.insert("claudeNotifications".to_owned(), notifications);
+    }
     conform(&defs::EVENTS_STATUS, value)
 }
 
-pub fn event_tools(events: Option<McpEventService>) -> Result<Vec<McpTool>, ToolMetaError> {
+pub fn event_tools(
+    events: Option<McpEventService>,
+    notify: Option<ClaudeNotify>,
+) -> Result<Vec<McpTool>, ToolMetaError> {
     let tool = typed_tool(
         &defs::EVENTS_STATUS,
         move |_: EmptyInput, _: ToolContext| {
             let events = events.clone();
-            async move { events_status(events.as_ref()).await }
+            let notify = notify.clone();
+            async move { events_status(events.as_ref(), notify.as_ref()).await }
         },
     )?;
     Ok(vec![tool])

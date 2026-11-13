@@ -494,7 +494,9 @@ async fn never_delivers_to_an_owner_that_is_not_a_gateway_principal() {
 async fn serves_the_status_tool_from_the_service_without_secrets() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let disabled = omni_mcp::tools::events::events_status(None).await.unwrap();
+    let disabled = omni_mcp::tools::events::events_status(None, None)
+        .await
+        .unwrap();
     assert_eq!(disabled["enabled"], false);
     assert_eq!(disabled["subscriptions"], json!([]));
     let events = service(&db.store, &clock).service;
@@ -506,7 +508,7 @@ async fn serves_the_status_tool_from_the_service_without_secrets() {
         .record_email(&inbox("<tool@example.test>"))
         .await
         .unwrap();
-    let status = omni_mcp::tools::events::events_status(Some(&events))
+    let status = omni_mcp::tools::events::events_status(Some(&events), None)
         .await
         .unwrap();
     assert_eq!(status["enabled"], true);
@@ -539,7 +541,8 @@ async fn serves_the_status_tool_from_the_service_without_secrets() {
             "requests",
             "subscriptionTotal",
             "subscriptions",
-            "deliveries"
+            "deliveries",
+            "claudeNotifications"
         ]
     );
 }

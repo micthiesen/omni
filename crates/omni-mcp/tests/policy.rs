@@ -27,11 +27,12 @@ fn policy_tools() -> Vec<McpTool> {
         clock: clock(),
     })
     .unwrap();
-    own.extend(event_tools(None).unwrap());
+    own.extend(event_tools(None, None).unwrap());
     own.extend(
         claude_session_tools(&ClaudeDeps {
             host: None,
             watcher: None,
+            notify: None,
         })
         .unwrap(),
     );

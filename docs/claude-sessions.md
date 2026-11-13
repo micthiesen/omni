@@ -78,6 +78,44 @@ support MCP Events can instead subscribe to `claude.session.turn_finished`
 tools remain for every other client. Interactive terminal sessions can be read but
 not sent input; reach those through Remote Control.
 
+## Turn notifications
+
+A caller that starts sessions can have Omni tell it when each turn ends,
+without polling and without hearing about sessions it did not start.
+`claude_session_start` takes an optional `notify`: the name of a target the
+server defines in `CLAUDE_NOTIFY_TARGETS`, a JSON object from name to
+`{"url": "https://...", "token": "..."}`. Omni stores the target with the
+session (`mcp-claude-session-notify`), so every later turn notifies too.
+`claude_session_send` takes `notify` to change the target, `null` to clear it,
+and keeps it when the field is left out. Both results report the session's
+target and whether the server defines it. A name the server does not define is
+stored with a warning in the log and never fails the call; its turns are
+recorded as `unconfigured` and not posted.
+
+Each finished turn, found by the same rule as `claude.session.turn_finished`
+(see [MCP Events](mcp-events.md#claudesessionturn_finished)), is recorded once
+per session and revision (`mcp-claude-turn-notification`) and posted as JSON:
+
+```json
+{"event": "claude.session.turn_finished", "sessionId": "...", "shortId": "80f00d5b",
+ "project": "omni", "title": "...", "status": "idle", "state": "done", "revision": 25,
+ "finishedAt": "2026-11-12T21:15:29.804Z", "summary": "<last reply, at most 1,500 characters>",
+ "summaryTruncated": false}
+```
+
+Targets are Rakazo bot webhooks (`https://<rakazo>/api/v1/bots/<botId>/webhook`):
+the request carries `Authorization: Bearer <token>` and
+`Idempotency-Key: omni-claude-turn:<sessionId>:<revision>`, which Rakazo uses to
+collapse repeated deliveries into one run. The URL may resolve to the LAN, since
+targets come from configuration rather than callers; it must be HTTPS. A 2xx is
+delivered (or `ignored` when Rakazo answers that no webhook routine is active);
+a timeout, network failure, 408, 425, 429 or 5xx is retried after 30 seconds,
+doubling to 30 minutes, at most 8 attempts; any other answer fails at once.
+Retries run even while the host is offline. The body is dropped once a
+notification settles, and settled rows are kept 7 days. `events_status` reports
+the target names (never URLs or tokens), counts and the latest outcomes under
+`claudeNotifications`. The summary passes the same host scrub as tool results.
+
 Omni logs each forwarded command with its session or project, duration, and
 outcome code, never prompt text. The `/claude` page shows the link state, the
 Mac's live sessions with transcripts, and every `claude_*` call grouped by

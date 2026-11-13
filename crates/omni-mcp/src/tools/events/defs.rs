@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 pub static EVENTS_STATUS: ToolDef<EventsStatusInput, EventsStatusOutput> = ToolDef::new(ToolInfo {
     name: "events_status",
     title: "Check MCP Event Delivery",
-    description: "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+    description: "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes; plus Claude Code session notify targets (names only) and each finished turn's delivery outcome. Contains no secrets, tokens, callback paths, or message content.",
     annotations: Annotations {
         read_only_hint: true,
         destructive_hint: false,
@@ -128,6 +128,48 @@ pub struct Deliveries {
 }
 
 #[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum NotificationStatus {
+    Pending,
+    Delivered,
+    Ignored,
+    Failed,
+    Unconfigured,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NotificationItem {
+    pub session_id: String,
+    pub short_id: Option<String>,
+    pub revision: f64,
+    pub target: String,
+    pub status: NotificationStatus,
+    pub attempts: f64,
+    pub last_status: Option<f64>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Claude Code session `notify` deliveries: one per finished turn.
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ClaudeNotifications {
+    /// Configured target names.
+    pub targets: Vec<String>,
+    /// Sessions with a notify target.
+    pub sessions: f64,
+    pub pending: f64,
+    pub delivered: f64,
+    /// Accepted, but the target bot had no active webhook routine.
+    pub ignored: f64,
+    pub failed: f64,
+    pub unconfigured: f64,
+    pub recent: Vec<NotificationItem>,
+}
+
+#[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EventsStatusOutput {
     pub enabled: bool,
@@ -136,4 +178,5 @@ pub struct EventsStatusOutput {
     pub subscription_total: f64,
     pub subscriptions: Vec<Subscription>,
     pub deliveries: Deliveries,
+    pub claude_notifications: Option<ClaudeNotifications>,
 }

@@ -19,6 +19,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::truncate;
+use crate::events::claude_notify::ClaudeNotify;
 use crate::host::{ClaudeHost, HostCommand, HostError};
 
 const LOG: &str = "MCP:ClaudeSessions";
@@ -199,6 +200,16 @@ pub struct ClaudeDeps {
     pub host: Option<Arc<dyn ClaudeHost>>,
     /// The `claude.session.turn_finished` watcher, when MCP events are enabled.
     pub watcher: Option<Arc<dyn ClaudeSessionNotifier>>,
+    /// Per-session `notify` targets, set by `start` and `send`.
+    pub notify: Option<ClaudeNotify>,
+}
+
+/// `notify` as `send` takes it: absent leaves the target, `null` clears it.
+fn nullable<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 /// Arguments with absent values omitted.
@@ -270,6 +281,54 @@ impl ClaudeDeps {
         };
         watcher.note_turn_started(&turn).await;
     }
+
+    /// Applies a `notify` change (`Some(None)` clears) and reports the
+    /// session's target afterwards. The host already ran the command, so a
+    /// failure here is logged and reported as no target rather than failing
+    /// the call, which a caller without an idempotency key might repeat.
+    async fn apply_notify(&self, session: &ClaudeSession, change: Option<Option<&str>>) -> Value {
+        let Some(notify) = &self.notify else {
+            return Value::Null;
+        };
+        if session.session_id.is_empty() {
+            return Value::Null;
+        }
+        let recorded = async {
+            if let Some(target) = change {
+                notify.set_target(&session.session_id, target).await?;
+            }
+            notify.target_of(&session.session_id).await
+        };
+        match recorded.await {
+            Ok(Some(target)) => json!({
+                "target": target,
+                "configured": notify.is_configured(&target),
+            }),
+            Ok(None) => Value::Null,
+            Err(error) => {
+                tracing::error!(
+                    target: LOG,
+                    session = %session.id.as_deref().unwrap_or(&session.session_id),
+                    error = %error,
+                    "Claude session notify target not recorded"
+                );
+                Value::Null
+            }
+        }
+    }
+
+    /// Rejects a malformed or unusable `notify` before the host runs anything.
+    fn check_notify(&self, target: Option<&str>) -> Result<(), ToolError> {
+        match target {
+            Some(name) if !omni_config::is_notify_target_name(name) => Err(ToolError::input(
+                "notify: a target name of 1-40 characters from a-z, 0-9, - and _",
+            )),
+            Some(_) if self.notify.is_none() => Err(ToolError::execute(
+                "Session notifications are not available on this server",
+            )),
+            _ => Ok(()),
+        }
+    }
 }
 
 fn session_json(session: &ClaudeSession) -> Value {
@@ -331,6 +390,8 @@ struct StartInput {
     model: Option<String>,
     #[serde(default)]
     effort: Option<String>,
+    #[serde(default)]
+    notify: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -342,6 +403,8 @@ struct SendInput {
     interrupt: bool,
     #[serde(default)]
     idempotency_key: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    notify: Option<Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -551,6 +614,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                             "title: Too small: expected string to have >=1 characters",
                         ));
                     }
+                    deps.check_notify(input.notify.as_deref())?;
                     let data = deps
                         .run(
                             HostCommand::Start,
@@ -570,9 +634,14 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                     if !reused {
                         deps.note_turn_started(&session, session.revision).await;
                     }
-                    Ok::<_, ToolError>(
-                        json!({ "session": session_json(&session), "reused": reused }),
-                    )
+                    let notify = deps
+                        .apply_notify(&session, input.notify.as_deref().map(Some))
+                        .await;
+                    Ok::<_, ToolError>(json!({
+                        "session": session_json(&session),
+                        "reused": reused,
+                        "notify": notify,
+                    }))
                 }
             },
         )?
@@ -585,6 +654,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
             move |input: SendInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
+                    deps.check_notify(input.notify.as_ref().and_then(Option::as_deref))?;
                     let data = deps
                         .run(
                             HostCommand::Send,
@@ -603,11 +673,18 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                     if !reused {
                         deps.note_turn_started(&session, previous_revision).await;
                     }
+                    let notify = deps
+                        .apply_notify(
+                            &session,
+                            input.notify.as_ref().map(|target| target.as_deref()),
+                        )
+                        .await;
                     Ok::<_, ToolError>(json!({
                         "session": session_json(&session),
                         "previousRevision": previous_revision,
                         "reused": reused,
                         "warning": str_of(data.get("warning")),
+                        "notify": notify,
                     }))
                 }
             },

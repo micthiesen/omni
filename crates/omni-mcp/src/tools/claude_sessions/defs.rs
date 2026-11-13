@@ -4,7 +4,7 @@
 //! their own types. After changing anything here run `cargo xtask mcp-golden`
 //! and review the snapshot diff.
 
-use omni_mcp_kit::schema::lead_description;
+use omni_mcp_kit::schema::{lead_description, nullable};
 use omni_mcp_kit::{Annotations, ApprovalPolicy, Policy, ToolDef, ToolDefinition, ToolInfo};
 use schemars::JsonSchema;
 
@@ -84,7 +84,7 @@ pub static CLAUDE_SESSION_START: ToolDef<ClaudeSessionStartInput, ClaudeSessionS
     ToolDef::new(ToolInfo {
         name: "claude_session_start",
         title: "Start Claude Code Session",
-        description: "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+        description: "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another. Pass notify with a target name the server configures (such as chief) to have Omni post each finished turn of this session (session id, status, revision and a short summary of the last reply) to that target, so the caller need not poll; result.notify.configured is false when the server does not define that target, in which case nothing is posted.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,
@@ -105,7 +105,7 @@ pub static CLAUDE_SESSION_SEND: ToolDef<ClaudeSessionSendInput, ClaudeSessionSen
     ToolDef::new(ToolInfo {
         name: "claude_session_send",
         title: "Send Input to Claude Code Session",
-        description: "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result.",
+        description: "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,
@@ -303,6 +303,20 @@ pub struct ClaudeSessionStartInput {
     #[schemars(description = "Claude Code model alias or id, such as sonnet or opus", pattern(r#"^[A-Za-z0-9._[\]-]{1,64}$"#), transform = lead_description)]
     pub model: Option<String>,
     pub effort: Option<Effort>,
+    #[schemars(
+        description = "Server-configured target to notify when each turn of this session finishes",
+        pattern("^[a-z0-9][a-z0-9_-]{0,39}$")
+    )]
+    pub notify: Option<String>,
+}
+
+/// The session's notify target after the call.
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct Notify {
+    pub target: String,
+    /// Whether the server defines the target; turns are posted only if it does.
+    pub configured: bool,
 }
 
 #[derive(JsonSchema)]
@@ -310,6 +324,7 @@ pub struct ClaudeSessionStartInput {
 pub struct ClaudeSessionStartOutput {
     pub session: Session,
     pub reused: bool,
+    pub notify: Option<Notify>,
 }
 
 #[derive(JsonSchema)]
@@ -326,6 +341,12 @@ pub struct ClaudeSessionSendInput {
     pub interrupt: Option<bool>,
     #[schemars(description = "Caller-chosen key that makes retries safe", pattern("^[A-Za-z0-9._:-]{1,128}$"), transform = lead_description)]
     pub idempotency_key: Option<String>,
+    #[schemars(
+        description = "Server-configured target to notify when each turn finishes; null stops notifications",
+        pattern("^[a-z0-9][a-z0-9_-]{0,39}$"),
+        transform = nullable
+    )]
+    pub notify: Option<String>,
 }
 
 #[derive(JsonSchema)]
@@ -335,6 +356,7 @@ pub struct ClaudeSessionSendOutput {
     pub previous_revision: u64,
     pub reused: bool,
     pub warning: Option<String>,
+    pub notify: Option<Notify>,
 }
 
 #[derive(JsonSchema)]

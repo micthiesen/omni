@@ -7,6 +7,7 @@
 //! [`EventPublisher`]: omni_runtime::ports::EventPublisher
 
 pub mod catalog;
+pub mod claude_notify;
 pub mod claude_sessions;
 pub mod crypto;
 pub mod dynamic;

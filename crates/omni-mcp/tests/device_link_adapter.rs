@@ -60,6 +60,7 @@ async fn claude_tools_reach_the_host_only_through_the_long_poll_and_never_name_i
     let tools = claude_session_tools(&ClaudeDeps {
         host: Some(Arc::new(link.clone())),
         watcher: None,
+        notify: None,
     })
     .unwrap();
     let router = mcp_router(&db.store, &clock, tools, None);

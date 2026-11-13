@@ -279,7 +279,7 @@
     {
       "name": "claude_session_send",
       "title": "Send Input to Claude Code Session",
-      "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result.",
+      "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -296,7 +296,7 @@
     {
       "name": "claude_session_start",
       "title": "Start Claude Code Session",
-      "description": "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+      "description": "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another. Pass notify with a target name the server configures (such as chief) to have Omni post each finished turn of this session (session id, status, revision and a short summary of the last reply) to that target, so the caller need not poll; result.notify.configured is false when the server does not define that target, in which case nothing is posted.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -959,7 +959,7 @@
     {
       "name": "events_status",
       "title": "Check MCP Event Delivery",
-      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes; plus Claude Code session notify targets (names only) and each finished turn's delivery outcome. Contains no secrets, tokens, callback paths, or message content.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

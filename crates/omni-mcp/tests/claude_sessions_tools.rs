@@ -105,6 +105,7 @@ impl Harness {
         let list = claude_session_tools(&ClaudeDeps {
             host: Some(Arc::new(host.clone())),
             watcher: Some(Arc::new(watcher)),
+            notify: None,
         })
         .unwrap();
         Self {

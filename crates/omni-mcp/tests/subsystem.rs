@@ -97,7 +97,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
             "McpGatewayEventFeeds"
         ]
     );
-    assert_eq!(subsystem.entities.len(), 16);
+    assert_eq!(subsystem.entities.len(), 18);
     assert_eq!(subsystem.services.len(), 2);
     assert!(subsystem.mcp_tools.is_empty());
     let steps: Vec<_> = subsystem

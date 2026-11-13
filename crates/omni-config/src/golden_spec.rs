@@ -27,6 +27,7 @@ const RUST_ONLY: &[&str] = &[
     "YOUTUBE_CLIENT_ID",
     "YOUTUBE_CLIENT_SECRET",
     "YOUTUBE_REDIRECT_URI",
+    "CLAUDE_NOTIFY_TARGETS",
 ];
 
 fn env(case: &Value) -> BTreeMap<String, String> {

@@ -107,11 +107,18 @@ refreshed by its arguments, and stops only at its `refreshBefore` expiry
 (24 hours by default, at most 7 days). Unsubscribe those subscriptions, which
 `events_status` lists with their arguments, before rolling back.
 
-While any subscription for it is active and the host link is online, the
-`ClaudeSessionEvents` task lists the host's running sessions every 15 seconds and
-compares each with the last state Omni recorded. A settled session whose
-revision advanced, or that was working when last seen, produces one event per
-session and revision. A session seen for the first time only sets the baseline.
+While any subscription for it is active or a session has a `notify` target
+([Claude Code sessions](claude-sessions.md#turn-notifications)), and the host
+link is online, the `ClaudeSessionEvents` task lists the host's running sessions
+every 15 seconds and compares each with the last state Omni recorded. A session
+is settled when the host's runtime `status` is not `busy` (or `running`) and its
+transcript's last item is not a prompt still waiting to start; the watcher reads
+that item only when the revision moved or the session was unsettled. The
+session's `state` is not used: Claude Code writes it from a model summary a few
+seconds after a turn, so it lags and can stay `working` after the turn ended. A
+settled session whose revision advanced, or that was unsettled when last seen,
+produces one event per session and revision. A session seen for the first time
+only sets the baseline.
 `claude_session_start` and `claude_session_send` record the turn they begin, so
 a turn that ends before the next poll still fires. A session that stops mid-turn
 leaves the running list and is read individually. Turns last seen more than a

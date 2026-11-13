@@ -47,6 +47,9 @@ use omni_store::entity::EntityDescriptor;
 use omni_tasks::CronSchedule;
 
 use crate::activity::{ActivityRecorder, McpCallData};
+use crate::events::claude_notify::{
+    ClaudeNotify, ClaudeSessionNotify, ClaudeTurnNotification, LiveNotifyTransport,
+};
 use crate::events::claude_sessions::{ClaudeSessionWatch, ClaudeSessionWatcher};
 use crate::events::persistence::{EventDelivery, EventReceipt, EventRequest, EventSubscription};
 use crate::events::publisher::McpEventPublisher;
@@ -82,6 +85,8 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<EventDelivery>(),
         EntityDescriptor::of::<EventRequest>(),
         EntityDescriptor::of::<ClaudeSessionWatch>(),
+        EntityDescriptor::of::<ClaudeSessionNotify>(),
+        EntityDescriptor::of::<ClaudeTurnNotification>(),
     ];
     entities.extend(gateway::model::entities());
     entities
@@ -259,12 +264,19 @@ impl McpPackage {
             None => None,
         };
         let watcher = host.as_ref().map(|host| {
+            let notify = ClaudeNotify::new(
+                ctx.store.clone(),
+                ctx.clock.clone(),
+                config.claude_notify_targets.clone(),
+                Arc::new(LiveNotifyTransport::new(ctx.http.clone(), ctx.side_effects)),
+            );
             ClaudeSessionWatcher::new(
                 events.clone(),
                 host.clone(),
                 ctx.store.clone(),
                 ctx.clock.clone(),
             )
+            .with_notify(notify)
         });
         Ok(Self {
             recorder,
@@ -325,13 +337,18 @@ impl McpPackage {
             features: self.features,
             clock: self.ctx.clock.clone(),
         })?;
-        tools.extend(tools::events::event_tools(Some(self.events.clone()))?);
+        let notify = self.watcher.as_ref().and_then(|w| w.notify().cloned());
+        tools.extend(tools::events::event_tools(
+            Some(self.events.clone()),
+            notify.clone(),
+        )?);
         tools.extend(tools::claude_sessions::claude_session_tools(&ClaudeDeps {
             host: self.host.clone(),
             watcher: self
                 .watcher
                 .clone()
                 .map(|w| Arc::new(w) as Arc<dyn omni_runtime::ports::ClaudeSessionNotifier>),
+            notify,
         })?);
         Ok(tools)
     }

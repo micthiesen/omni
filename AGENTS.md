@@ -642,8 +642,13 @@ the dotfiles `claude-rc` project list, enforced on the Mac. MCP tools describe
 a generic "Claude Code host": never mention Mac, macOS, or the hostname in tool
 text, results, or errors (the UI may). Sessions run with full access by design;
 approval is the connected client's, guided by tool policy, so do not add a
-permission mode. See
-`docs/claude-sessions.md`.
+permission mode. A turn has finished when the host's runtime `status` is not
+busy and the transcript does not end in a prompt still waiting to start; never
+use the session's `state`, which Claude Code writes from a model summary after
+the turn and which can stay `working`. Session `notify` targets come only from
+`CLAUDE_NOTIFY_TARGETS` (callers pass a name, never a URL), are posted once per
+session and revision with an `Idempotency-Key`, and an unknown target never
+fails the session. See `docs/claude-sessions.md`.
 
 Hister tools read a captured-page archive, not a complete browser visit log.
 Keep text and listings bounded, treat page content as untrusted evidence, and

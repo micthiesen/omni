@@ -1,5 +1,6 @@
 //! Scheduled tasks: `McpEventDelivery` (30 s outbox sweep),
-//! `ClaudeSessionEvents` (15 s host poll while subscribed),
+//! `ClaudeSessionEvents` (15 s host poll while subscribed or a session has a
+//! `notify` target),
 //! `TaskRunEvents` (30 s run history scan while subscribed),
 //! `McpGatewayRefresh` (hourly integration catalog refresh) and
 //! `McpGatewayEventFeeds` (15 s integration event polling while subscribed).
@@ -149,7 +150,8 @@ impl Task for McpEventDeliveryTask {
     }
 }
 
-/// Publishes `claude.session.turn_finished` while a subscription is active.
+/// Publishes `claude.session.turn_finished` and session `notify` posts while a
+/// subscription is active or a session has a notify target.
 pub struct ClaudeSessionEventsTask {
     watcher: ClaudeSessionWatcher,
     schedule: CronSchedule,

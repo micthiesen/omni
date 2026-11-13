@@ -107,6 +107,93 @@ impl fmt::Debug for WhiskerCredentials {
     }
 }
 
+/// One `CLAUDE_NOTIFY_TARGETS` entry: where a Claude Code session's finished
+/// turns are posted, and the bearer key that endpoint expects.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ClaudeNotifyTarget {
+    pub url: url::Url,
+    pub token: String,
+}
+
+impl fmt::Debug for ClaudeNotifyTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ClaudeNotifyTarget(***)")
+    }
+}
+
+/// `CLAUDE_NOTIFY_TARGETS`: a JSON object from target name to
+/// `{"url": "https://...", "token": "..."}`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClaudeNotifyTargets(pub BTreeMap<String, ClaudeNotifyTarget>);
+
+/// A notify target name: what `claude_session_start` callers pass as `notify`.
+pub fn is_notify_target_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+impl ClaudeNotifyTargets {
+    const KEY: &'static str = "CLAUDE_NOTIFY_TARGETS";
+
+    fn parse(raw: &str) -> Result<Self, ConfigError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawTarget {
+            url: String,
+            token: String,
+        }
+        // The decode error is dropped: serde quotes the offending value, which may be a token.
+        let decoded: BTreeMap<String, RawTarget> = serde_json::from_str(raw).map_err(|_| {
+            invalid(
+                Self::KEY,
+                r#"expected a JSON object like {"name": {"url": "https://...", "token": "..."}}"#,
+            )
+        })?;
+        let mut targets = BTreeMap::new();
+        for (name, target) in decoded {
+            if !is_notify_target_name(&name) {
+                return Err(invalid(
+                    Self::KEY,
+                    format!("target {name:?}: names are 1-40 of a-z, 0-9, - and _"),
+                ));
+            }
+            let url = url::Url::parse(&target.url)
+                .ok()
+                .filter(|url| {
+                    url.scheme() == "https"
+                        && url.host_str().is_some_and(|host| !host.is_empty())
+                        && url.username().is_empty()
+                        && url.password().is_none()
+                        && url.fragment().is_none()
+                })
+                .ok_or_else(|| {
+                    invalid(
+                        Self::KEY,
+                        format!("target {name}: url must be https without credentials or fragment"),
+                    )
+                })?;
+            if target.token.len() < 16 || target.token.chars().any(char::is_whitespace) {
+                return Err(invalid(
+                    Self::KEY,
+                    format!("target {name}: token must be at least 16 characters without spaces"),
+                ));
+            }
+            targets.insert(
+                name,
+                ClaudeNotifyTarget {
+                    url,
+                    token: target.token,
+                },
+            );
+        }
+        Ok(Self(targets))
+    }
+}
+
 /// Renders one field for the redacted config summary.
 trait SummaryValue {
     /// Free text, which could hold a credential under any name; typed values
@@ -167,6 +254,11 @@ impl SummaryValue for TtsProvider {
     }
 }
 impl SummaryValue for WhiskerCredentials {
+    fn summary(&self) -> String {
+        "***".to_owned()
+    }
+}
+impl SummaryValue for ClaudeNotifyTargets {
     fn summary(&self) -> String {
         "***".to_owned()
     }
@@ -350,6 +442,8 @@ config_struct! {
     /// Finite number (`""` coerces to 0); default 3000.
     frontend_port: f64 = "FRONTEND_PORT",
     omni_device_link_token: Option<String> = "OMNI_DEVICE_LINK_TOKEN",
+    /// Where `notify`-enabled Claude Code sessions report finished turns.
+    claude_notify_targets: Option<ClaudeNotifyTargets> = "CLAUDE_NOTIFY_TARGETS",
     /// The MCP gateway's public `https://` origin (no path), for downstream
     /// OAuth and upstream OAuth callbacks; unset keeps the gateway LAN-only.
     omni_gateway_public_url: Option<String> = "OMNI_GATEWAY_PUBLIC_URL",
@@ -761,6 +855,11 @@ impl Config {
                 .transpose()?,
             frontend_port: env.finite("FRONTEND_PORT")?.unwrap_or(3000.0),
             omni_device_link_token: env.opt("OMNI_DEVICE_LINK_TOKEN"),
+            claude_notify_targets: env
+                .opt("CLAUDE_NOTIFY_TARGETS")
+                .filter(|raw| !raw.trim().is_empty())
+                .map(|raw| ClaudeNotifyTargets::parse(&raw))
+                .transpose()?,
             omni_gateway_public_url: match env.opt("OMNI_GATEWAY_PUBLIC_URL") {
                 None => None,
                 Some(raw) => Some(public_origin("OMNI_GATEWAY_PUBLIC_URL", &raw)?),
@@ -884,7 +983,7 @@ impl Config {
     }
 
     /// Every value the summary hides (except [`UNSCRUBBED_KEYS`]), credentials
-    /// inside public URLs, and the Whisker credentials: what
+    /// inside public URLs, the Whisker credentials and notify target tokens: what
     /// `omni_core::secrets` scrubs (with their encoded forms) from logs and
     /// MCP errors.
     pub fn secret_values(&self) -> Vec<String> {
@@ -902,6 +1001,9 @@ impl Config {
         if let Some(whisker) = &self.whisker_credentials {
             values.push(whisker.email.clone());
             values.push(whisker.password.clone());
+        }
+        if let Some(targets) = &self.claude_notify_targets {
+            values.extend(targets.0.values().map(|target| target.token.clone()));
         }
         values
     }
@@ -1226,6 +1328,31 @@ mod tests {
         assert!(is_sensitive_key("WHISKER_CREDENTIALS"));
         assert!(!is_sensitive_key("PRINTER_IPP_URL"));
         assert!(!is_sensitive_key("TZ"));
+    }
+
+    #[test]
+    fn claude_notify_targets_are_named_https_endpoints_with_tokens() {
+        let token = "0123456789abcdef0123";
+        let raw = format!(
+            r#"{{"chief": {{"url": "https://rakazo.example/api/v1/bots/b1/webhook", "token": "{token}"}}}}"#
+        );
+        let targets = ClaudeNotifyTargets::parse(&raw).unwrap();
+        let chief = &targets.0["chief"];
+        assert_eq!(chief.url.host_str(), Some("rakazo.example"));
+        assert_eq!(chief.token, token);
+        assert!(!format!("{targets:?}").contains(token));
+
+        for bad in [
+            r#"{"Chief": {"url": "https://a.example/hook", "token": "0123456789abcdef"}}"#,
+            r#"{"chief": {"url": "http://a.example/hook", "token": "0123456789abcdef"}}"#,
+            r#"{"chief": {"url": "https://u:p@a.example/hook", "token": "0123456789abcdef"}}"#,
+            r#"{"chief": {"url": "https://a.example/hook", "token": "short"}}"#,
+            r#"{"chief": {"url": "https://a.example/hook"}}"#,
+            r#"["chief"]"#,
+        ] {
+            let error = ClaudeNotifyTargets::parse(bad).unwrap_err().to_string();
+            assert!(!error.contains("0123456789abcdef"), "{error}");
+        }
     }
 
     #[test]
