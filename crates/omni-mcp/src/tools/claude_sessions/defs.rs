@@ -179,7 +179,7 @@ pub struct ClaudeLinkStatusOutput {
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClaudeSessionsListInput {
     #[schemars(
-        description = "Project name from claude_projects_list",
+        description = "Project name from claude_link_status",
         length(max = 100),
         pattern("^[A-Za-z0-9][A-Za-z0-9._-]*$")
     )]
@@ -286,7 +286,7 @@ pub enum Effort {
 #[schemars(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClaudeSessionStartInput {
     #[schemars(
-        description = "Project name from claude_projects_list",
+        description = "Project name from claude_link_status",
         length(max = 100),
         pattern("^[A-Za-z0-9][A-Za-z0-9._-]*$")
     )]

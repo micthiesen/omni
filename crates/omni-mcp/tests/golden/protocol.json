@@ -47001,7 +47001,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "includeStopped": {
                         "default": false,
@@ -47492,7 +47492,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "prompt": {
                         "type": "string",
@@ -96141,7 +96141,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "includeStopped": {
                         "default": false,
@@ -96632,7 +96632,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "prompt": {
                         "type": "string",
@@ -145472,7 +145472,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "includeStopped": {
                         "default": false,
@@ -145963,7 +145963,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "prompt": {
                         "type": "string",
@@ -194064,7 +194064,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "includeStopped": {
                         "default": false,
@@ -194555,7 +194555,7 @@
                         "type": "string",
                         "maxLength": 100,
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "description": "Project name from claude_projects_list"
+                        "description": "Project name from claude_link_status"
                       },
                       "prompt": {
                         "type": "string",
