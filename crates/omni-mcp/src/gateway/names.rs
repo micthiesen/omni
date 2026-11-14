@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn integration_ids() {
-        for ok in ["github", "artifacts_support", "a", "serpapi_mcp", "x1"] {
+        for ok in ["github", "artifacts_support", "a", "github_com", "x1"] {
             assert_eq!(integration_id_problem(ok), None, "{ok}");
         }
         for bad in [

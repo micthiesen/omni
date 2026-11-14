@@ -298,7 +298,7 @@ Harnesses used to reach Omni through a separate tool gateway and the
    it walks ChatGPT's OAuth flow, checks that only `/gateway/*` and the OAuth
    documents are public, and revokes its grant.
 1. The integrations were configured on `/gateway`: context7, deepwiki, grep,
-   mcplookup (no auth); github_com and serpapi_mcp (headers,
+   mcplookup (no auth); github_com (headers,
    `Authorization: Bearer <key>`); artifacts and artifacts_support (OAuth);
    karakeep (bundled).
 2. The harnesses moved to the gateway, each with its own client token or

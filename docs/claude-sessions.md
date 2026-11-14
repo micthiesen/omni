@@ -41,6 +41,10 @@ supervisor uses: `claude-rc/config.toml` in dotfiles plus the Mac's
 `~/.config/claude-rc/local.toml`, enabled entries only. `claude_link_status`
 returns that list and `claude_session_start` takes a project name. All other
 tools work on every session on the Mac, whatever its directory or origin.
+Every session result names the project holding the session's directory (the
+deepest one), or `null`. `claude-for-dot` names it only in `list` and `start`
+replies, so Omni fills it in for `get` and `send` from the project list,
+cached for a minute.
 
 Sessions intentionally run with the same full access as `claude-for-dot`
 (`--dangerously-skip-permissions`), so a background session never stalls on a

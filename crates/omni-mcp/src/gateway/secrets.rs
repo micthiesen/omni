@@ -197,7 +197,7 @@ mod tests {
             secrets.open("credential:github", &sealed).as_deref(),
             Some("ghp_secret")
         );
-        assert_eq!(secrets.open("credential:serpapi", &sealed), None);
+        assert_eq!(secrets.open("credential:context7", &sealed), None);
         assert_eq!(
             GatewaySecrets::from_key([8; 32]).open("credential:github", &sealed),
             None

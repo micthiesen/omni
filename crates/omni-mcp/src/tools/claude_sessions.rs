@@ -27,6 +27,7 @@ const ITEM_TEXT_LIMIT: usize = 8_000;
 const RESULT_TEXT_LIMIT: usize = 20_000;
 const QUICK: Duration = Duration::from_secs(60);
 const LAUNCH: Duration = Duration::from_secs(150);
+const PROJECTS_TTL: Duration = Duration::from_secs(60);
 const NOT_CONFIGURED: &str = "The Claude Code host link is not configured";
 const DISABLED_DETAIL: &str =
     "Session control is disabled on the Claude Code host (kill switch); nothing ran";
@@ -331,6 +332,76 @@ impl ClaudeDeps {
     }
 }
 
+/// The configured project whose directory holds `cwd` (the deepest one), as
+/// the host's own `list` decides it. Both sides arrive scrubbed to `~/...`.
+pub fn project_of(cwd: &str, projects: &[(String, String)]) -> Option<String> {
+    projects
+        .iter()
+        .map(|(name, path)| (name, path.trim_end_matches('/')))
+        .filter(|(_, path)| {
+            !path.is_empty()
+                && (cwd == *path
+                    || cwd
+                        .strip_prefix(path)
+                        .is_some_and(|rest| rest.starts_with('/')))
+        })
+        .max_by_key(|(_, path)| path.len())
+        .map(|(name, _)| name.clone())
+}
+
+type ProjectList = Vec<(String, String)>;
+
+/// Fills in a session's project where the host leaves it out: only its
+/// `list` and `start` replies name one, while `status`, `wait`, `result` and
+/// `send` do not. The project list is cached briefly because
+/// `claude_session_get` is polled.
+#[derive(Clone, Default)]
+struct ProjectNames {
+    cached: Arc<tokio::sync::Mutex<Option<(tokio::time::Instant, ProjectList)>>>,
+}
+
+impl ProjectNames {
+    async fn fill(&self, deps: &ClaudeDeps, data: &mut Map<String, Value>) {
+        if data
+            .get("project")
+            .is_some_and(|project| !project.is_null())
+        {
+            return;
+        }
+        let Some(cwd) = str_of(data.get("cwd")) else {
+            return;
+        };
+        // Without a project list the session is still reported, unattributed.
+        let Some(projects) = self.load(deps).await else {
+            return;
+        };
+        if let Some(name) = project_of(&cwd, &projects) {
+            data.insert("project".to_owned(), Value::String(name));
+        }
+    }
+
+    async fn load(&self, deps: &ClaudeDeps) -> Option<ProjectList> {
+        let mut cached = self.cached.lock().await;
+        if let Some((at, projects)) = cached.as_ref()
+            && at.elapsed() < PROJECTS_TTL
+        {
+            return Some(projects.clone());
+        }
+        let data = deps
+            .run(HostCommand::Projects, Map::new(), QUICK)
+            .await
+            .ok()?;
+        let projects: ProjectList = records(data.get("projects"))
+            .iter()
+            .filter_map(|project| {
+                Some((str_of(project.get("name"))?, str_of(project.get("path"))?))
+            })
+            .collect();
+        *cached = Some((tokio::time::Instant::now(), projects.clone()));
+        Some(projects)
+    }
+}
+
 fn session_json(session: &ClaudeSession) -> Value {
     serde_json::to_value(session).unwrap_or(Value::Null)
 }
@@ -413,6 +484,7 @@ struct StopInput {
 }
 
 pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaError> {
+    let names = ProjectNames::default();
     let link_status = {
         let deps = deps.clone();
         typed_tool(
@@ -501,10 +573,12 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
 
     let get = {
         let deps = deps.clone();
+        let names = names.clone();
         typed_tool(
             &defs::CLAUDE_SESSION_GET,
             move |input: GetInput, _: ToolContext| {
                 let deps = deps.clone();
+                let names = names.clone();
                 async move {
                     let waited = if input.wait_seconds > 0 {
                         Some(
@@ -526,7 +600,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                         .as_ref()
                         .is_some_and(|data| data.get("timed_out") == Some(&Value::Bool(true)));
                     if !input.include_result || timed_out {
-                        let data = match waited {
+                        let mut data = match waited {
                             Some(data) => data,
                             None => {
                                 deps.run(
@@ -540,6 +614,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                                 .await?
                             }
                         };
+                        names.fill(&deps, &mut data).await;
                         return Ok::<_, ToolError>(json!({
                             "session": session_json(&to_session(&data)),
                             "timedOut": timed_out,
@@ -547,13 +622,14 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                             "truncated": false,
                         }));
                     }
-                    let data = deps
+                    let mut data = deps
                         .run(
                             HostCommand::Result,
                             args(&[("session", Some(Value::String(input.session.clone())))]),
                             QUICK,
                         )
                         .await?;
+                    names.fill(&deps, &mut data).await;
                     let bounded =
                         str_of(data.get("result")).map(|text| truncate(&text, RESULT_TEXT_LIMIT));
                     Ok(json!({
@@ -649,13 +725,15 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
 
     let send = {
         let deps = deps.clone();
+        let names = names.clone();
         typed_tool(
             &defs::CLAUDE_SESSION_SEND,
             move |input: SendInput, _: ToolContext| {
                 let deps = deps.clone();
+                let names = names.clone();
                 async move {
                     deps.check_notify(input.notify.as_ref().and_then(Option::as_deref))?;
-                    let data = deps
+                    let mut data = deps
                         .run(
                             HostCommand::Send,
                             args(&[
@@ -667,6 +745,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                             LAUNCH,
                         )
                         .await?;
+                    names.fill(&deps, &mut data).await;
                     let session = to_session(&data);
                     let previous_revision = int_of(data.get("previous_revision"));
                     let reused = data.get("reused") == Some(&Value::Bool(true));

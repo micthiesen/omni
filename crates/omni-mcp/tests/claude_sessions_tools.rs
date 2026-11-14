@@ -16,7 +16,7 @@ use omni_mcp::events::service::McpEventService;
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
 use omni_mcp::host::{ClaudeHost, HostCommand, HostError, HostLinkStatus};
 use omni_mcp::tools::claude_sessions::{
-    ClaudeDeps, claude_session_tools, scrub_host_details, to_item, to_session,
+    ClaudeDeps, claude_session_tools, project_of, scrub_host_details, to_item, to_session,
 };
 use omni_mcp_kit::{McpTool, ToolOutput, registry::standalone_context};
 use omni_runtime::ports::Ports;
@@ -280,6 +280,96 @@ async fn forwards_the_send_key_and_notes_only_new_turns_for_events() {
         )
         .await;
     assert!(reused.noted().await.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn names_the_project_in_every_tool_that_reports_a_session() {
+    // The host names the project only in list and start replies.
+    let in_workbench =
+        |base: Value| with(base, json!({"cwd": "/Users/someone/Code/workbench/out"}));
+    let harness = Harness::new(vec![
+        (
+            "projects",
+            json!({"projects": [
+                {"name": "omni", "path": "/Users/someone/Code/omni", "exists": true},
+                {"name": "workbench", "path": "/Users/someone/Code/workbench", "exists": true},
+            ]}),
+        ),
+        ("status", in_workbench(summary(4, "idle"))),
+        (
+            "wait",
+            in_workbench(with(summary(4, "idle"), json!({"timed_out": false}))),
+        ),
+        (
+            "result",
+            in_workbench(with(summary(4, "idle"), json!({"result": "ok"}))),
+        ),
+        (
+            "send",
+            in_workbench(with(summary(5, "busy"), json!({"previous_revision": 4}))),
+        ),
+    ])
+    .await;
+    let status = harness
+        .call("claude_session_get", json!({"session": "25ffb449"}))
+        .await;
+    assert_eq!(status["session"]["project"], "workbench");
+    let waited = harness
+        .call(
+            "claude_session_get",
+            json!({"session": "25ffb449", "waitSeconds": 5, "includeResult": true}),
+        )
+        .await;
+    assert_eq!(waited["session"]["project"], "workbench");
+    let sent = harness
+        .call(
+            "claude_session_send",
+            json!({"session": "25ffb449", "prompt": "Continue"}),
+        )
+        .await;
+    assert_eq!(sent["session"]["project"], "workbench");
+    assert_eq!(
+        harness.noted().await[0].project.as_deref(),
+        Some("workbench")
+    );
+    let lookups = harness
+        .commands()
+        .into_iter()
+        .filter(|c| *c == HostCommand::Projects)
+        .count();
+    assert_eq!(lookups, 1, "the project list is cached between calls");
+
+    let named = Harness::new(vec![(
+        "status",
+        in_workbench(with(summary(4, "idle"), json!({"project": "omni"}))),
+    )])
+    .await;
+    let output = named
+        .call("claude_session_get", json!({"session": "25ffb449"}))
+        .await;
+    assert_eq!(output["session"]["project"], "omni");
+    assert_eq!(named.commands(), [HostCommand::Status]);
+}
+
+#[test]
+fn a_session_belongs_to_the_deepest_project_holding_its_directory() {
+    let projects = vec![
+        ("code".to_owned(), "~/Code/".to_owned()),
+        ("omni".to_owned(), "~/Code/omni".to_owned()),
+    ];
+    assert_eq!(
+        project_of("~/Code/omni", &projects).as_deref(),
+        Some("omni")
+    );
+    assert_eq!(
+        project_of("~/Code/omni/crates", &projects).as_deref(),
+        Some("omni")
+    );
+    assert_eq!(
+        project_of("~/Code/omni-web", &projects).as_deref(),
+        Some("code")
+    );
+    assert_eq!(project_of("~/Documents", &projects), None);
 }
 
 #[tokio::test(start_paused = true)]
