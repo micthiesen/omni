@@ -12,7 +12,9 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
+use tokio::io::{
+    AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader,
+};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use super::AmazonError;
@@ -20,7 +22,13 @@ use super::AmazonError;
 /// Bound on one JSON-RPC line from the browser.
 const MAX_LINE_BYTES: u64 = 4 * 1024 * 1024;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
-const NAVIGATE_TIMEOUT: Duration = Duration::from_secs(25);
+/// Obscura answers a navigation only after the page's own scripts have run,
+/// whatever `waitUntil` says. Measured in production on 2026-11-15, Amazon's
+/// product and search pages took 10 to 14 seconds, and 26 to 33 for the first
+/// page after the bot check cleared. A shorter bound fails every call: the
+/// timeout discards the browser and its cleared cookies, so the next call
+/// meets the bot check and the same slow first page again.
+const NAVIGATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// One browser page.
 pub trait Browser: Send {
@@ -63,8 +71,13 @@ impl Launcher for ObscuraLauncher {
 struct ObscuraBrowser {
     // Held so `kill_on_drop` ends the process with the browser.
     _child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    channel: Channel<ChildStdin, ChildStdout>,
+}
+
+/// The JSON-RPC exchange over the browser's pipes.
+struct Channel<W, R> {
+    stdin: W,
+    stdout: BufReader<R>,
     next_id: i64,
 }
 
@@ -100,13 +113,8 @@ impl ObscuraBrowser {
                 "the browser's pipes are unavailable".into(),
             ));
         };
-        let mut browser = Self {
-            _child: child,
-            stdin,
-            stdout: BufReader::new(stdout),
-            next_id: 1,
-        };
-        browser
+        let mut channel = Channel::new(stdin, stdout);
+        channel
             .request(
                 "initialize",
                 json!({
@@ -117,10 +125,23 @@ impl ObscuraBrowser {
                 STARTUP_TIMEOUT,
             )
             .await?;
-        browser
+        channel
             .write(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))
             .await?;
-        Ok(browser)
+        Ok(Self {
+            _child: child,
+            channel,
+        })
+    }
+}
+
+impl<W: AsyncWrite + Unpin + Send, R: AsyncRead + Unpin + Send> Channel<W, R> {
+    fn new(stdin: W, stdout: R) -> Self {
+        Self {
+            stdin,
+            stdout: BufReader::new(stdout),
+            next_id: 1,
+        }
     }
 
     async fn write(&mut self, message: &Value) -> Result<(), AmazonError> {
@@ -145,6 +166,12 @@ impl ObscuraBrowser {
     ) -> Result<Value, AmazonError> {
         let id = self.next_id;
         self.next_id += 1;
+        // A tool call is named by its tool, so a timeout says which step hung.
+        let label = params
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(method)
+            .to_owned();
         let exchange = async {
             self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
                 .await?;
@@ -179,9 +206,12 @@ impl ObscuraBrowser {
                 return Ok(message.get("result").cloned().unwrap_or(Value::Null));
             }
         };
-        tokio::time::timeout(timeout, exchange)
-            .await
-            .map_err(|_| AmazonError::Browser(format!("{method} timed out")))?
+        tokio::time::timeout(timeout, exchange).await.map_err(|_| {
+            AmazonError::Browser(format!(
+                "{label} got no answer within {} seconds",
+                timeout.as_secs()
+            ))
+        })?
     }
 
     async fn call(
@@ -206,18 +236,34 @@ impl ObscuraBrowser {
         }
         Ok(text)
     }
+
+    async fn navigate(&mut self, url: &str) -> Result<(), AmazonError> {
+        // Amazon renders results and product pages server-side; waiting
+        // for every image and ad frame (`load`) takes longer still.
+        let arguments = json!({"url": url, "waitUntil": "domcontentloaded"});
+        self.call("browser_navigate", arguments, NAVIGATE_TIMEOUT)
+            .await
+            .map(drop)
+    }
+
+    async fn evaluate(
+        &mut self,
+        expression: &str,
+        timeout: Duration,
+    ) -> Result<String, AmazonError> {
+        let millis = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+        self.call(
+            "browser_evaluate",
+            json!({"expression": expression, "timeoutMs": millis}),
+            timeout + Duration::from_secs(5),
+        )
+        .await
+    }
 }
 
 impl Browser for ObscuraBrowser {
     fn navigate<'a>(&'a mut self, url: &'a str) -> BoxFuture<'a, Result<(), AmazonError>> {
-        Box::pin(async move {
-            // Amazon renders results and product pages server-side; waiting
-            // for every image and ad frame (`load`) can take half a minute.
-            let arguments = json!({"url": url, "waitUntil": "domcontentloaded"});
-            self.call("browser_navigate", arguments, NAVIGATE_TIMEOUT)
-                .await
-                .map(drop)
-        })
+        Box::pin(self.channel.navigate(url))
     }
 
     fn evaluate<'a>(
@@ -225,14 +271,66 @@ impl Browser for ObscuraBrowser {
         expression: &'a str,
         timeout: Duration,
     ) -> BoxFuture<'a, Result<String, AmazonError>> {
-        Box::pin(async move {
-            let millis = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-            self.call(
-                "browser_evaluate",
-                json!({"expression": expression, "timeoutMs": millis}),
-                timeout + Duration::from_secs(5),
-            )
+        Box::pin(self.channel.evaluate(expression, timeout))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, DuplexStream};
+
+    use super::*;
+
+    /// A browser that answers each request after `delay`, or never.
+    fn browser_answering_after(delay: Option<Duration>) -> Channel<DuplexStream, DuplexStream> {
+        let (stdin, requests) = tokio::io::duplex(64 * 1024);
+        let (mut replies, stdout) = tokio::io::duplex(64 * 1024);
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(requests).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let Some(delay) = delay else {
+                    std::future::pending::<()>().await;
+                    return;
+                };
+                tokio::time::sleep(delay).await;
+                let reply = json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {"content": [{"type": "text", "text": "Navigated"}]},
+                });
+                let mut line = serde_json::to_vec(&reply).unwrap();
+                line.push(b'\n');
+                replies.write_all(&line).await.unwrap();
+            }
+        });
+        Channel::new(stdin, stdout)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn navigation_outlasts_amazons_slow_first_page_after_the_bot_check() {
+        let mut browser = browser_answering_after(Some(Duration::from_secs(35)));
+        let started = tokio::time::Instant::now();
+        browser
+            .navigate("https://www.amazon.ca/dp/B0CXDXP8VR")
             .await
-        })
+            .unwrap();
+        assert_eq!(started.elapsed(), Duration::from_secs(35));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn silent_browser_fails_at_the_navigation_bound_naming_the_step() {
+        let mut browser = browser_answering_after(None);
+        let started = tokio::time::Instant::now();
+        let error = browser
+            .navigate("https://www.amazon.ca/")
+            .await
+            .unwrap_err();
+        assert_eq!(started.elapsed(), NAVIGATE_TIMEOUT);
+        assert!(
+            matches!(&error, AmazonError::Browser(text)
+                if text == "browser_navigate got no answer within 60 seconds"),
+            "{error}"
+        );
     }
 }

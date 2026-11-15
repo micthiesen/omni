@@ -741,7 +741,10 @@ A fresh browser meets Amazon's bot check (an AWS WAF challenge, then a
 "Continue shopping" interstitial). A load that lands on either warms up: it
 opens the store's home page, presses continue, lets the page run 8 seconds,
 and retries, at most three times. The cookies then carry later calls, which
-take about 15 seconds; a cold call takes 30 to 60. An image CAPTCHA is
+take about 15 to 20 seconds; a cold call takes 45 to 75. Obscura answers a
+navigation only after the page's scripts have run: 10 to 14 seconds, and up
+to 33 for the first page after the bot check clears, so one navigation may
+take 60 seconds before it counts as a browser error. An image CAPTCHA is
 reported, never solved. Calls are serialized because the browser has one
 page, and the process is replaced after a browser error, a call over 150
 seconds, a CAPTCHA, or 200 pages. Nothing signs in, so prices are the
