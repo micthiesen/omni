@@ -1,5 +1,6 @@
 //! Amazon reads clear Amazon's bot check by warming up on the home page,
-//! stop on an image CAPTCHA or a missing product, and replace a failed browser.
+//! stop on an image CAPTCHA or a missing product, replace a failed browser, and
+//! leave the kept browser on a blank page between calls.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -22,8 +23,12 @@ struct Script {
     fail_navigation: bool,
     /// Never answer the next navigation.
     hang_navigation: bool,
+    /// Fail the next navigation to the blank page.
+    fail_blank: bool,
     log: Vec<String>,
     launches: u32,
+    /// Browsers ended so far.
+    ended: u32,
 }
 
 #[derive(Clone, Default)]
@@ -44,6 +49,12 @@ impl Fake {
 
 struct FakeBrowser(Fake);
 
+impl Drop for FakeBrowser {
+    fn drop(&mut self) {
+        self.0.with(|s| s.ended += 1);
+    }
+}
+
 impl Browser for FakeBrowser {
     fn navigate<'a>(&'a mut self, url: &'a str) -> BoxFuture<'a, Result<(), AmazonError>> {
         let hang = self.0.with(|s| std::mem::take(&mut s.hang_navigation));
@@ -53,7 +64,8 @@ impl Browser for FakeBrowser {
             }
             self.0.with(|s| {
                 s.log.push(format!("goto {url}"));
-                if std::mem::take(&mut s.fail_navigation) {
+                let blank_fails = url == "about:blank" && std::mem::take(&mut s.fail_blank);
+                if blank_fails || std::mem::take(&mut s.fail_navigation) {
                     return Err(AmazonError::Browser("the browser exited".into()));
                 }
                 Ok(())
@@ -160,6 +172,7 @@ async fn search_warms_up_through_both_bot_checks_then_reads_results() {
             "goto https://www.amazon.ca/s?k=aeropress",
             "state",
             "extract",
+            "goto about:blank",
         ]
     );
 
@@ -177,7 +190,8 @@ async fn search_warms_up_through_both_bot_checks_then_reads_results() {
         [
             "goto https://www.amazon.ca/s?k=kettle&s=price-asc-rank",
             "state",
-            "extract"
+            "extract",
+            "goto about:blank",
         ]
     );
     assert_eq!(fake.with(|s| s.launches), 1);
@@ -210,7 +224,7 @@ async fn persistent_bot_check_gives_up_after_bounded_warm_ups() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn call_cancelled_mid_request_replaces_the_browser() {
+async fn call_cancelled_mid_request_ends_the_browser_at_once() {
     let fake = Fake::default();
     fake.with(|s| s.hang_navigation = true);
     let amazon = service(&fake);
@@ -220,6 +234,7 @@ async fn call_cancelled_mid_request_replaces_the_browser() {
     )
     .await;
     assert!(cancelled.is_err());
+    assert_eq!(fake.with(|s| s.ended), 1);
     fake.with(|s| {
         s.states = VecDeque::from([json!({"search": true})]);
         s.extract = json!({"results": []}).to_string();
@@ -254,7 +269,38 @@ async fn missing_product_is_not_found() {
     let asin = Asin::parse("B0CFPJYX7P").unwrap();
     let error = service(&fake).product(&asin, Store::Ca).await.unwrap_err();
     assert!(matches!(error, AmazonError::NotFound), "{error:?}");
-    assert_eq!(fake.log()[0], "goto https://www.amazon.ca/dp/B0CFPJYX7P");
+    assert_eq!(
+        fake.log(),
+        [
+            "goto https://www.amazon.ca/dp/B0CFPJYX7P",
+            "state",
+            "goto about:blank"
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn browser_that_cannot_leave_its_page_is_replaced() {
+    let fake = Fake::default();
+    let found = |s: &mut Script| {
+        s.states = VecDeque::from([json!({"search": true})]);
+        s.extract = json!({"results": []}).to_string();
+    };
+    fake.with(|s| {
+        found(s);
+        s.fail_blank = true;
+    });
+    let amazon = service(&fake);
+    amazon
+        .search("x", Sort::Relevance, options())
+        .await
+        .unwrap();
+    fake.with(found);
+    amazon
+        .search("x", Sort::Relevance, options())
+        .await
+        .unwrap();
+    assert_eq!(fake.with(|s| s.launches), 2);
 }
 
 #[tokio::test(start_paused = true)]

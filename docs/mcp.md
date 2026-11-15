@@ -741,13 +741,17 @@ A fresh browser meets Amazon's bot check (an AWS WAF challenge, then a
 "Continue shopping" interstitial). A load that lands on either warms up: it
 opens the store's home page, presses continue, lets the page run 8 seconds,
 and retries, at most three times. The cookies then carry later calls, which
-take about 15 to 20 seconds; a cold call takes 45 to 75. Obscura answers a
+take about 15 to 30 seconds; a cold call takes 45 to 75. After every call
+that keeps its browser, the page is sent to `about:blank`: an Amazon page left
+open keeps running scripts and held a whole CPU core, and the blank page keeps
+the cookies. A browser that cannot get there within 10 seconds is replaced. Obscura answers a
 navigation only after the page's scripts have run: 10 to 14 seconds, and up
 to 33 for the first page after the bot check clears, so one navigation may
 take 60 seconds before it counts as a browser error. An image CAPTCHA is
 reported, never solved. Calls are serialized because the browser has one
 page, and the process is replaced after a browser error, a call over 150
-seconds, a CAPTCHA, or 200 pages. Nothing signs in, so prices are the
+seconds, a CAPTCHA, or 200 pages, and ended at once when the caller abandons
+a call mid-request. Nothing signs in, so prices are the
 logged-out ones. Obscura keeps its default private-network block, so pages
 cannot reach the LAN. The extraction scripts (`omni-personal/src/amazon/js/`)
 follow Amazon's markup and need updating when it changes; results come back

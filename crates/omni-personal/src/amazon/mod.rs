@@ -5,7 +5,9 @@
 //! pressing continue and letting the page run for a few seconds clears it, and
 //! the cookies then carry later requests. One browser process is kept warm and
 //! shared; calls are serialized because it has one page. The process is
-//! replaced after a browser failure, a timed-out call, or [`MAX_LOADS`] pages.
+//! replaced after a browser failure, a timed-out call, or [`MAX_LOADS`] pages,
+//! and ended at once when its call is dropped mid-request.
+//! Between calls the page rests on [`IDLE_URL`], which keeps the cookies.
 //! Nothing is bought or signed in to: prices are the logged-out ones.
 
 pub mod browser;
@@ -30,6 +32,11 @@ const MAX_LOADS: u32 = 200;
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Whole-call bound, including warm-ups.
 const CALL_TIMEOUT: Duration = Duration::from_secs(150);
+/// Where the page rests between calls. An Amazon page left open keeps running
+/// its scripts and held a whole CPU core in production; a blank page stops
+/// them without touching the cookie jar, and loads without a network request.
+const IDLE_URL: &str = "about:blank";
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
 pub enum AmazonError {
@@ -69,9 +76,23 @@ impl AmazonError {
 struct Session {
     browser: Option<Box<dyn Browser>>,
     loads: u32,
-    /// Set while a call runs; still set at the next call when the previous
-    /// one was cancelled mid-request, leaving the browser's stdio unknown.
-    busy: bool,
+}
+
+/// Ends the browser when its call is dropped mid-request (a caller that gave
+/// up). Its stdio is then unknown, and the page it was left on can keep
+/// running scripts: one such browser used a whole CPU core in production for
+/// ten minutes, until the next call replaced it.
+struct InFlight<'a> {
+    session: &'a mut Session,
+    finished: bool,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.session.browser = None;
+        }
+    }
 }
 
 /// Reads Amazon through one shared browser.
@@ -126,17 +147,17 @@ impl AmazonService {
         script: &str,
     ) -> Result<T, AmazonError> {
         let mut session = self.session.lock().await;
-        if session.busy {
-            session.browser = None;
-        }
-        session.busy = true;
+        let mut call = InFlight {
+            session: &mut session,
+            finished: false,
+        };
+        let session = &mut *call.session;
         let result = tokio::time::timeout(
             CALL_TIMEOUT,
-            self.load_and_extract(&mut session, store, url, kind, script),
+            self.load_and_extract(session, store, url, kind, script),
         )
         .await
         .unwrap_or(Err(AmazonError::Timeout(CALL_TIMEOUT.as_secs())));
-        session.busy = false;
         if let Err(error) = &result {
             if error.resets_browser() {
                 session.browser = None;
@@ -147,6 +168,14 @@ impl AmazonService {
                 tracing::warn!(target: LOG, "Amazon read failed: {error}");
             }
         }
+        if let Some(browser) = session.browser.as_mut() {
+            let idled = tokio::time::timeout(IDLE_TIMEOUT, browser.navigate(IDLE_URL)).await;
+            if !matches!(idled, Ok(Ok(()))) {
+                tracing::warn!(target: LOG, "Amazon browser did not leave its page; replacing it");
+                session.browser = None;
+            }
+        }
+        call.finished = true;
         result
     }
 
