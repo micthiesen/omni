@@ -17,7 +17,9 @@ testing = []
 [dependencies]
 base64.workspace = true
 futures.workspace = true
+heic-rs.workspace = true
 hex.workspace = true
+image.workspace = true
 imap-proto.workspace = true
 indexmap.workspace = true
 jiff.workspace = true

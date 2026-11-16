@@ -147,7 +147,7 @@ change; reuse authorization already given in the conversation.
 - `omni-testkit`: temp stores, test clock, recorders, fake models, no-network
   HTTP, golden helpers (dev-dependency only).
 - `omni-imap`: iCloud IMAP transport, cursors, archive actions, drafts, Sent
-  copies, compose, email MCP reads.
+  copies, compose, email MCP reads (PDF and image attachments).
 - `omni-email`: email dispatch, retry queue, watchdog, activity, triage, sender
   rules, feedback.
 - `omni-parcel`: Parcel email handler, the `parcels_add` tool and the shared
@@ -715,8 +715,12 @@ did not run. Integration events are followed by `events/poll` feeds whose cursor
 is stored only after the events are queued (receipts keyed by feed and upstream
 event id); a `truncated` replay is recorded as a gap, never papered over.
 
-Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
-revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK
+Private PDF and image attachment MCP reads bind exact Message-ID to actual MIME part IDs,
+revalidate identity, and cap source and decoded bytes. Images (JPEG, PNG, GIF,
+WebP, HEIC) need a declared MIME type that matches their magic bytes, are decoded
+only in memory by pure-Rust decoders under pixel, allocation and time limits
+(`omni-imap/src/attachment_images.rs`), return as MCP image blocks, and never get
+an `attachmentReference`. Preserve read-only/PEEK
 semantics, declared MIME validation, safe download names, and private binary
 responses without public storage or server-selected filesystem destinations.
 Outgoing send and draft attachments are only `attachmentReference` values

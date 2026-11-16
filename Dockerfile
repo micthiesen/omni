@@ -240,7 +240,8 @@ USER node
 
 # Fails the build when a runtime invariant is missing: ffmpeg arnndn,
 # firequalizer and libmp3lame, the denoise model, the brlaser filter and PPD,
-# cupsfilter, pdfinfo, the sherpa models, and runnable yt-dlp and obscura. It
+# cupsfilter, pdfinfo, the sherpa models, runnable yt-dlp and obscura, and a
+# working HEIC to JPEG conversion. It
 # reads only the tool and model paths, so it needs no runtime secrets.
 RUN omni doctor --image
 

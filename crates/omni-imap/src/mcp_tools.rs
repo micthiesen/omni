@@ -1,4 +1,4 @@
-//! MCP tools: compose, archive and PDF attachments. Each tool's contract is
+//! MCP tools: compose, archive and PDF and image attachments. Each tool's contract is
 //! declared in [`defs`]; handlers trim inputs before validating against the
 //! derived input schema, so inputs valid after trimming are accepted.
 
@@ -24,6 +24,7 @@ use crate::archive_store::{
     ArchiveAction, ArchiveActionError, ArchiveActionStatus, ArchivePatch, get_archive_action,
     queue_archive_action, update_archive_action,
 };
+use crate::attachment_images::{DEFAULT_MAX_DIMENSION, ImageKind, identify_image, process_image};
 pub use crate::attachments::AttachmentReader;
 use crate::attachments::{MAX_ATTACHMENT_BYTES, is_pdf_attachment, safe_attachment_filename};
 use crate::compose::{ComposeRequest, ComposeService};
@@ -258,6 +259,10 @@ fn default_max_bytes() -> usize {
     MAX_ATTACHMENT_BYTES
 }
 
+fn default_max_dimension() -> u32 {
+    DEFAULT_MAX_DIMENSION
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AttachmentInput {
@@ -265,6 +270,8 @@ struct AttachmentInput {
     attachment_id: String,
     #[serde(default = "default_max_bytes")]
     max_bytes: usize,
+    #[serde(default = "default_max_dimension")]
+    max_dimension: u32,
 }
 
 pub fn serialize_action(action: &ArchiveAction) -> Value {
@@ -424,9 +431,15 @@ impl Handler {
             ));
         }
         if !is_pdf_attachment(&attachment.mime_type, &attachment.data) {
-            return Err(ToolError::execute(
-                "Attachment is not a PDF with matching MIME type and PDF header",
-            ));
+            let filename = safe_attachment_filename(Some(&attachment.name));
+            return match identify_image(&attachment.mime_type, &filename, &attachment.data)
+                .map_err(ToolError::execute)?
+            {
+                Some(kind) => self.image(input, kind, filename, attachment.data).await,
+                None => Err(ToolError::execute(
+                    "Attachment is not a PDF or a supported image (JPEG, PNG, GIF, WebP, HEIC) whose declared MIME type matches its content",
+                )),
+            };
         }
         let blob = STANDARD.encode(&attachment.data);
         let mut metadata = Map::new();
@@ -478,6 +491,69 @@ impl Handler {
         Ok(ToolOutput::Custom {
             structured,
             content: vec![text, resource],
+        })
+    }
+
+    /// An image comes back as an MCP image block, bounded to `maxDimension`.
+    /// It carries no `attachmentReference`: sends and drafts attach PDFs only.
+    async fn image(
+        &self,
+        input: AttachmentInput,
+        kind: ImageKind,
+        filename: String,
+        data: Vec<u8>,
+    ) -> Result<ToolOutput, ToolError> {
+        let original = Arc::new(data);
+        let processed = process_image(kind, original.clone(), input.max_dimension)
+            .await
+            .map_err(|e| ToolError::execute(e.to_string()))?;
+        let mut metadata = Map::new();
+        metadata.insert("messageId".to_owned(), Value::from(input.message_id));
+        metadata.insert("attachmentId".to_owned(), Value::from(input.attachment_id));
+        metadata.insert("filename".to_owned(), Value::from(filename));
+        metadata.insert("mimeType".to_owned(), Value::from(kind.mime()));
+        metadata.insert("size".to_owned(), Value::from(original.len()));
+        metadata.insert(
+            "sha256".to_owned(),
+            Value::from(hex::encode(Sha256::digest(original.as_slice()))),
+        );
+        metadata.insert(
+            "image".to_owned(),
+            json!({
+                "mimeType": processed.mime_type,
+                "width": processed.width,
+                "height": processed.height,
+                "size": processed.data.len(),
+                "sha256": hex::encode(Sha256::digest(&processed.data)),
+                "originalWidth": processed.original_width,
+                "originalHeight": processed.original_height,
+                "maxDimension": input.max_dimension,
+                "resized": processed.resized,
+                "reencoded": processed.reencoded,
+                "notes": processed.notes,
+            }),
+        );
+        self.output
+            .check(&Value::Object(metadata.clone()))
+            .map_err(ToolError::output)?;
+        let mut text: Content = Map::new();
+        text.insert("type".to_owned(), Value::from("text"));
+        text.insert(
+            "text".to_owned(),
+            Value::from(omni_core::js::json_stringify(&Value::Object(
+                metadata.clone(),
+            ))),
+        );
+        let mut image: Content = Map::new();
+        image.insert("type".to_owned(), Value::from("image"));
+        image.insert(
+            "data".to_owned(),
+            Value::from(STANDARD.encode(&processed.data)),
+        );
+        image.insert("mimeType".to_owned(), Value::from(processed.mime_type));
+        Ok(ToolOutput::Custom {
+            structured: metadata,
+            content: vec![text, image],
         })
     }
 }

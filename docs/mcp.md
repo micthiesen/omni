@@ -86,9 +86,9 @@ families cover:
 
 The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, arbitrary attachment or audio
-bytes, or caller-selected SMTP identities. A bounded private PDF attachment read is
-available through `email_attachment_get`, and sends and drafts can attach those
-PDFs by reference. Inputs are typed and validated.
+bytes, or caller-selected SMTP identities. A bounded private PDF and image
+attachment read is available through `email_attachment_get`, and sends and drafts
+can attach those PDFs by reference. Inputs are typed and validated.
 Searches and listings use pagination or fixed bounds, and large text fields are
 truncated with explicit metadata. Cost summaries are limited to 7, 30, or 90
 days and refuse to scan more than 100,000 stored events.
@@ -168,10 +168,45 @@ this tool. Multiple attachments, repeated filenames and inline parts remain dist
 `maxBytes` (default and ceiling 5 MiB). It resolves the message fresh in Inbox,
 Archive, or the server-designated Sent mailbox, checks exact identity, and caps
 the source message at 20 MiB before parsing. Not-found, size failures and unsupported
-content return tool errors. Only `application/pdf` with a PDF header is accepted;
-this validates format identity, not document safety. MIME filenames are sanitized
+content return tool errors. A PDF is `application/pdf` with a PDF header; an image
+is JPEG, PNG, GIF, WebP or HEIC/HEIF. Nothing else is returned. This validates
+format identity, not document safety. MIME filenames are sanitized
 for download metadata and never used as server paths. Reads use read-only mailbox
 locks and IMAP PEEK, without changing Seen flags or sending mail.
+
+An image's declared MIME type must name the format its magic bytes have (JPEG
+`FF D8 FF`, the PNG signature, `GIF87a`/`GIF89a`, `RIFF....WEBP`, or an ISO-BMFF
+`ftyp` box with a `heic`, `heix`, `mif1` or `msf1` brand and no AVIF brand).
+`image/jpg`, `image/pjpeg`, `image/x-png` and `image/heif` count as their usual
+type. `application/octet-stream`, which is also what a missing Content-Type
+becomes, is accepted only when the filename extension names the same format. Any
+other disagreement is a tool error.
+
+An image comes back as an MCP image content block (`type: "image"`, base64
+`data`, `mimeType`), never as an embedded resource, after a text block of
+metadata. The top-level `mimeType`, `size` and `sha256` describe the attachment as
+stored; `image` describes the returned rendition: `mimeType`, `width`, `height`,
+`size`, `sha256`, `originalWidth`, `originalHeight`, `maxDimension`, `resized`,
+`reencoded` and `notes`. `maxDimension` (256 to 8192, default 2048) bounds the long
+edge. The rules, in order:
+
+- EXIF and HEIF orientation is applied, so dimensions are as displayed.
+- An image within `maxDimension`, upright and at most 4 MiB is returned as its
+  original bytes (`reencoded: false`, equal digests). Nothing is ever upscaled.
+- Otherwise it is downscaled with Lanczos3, keeping the aspect ratio, and
+  re-encoded in its own format: JPEG at quality 95 with 4:4:4 chroma, PNG
+  losslessly (16-bit stays 16-bit), WebP losslessly. HEIC always becomes such a
+  JPEG. A re-encoded GIF returns only its first frame, as PNG. An embedded ICC
+  profile is kept.
+- A result over 4 MiB is re-encoded as JPEG quality 85 with 4:4:4 chroma
+  (transparency flattened onto white); if that is still over 4 MiB the call fails
+  and asks for a smaller `maxDimension`.
+
+Image bytes are untrusted: they are decoded in memory by pure-Rust decoders
+(`image`, `heic-rs`), one image at a time, with a 100 megapixel limit, a decode
+allocation limit and a 60 second timeout. No subprocess sees them and nothing is
+written to disk. Images carry no `attachmentReference` and cannot be attached to
+outgoing mail. The rest of this section describes the PDF response.
 
 The authenticated response contains an embedded MCP resource with `mimeType` and
 base64 `blob`, plus structured filename, decoded size and SHA-256 metadata (the

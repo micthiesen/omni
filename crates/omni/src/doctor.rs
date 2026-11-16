@@ -157,6 +157,13 @@ pub async fn checks(env: &DoctorEnv, assets_dir: &Path) -> Vec<Check> {
         Ok(version) => Check::new("obscura --version", true, version.trim().to_owned()),
         Err(error) => Check::new("obscura --version", false, error),
     });
+    // email_attachment_get converts HEIC attachments in process.
+    out.push(match omni_imap::attachment_images::heic_self_test() {
+        Ok((width, height)) => {
+            Check::new("HEIC to JPEG conversion", true, format!("{width}x{height}"))
+        }
+        Err(error) => Check::new("HEIC to JPEG conversion", false, error.to_string()),
+    });
     let bundled = omni_mcp::gateway::bundled::BundledRegistry::installed(
         &omni_mcp::gateway::bundled::default_root(true),
     );

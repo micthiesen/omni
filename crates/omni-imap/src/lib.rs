@@ -10,6 +10,7 @@
 
 pub mod archive_service;
 pub mod archive_store;
+pub mod attachment_images;
 pub mod attachments;
 pub mod compose;
 pub mod compose_attachments;

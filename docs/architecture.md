@@ -202,7 +202,7 @@ when a later one differs.
   to most frequently changed so a code change pushes only the last layers.
   `RUN omni doctor --image` fails the build when ffmpeg filters, the
   denoise model, printer files, sherpa models, yt-dlp, Node or a bundled MCP
-  server are missing.
+  server are missing, or when the in-process HEIC to JPEG conversion fails.
 
 The Rust stages rely on cargo-chef layers, not cache mounts, because the GitHub
 Actions cache exports layers but not mounts.
