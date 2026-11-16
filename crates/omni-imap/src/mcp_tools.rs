@@ -26,7 +26,7 @@ use crate::archive_store::{
 };
 use crate::attachment_images::{DEFAULT_MAX_DIMENSION, ImageKind, identify_image, process_image};
 pub use crate::attachments::AttachmentReader;
-use crate::attachments::{MAX_ATTACHMENT_BYTES, is_pdf_attachment, safe_attachment_filename};
+use crate::attachments::{MAX_ATTACHMENT_BYTES, pdf_start, safe_attachment_filename};
 use crate::compose::{ComposeRequest, ComposeService};
 use crate::compose_attachments::{OutgoingAttachmentReference, validate_references};
 use crate::ops::archive::ArchiveIdentity;
@@ -430,8 +430,8 @@ impl Handler {
                 "Attachment exceeds the requested byte limit",
             ));
         }
-        if !is_pdf_attachment(&attachment.mime_type, &attachment.data) {
-            let filename = safe_attachment_filename(Some(&attachment.name));
+        let filename = safe_attachment_filename(Some(&attachment.name));
+        let Some(start) = pdf_start(&attachment.mime_type, &filename, &attachment.data) else {
             return match identify_image(&attachment.mime_type, &filename, &attachment.data)
                 .map_err(ToolError::execute)?
             {
@@ -440,8 +440,10 @@ impl Handler {
                     "Attachment is not a PDF or a supported image (JPEG, PNG, GIF, WebP, HEIC) whose declared MIME type matches its content",
                 )),
             };
-        }
-        let blob = STANDARD.encode(&attachment.data);
+        };
+        // Bytes before the PDF header are not part of the document.
+        let data = &attachment.data[start..];
+        let blob = STANDARD.encode(data);
         let mut metadata = Map::new();
         metadata.insert(
             "messageId".to_owned(),
@@ -451,13 +453,10 @@ impl Handler {
             "attachmentId".to_owned(),
             Value::from(input.attachment_id.clone()),
         );
-        metadata.insert(
-            "filename".to_owned(),
-            Value::from(safe_attachment_filename(Some(&attachment.name))),
-        );
+        metadata.insert("filename".to_owned(), Value::from(filename));
         metadata.insert("mimeType".to_owned(), Value::from("application/pdf"));
-        metadata.insert("size".to_owned(), Value::from(attachment.data.len()));
-        let sha256 = hex::encode(Sha256::digest(&attachment.data));
+        metadata.insert("size".to_owned(), Value::from(data.len()));
+        let sha256 = hex::encode(Sha256::digest(data));
         metadata.insert("sha256".to_owned(), Value::from(sha256.clone()));
         metadata.insert(
             "attachmentReference".to_owned(),

@@ -135,6 +135,46 @@ pub(crate) fn decode_quoted_printable(input: &[u8]) -> Vec<u8> {
     out
 }
 
+/// A uuencoded body: the lines between `begin <mode> <name>` and `end`.
+/// `None` without a `begin` line or when a line is truncated, so the caller
+/// keeps the body as it is. Each line's first character is its decoded
+/// length; a line up to one group short of it (trailing blanks stripped in
+/// transit) is zero-filled. Anything shorter is refused: padding on trust
+/// would let a body of bare length characters decode to 30 times its size.
+pub(crate) fn decode_uuencode(input: &[u8]) -> Option<Vec<u8>> {
+    let value = |c: u8| c.wrapping_sub(b' ') & 0x3f;
+    let mut lines = input
+        .split(|b| *b == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line));
+    lines.find(|line| line.starts_with(b"begin "))?;
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    for line in lines {
+        if line == b"end" {
+            break;
+        }
+        let Some((&length, encoded)) = line.split_first() else {
+            continue;
+        };
+        let length = usize::from(value(length));
+        let mut decoded = Vec::with_capacity(length + 2);
+        for group in encoded.chunks(4) {
+            let mut quad = [0u8; 4];
+            for (slot, c) in quad.iter_mut().zip(group) {
+                *slot = value(*c);
+            }
+            decoded.push((quad[0] << 2) | (quad[1] >> 4));
+            decoded.push((quad[1] << 4) | (quad[2] >> 2));
+            decoded.push((quad[2] << 6) | quad[3]);
+        }
+        if decoded.len() + 3 < length {
+            return None;
+        }
+        decoded.resize(length, 0);
+        out.extend_from_slice(&decoded);
+    }
+    Some(out)
+}
+
 /// libmime `decodeFlowed` over a JS string.
 pub(crate) fn decode_flowed(text: &str, del_sp: bool) -> String {
     let mut result: Vec<String> = Vec::new();
@@ -217,6 +257,21 @@ mod tests {
         assert_eq!(decode_quoted_printable(b"=XYz"), b"=XYz");
         // Raw UTF-8 text is reduced to the low byte of each UTF-16 unit.
         assert_eq!(decode_quoted_printable("é".as_bytes()), vec![0xe9]);
+    }
+
+    #[test]
+    fn uuencode_decodes_between_begin_and_end() {
+        let body = b"preamble\r\nbegin 644 a.pdf\r\n-)5!$1BTQ+C0*8F]D>0``\r\n`\r\nend\r\n";
+        assert_eq!(decode_uuencode(body).unwrap(), b"%PDF-1.4\nbody");
+        // Trailing padding stripped in transit.
+        let stripped = b"begin 644 a\n#8V%T\n \nend\n";
+        assert_eq!(decode_uuencode(stripped).unwrap(), b"cat");
+        assert_eq!(decode_uuencode(b"no header here"), None);
+        // No `end` line: everything after `begin` is decoded.
+        assert_eq!(decode_uuencode(b"begin 644 a\n#8V%T").unwrap(), b"cat");
+        // A length character with no data behind it is not padded out.
+        assert_eq!(decode_uuencode(b"begin 644 a\n_\n_\nend\n"), None);
+        assert_eq!(decode_uuencode(b"begin 644 a\n)8V%T\nend\n"), None);
     }
 
     #[test]

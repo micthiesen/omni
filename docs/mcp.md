@@ -168,7 +168,14 @@ this tool. Multiple attachments, repeated filenames and inline parts remain dist
 `maxBytes` (default and ceiling 5 MiB). It resolves the message fresh in Inbox,
 Archive, or the server-designated Sent mailbox, checks exact identity, and caps
 the source message at 20 MiB before parsing. Not-found, size failures and unsupported
-content return tool errors. A PDF is `application/pdf` with a PDF header; an image
+content return tool errors. A PDF is a part declared `application/pdf` (case and
+parameters ignored), or declared with an unspecific type (`application/octet-stream`,
+which is also what a missing Content-Type becomes, `binary/octet-stream`,
+`application/binary`, `application/x-pdf` and similar PDF aliases) and named
+`*.pdf`, whose `%PDF-` header starts within the first 1024 decoded bytes. Bytes
+before the header are dropped, so `size`, `sha256` and the `attachmentReference`
+describe the returned PDF. Content that leads with another format (HTML or XML
+markup, an executable, an archive, an image) is refused whatever it is called. An image
 is JPEG, PNG, GIF, WebP or HEIC/HEIF. Nothing else is returned. This validates
 format identity, not document safety. MIME filenames are sanitized
 for download metadata and never used as server paths. Reads use read-only mailbox
@@ -261,7 +268,8 @@ fails closed. This covers a changed part and a different email that reuses the
 Message-ID: the reference binds Message-ID and MIME part, and the newest readable
 copy wins, so the pin is what guarantees the reviewed file is the one sent.
 
-Supported type and limits: only `application/pdf` parts with a `%PDF-` header,
+Supported type and limits: only parts `email_attachment_get` returns as a PDF
+(the same identity rule and leading-byte trim, applied to the fresh read),
 up to five attachments, 5 MiB each and 10 MiB decoded in total, which keeps the
 encoded message under
 [iCloud's 20 MB message limit](https://support.apple.com/en-us/102198). Duplicate

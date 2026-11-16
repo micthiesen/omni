@@ -11,7 +11,9 @@ use super::charset::decode_body;
 use super::date::parse_date;
 use super::header_value::{decode_header_line, js_trim, parse_header_value};
 use super::splitter::{HeaderLine, Node, SplitError, detect_mime_type, latin1, split};
-use super::transfer::{decode_base64_body, decode_flowed, decode_quoted_printable};
+use super::transfer::{
+    decode_base64_body, decode_flowed, decode_quoted_printable, decode_uuencode,
+};
 use super::words::decode_words;
 
 /// One attachment as mailparser reports it.
@@ -240,6 +242,17 @@ fn decode_transfer(node: &Node) -> Vec<u8> {
         "base64" => decode_base64_body(&node.body),
         "quoted-printable" => decode_quoted_printable(&node.body),
         _ => node.body.clone(),
+    }
+}
+
+/// mailparser leaves uuencoded parts encoded, and text bodies keep that; an
+/// attachment is only usable decoded.
+fn decode_attachment(node: &Node) -> Vec<u8> {
+    match node.encoding.as_str() {
+        "uuencode" | "x-uuencode" | "x-uue" | "uue" => {
+            decode_uuencode(&node.body).unwrap_or_else(|| node.body.clone())
+        }
+        _ => decode_transfer(node),
     }
 }
 
@@ -658,7 +671,7 @@ fn push_attachment(
     attachments.push((
         index,
         Attachment {
-            content: decode_transfer(node),
+            content: decode_attachment(node),
             content_type,
             part_id,
             content_disposition: node.disposition.clone(),

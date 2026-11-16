@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::attachments::{
-    AttachmentReader, MAX_ATTACHMENT_BYTES, is_pdf_attachment, safe_attachment_filename,
+    AttachmentReader, MAX_ATTACHMENT_BYTES, pdf_start, safe_attachment_filename,
     valid_attachment_message_id,
 };
 
@@ -105,7 +105,7 @@ pub async fn resolve_outgoing_attachments(
     let mut total_bytes = 0;
     for (index, reference) in references.iter().enumerate() {
         let label = format!("Attachment {} ({})", index + 1, reference.attachment_id);
-        let attachment = match reader
+        let mut attachment = match reader
             .fetch_attachment(
                 &reference.message_id,
                 &reference.attachment_id,
@@ -130,11 +130,15 @@ pub async fn resolve_outgoing_attachments(
                 MAX_ATTACHMENT_BYTES / MIB
             )));
         }
-        if !is_pdf_attachment(&attachment.mime_type, &attachment.data) {
+        // The same identity rule and leading-byte trim as `email_attachment_get`,
+        // so the reviewed SHA-256 describes these bytes.
+        let Some(start) = pdf_start(&attachment.mime_type, &attachment.name, &attachment.data)
+        else {
             return Err(fail(format!(
                 "{label} is not a PDF with matching MIME type and PDF header"
             )));
-        }
+        };
+        attachment.data.drain(..start);
         let sha256 = hex::encode(Sha256::digest(&attachment.data));
         if sha256 != reference.sha256 {
             return Err(fail(format!(

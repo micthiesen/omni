@@ -720,7 +720,11 @@ revalidate identity, and cap source and decoded bytes. Images (JPEG, PNG, GIF,
 WebP, HEIC) need a declared MIME type that matches their magic bytes, are decoded
 only in memory by pure-Rust decoders under pixel, allocation and time limits
 (`omni-imap/src/attachment_images.rs`), return as MCP image blocks, and never get
-an `attachmentReference`. Preserve read-only/PEEK
+an `attachmentReference`. A PDF is a part declared `application/pdf`, or an
+unspecific type with a `.pdf` filename, whose `%PDF-` header starts within the
+first 1024 decoded bytes and is not preceded by another format's signature;
+the read and the send path share `attachments::pdf_start` and drop the bytes
+before the header, so the pinned SHA-256 names the same bytes in both. Preserve read-only/PEEK
 semantics, declared MIME validation, safe download names, and private binary
 responses without public storage or server-selected filesystem destinations.
 Outgoing send and draft attachments are only `attachmentReference` values
