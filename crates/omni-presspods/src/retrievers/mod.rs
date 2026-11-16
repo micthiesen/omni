@@ -1,6 +1,6 @@
 //! Article retrieval.
 //!
-//! Every retriever runs independently (concurrency 7, 60 s each); the
+//! Every retriever runs independently (all at once, 60 s each); the
 //! metadata model rates each distinct extraction once (0-10) and the best
 //! usable article wins. One bad retriever never hurts the outcome; it just
 //! loses the rating contest.
@@ -23,6 +23,7 @@ use crate::url::X_HOSTS;
 
 pub mod html;
 pub mod local;
+pub mod obscura;
 pub mod proxies;
 pub mod x;
 
@@ -38,7 +39,6 @@ pub const RATING_OPERATION: &str = "rate retrieved PressPods article";
 
 /// Per-retriever (and per-rating) deadline.
 pub const RETRIEVER_TIMEOUT: Duration = Duration::from_secs(60);
-const RETRIEVER_CONCURRENCY: usize = 7;
 const RATING_CONCURRENCY: usize = 4;
 
 /// One extraction strategy.
@@ -60,6 +60,8 @@ pub struct RetrieverContext {
     /// Plain client for the fixed FxTwitter API.
     pub http: HttpClient,
     pub jina_api_key: Option<String>,
+    /// The headless browser behind the `obscura` retriever; `None` leaves it out.
+    pub renderer: Option<Arc<dyn obscura::PageRenderer>>,
     pub costs: CostRecorder,
     pub tz: TimeZone,
 }
@@ -80,7 +82,10 @@ pub fn is_x_status_url(raw: &str) -> bool {
 }
 
 /// The X retriever alone for status URLs, else the
-/// generic set (plus Jina when its key is configured).
+/// generic set (plus Jina when its key is configured and Obscura when its
+/// renderer is). Order matters only on a rating tie, which the earlier
+/// retriever wins: Obscura is last, so it is recorded as the winner only when
+/// its extraction rated strictly higher than every cheaper one.
 pub fn article_retrievers(
     ctx: &Arc<RetrieverContext>,
     url: &str,
@@ -100,6 +105,12 @@ pub fn article_retrievers(
         retrievers.push(Arc::new(proxies::JinaRetriever {
             ctx: ctx.clone(),
             api_key: key.clone(),
+        }));
+    }
+    if let Some(renderer) = ctx.renderer.as_ref() {
+        retrievers.push(Arc::new(obscura::ObscuraRetriever {
+            ctx: ctx.clone(),
+            renderer: renderer.clone(),
         }));
     }
     retrievers
@@ -127,8 +138,8 @@ impl Retrieved {
     }
 }
 
-/// Runs every retriever (7 at a time, each bounded by `timeout`, a timed-out
-/// one is dropped) and returns one outcome per retriever in input order.
+/// Runs every retriever at once (each bounded by `timeout`, a timed-out one
+/// is dropped) and returns one outcome per retriever in input order.
 pub async fn run_article_retrievers(
     url: &str,
     retrievers: &[Arc<dyn ArticleRetriever>],
@@ -140,10 +151,8 @@ pub async fn run_article_retrievers(
         .into_iter()
         .map(|retriever| run_one(retriever, Arc::clone(&url), timeout))
         .collect();
-    stream::iter(runs)
-        .buffered(RETRIEVER_CONCURRENCY)
-        .collect()
-        .await
+    let runs_len = runs.len().max(1);
+    stream::iter(runs).buffered(runs_len).collect().await
 }
 
 async fn run_one(

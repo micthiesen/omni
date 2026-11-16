@@ -129,7 +129,7 @@ change; reuse authorization already given in the conversation.
 ## Crate map
 
 - `omni-core`: clock, ids, `js` semantics for stored derivations, digests, email model and handler
-  trait, `spawn_tracked`/`must_complete`.
+  trait, `spawn_tracked`/`must_complete`, the Obscura headless-browser client (`obscura`).
 - `omni-config`: typed environment config, validation, redaction, defaults.
 - `omni-store`: SQLite docstore actor, CBOR codec, entities, `migrate_all`,
   relational tables.
@@ -411,8 +411,16 @@ unchanged Codex keys. See `docs/claude-resets.md`.
 
 ### PressPods
 
-Retrievers run independently and the metadata model selects the best usable
-article. Speech is chunked and verified before the finished episode is exposed.
+Retrievers run independently and at once, each bounded by 60 seconds, and the
+metadata model rates every distinct extraction; the highest rating wins and a
+tie goes to the earlier retriever. The `obscura` retriever
+(`retrievers/obscura.rs`, off with `PRESSPODS_OBSCURA_ENABLED=false`) is one
+more candidate, never a fallback and always last in the set: it starts a fresh
+Obscura process per article, only navigates to the submitted public URL and
+reads the DOM (no clicks, typing, logins or downloads), is never given
+`--allow-private-network`, and is bounded by its own 55-second deadline and a
+5,000,000-character page cap. Rendered pages are untrusted and go through the
+same parsers as fetched ones. Speech is chunked and verified before the finished episode is exposed.
 Every sample-rate conversion in
 `crates/omni-presspods/src/speech/audio_chain.rs` must retain `RESAMPLE_HQ`; the
 Higgs denoise path retains `FIZZ_SHELF`. See `docs/presspods-audio.md` before

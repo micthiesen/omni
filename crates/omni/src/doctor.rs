@@ -152,7 +152,8 @@ pub async fn checks(env: &DoctorEnv, assets_dir: &Path) -> Vec<Check> {
         Ok(version) => Check::new("node --version", true, version.trim().to_owned()),
         Err(error) => Check::new("node --version", false, error),
     });
-    // Amazon tools and the gateway's `obscura` integration run this browser.
+    // Amazon tools, the PressPods `obscura` retriever and the gateway's
+    // `obscura` integration run this browser.
     out.push(match command_output("obscura", &["--version"]).await {
         Ok(version) => Check::new("obscura --version", true, version.trim().to_owned()),
         Err(error) => Check::new("obscura --version", false, error),

@@ -28,6 +28,7 @@ const RUST_ONLY: &[&str] = &[
     "YOUTUBE_CLIENT_SECRET",
     "YOUTUBE_REDIRECT_URI",
     "CLAUDE_NOTIFY_TARGETS",
+    "PRESSPODS_OBSCURA_ENABLED",
 ];
 
 fn env(case: &Value) -> BTreeMap<String, String> {
@@ -157,6 +158,16 @@ fn rejects_sender_overrides_with_a_typed_error() {
             .email_from
             .as_deref(),
         Some(OUTGOING_EMAIL_FROM)
+    );
+}
+
+#[test]
+fn the_presspods_obscura_retriever_is_on_unless_disabled() {
+    assert!(load(&[]).expect("defaults").presspods_obscura_enabled);
+    assert!(
+        !load(&[("PRESSPODS_OBSCURA_ENABLED", "false")])
+            .expect("disabled")
+            .presspods_obscura_enabled
     );
 }
 

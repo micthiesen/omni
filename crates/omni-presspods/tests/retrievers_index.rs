@@ -167,6 +167,7 @@ async fn context() -> Arc<RetrieverContext> {
         public_http: omni_http::public::PublicHttpClient::new(&http),
         http,
         jina_api_key: None,
+        renderer: None,
         costs: omni_ai::costs::CostRecorder::new(store.store.clone(), clock),
         tz: jiff::tz::TimeZone::UTC,
     })

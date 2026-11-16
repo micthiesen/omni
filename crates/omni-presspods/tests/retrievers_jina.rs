@@ -29,6 +29,7 @@ async fn retriever(server: &MockServer) -> (JinaRetriever, TestStore) {
         public_http: omni_http::public::PublicHttpClient::new(&http).allow_loopback_for_tests(),
         http,
         jina_api_key: Some("test-key".into()),
+        renderer: None,
         costs: CostRecorder::new(store.store.clone(), clock),
         tz: jiff::tz::TimeZone::UTC,
     });

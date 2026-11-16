@@ -41,7 +41,7 @@ use crate::formatting::clean_text;
 use crate::public_http::{PRESS_PODS_HTML_MAX_BYTES, fetch_public_html};
 use crate::types::Article;
 
-async fn blocking<T, F>(operation: &'static str, f: F) -> Result<T, PressPodsError>
+pub(super) async fn blocking<T, F>(operation: &'static str, f: F) -> Result<T, PressPodsError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, PressPodsError> + Send + 'static,
@@ -143,26 +143,34 @@ impl ArticleRetriever for ReadabilityRetriever {
             let url = url.to_owned();
             let tz = self.0.tz.clone();
             blocking("parse article with Readability", move || {
-                const OPERATION: &str = "parse article with Readability";
-                let lead_image = {
-                    let document = Html::parse_document(&html);
-                    super::html::meta_content(&document, &[r#"meta[property="og:image"]"#])
-                };
-                let (title, byline, published, content) =
-                    readability_parse(&html, &url, OPERATION)?;
-                Ok(Article {
-                    title: non_empty(Some(title)),
-                    text: clean_text(&content)?,
-                    author: non_empty(byline),
-                    domain: extract_domain(&url),
-                    published_at: published.and_then(|p| parse_js_date(&p, &tz)),
-                    lead_image_url: lead_image,
-                    url,
-                })
+                readability_article(&html, &url, &tz)
             })
             .await
         })
     }
+}
+
+/// The `readability` strategy over already-fetched HTML.
+pub(super) fn readability_article(
+    html: &str,
+    url: &str,
+    tz: &jiff::tz::TimeZone,
+) -> Result<Article, PressPodsError> {
+    const OPERATION: &str = "parse article with Readability";
+    let lead_image = {
+        let document = Html::parse_document(html);
+        super::html::meta_content(&document, &[r#"meta[property="og:image"]"#])
+    };
+    let (title, byline, published, content) = readability_parse(html, url, OPERATION)?;
+    Ok(Article {
+        title: non_empty(Some(title)),
+        text: clean_text(&content)?,
+        author: non_empty(byline),
+        domain: extract_domain(url),
+        published_at: published.and_then(|p| parse_js_date(&p, tz)),
+        lead_image_url: lead_image,
+        url: url.to_owned(),
+    })
 }
 
 /// Mercury-style cleanup, scoring and metadata.
@@ -189,27 +197,36 @@ impl ArticleRetriever for PostlightRetriever {
             let url = url.to_owned();
             let tz = self.0.tz.clone();
             blocking("parse article with Postlight", move || {
-                const OPERATION: &str = "parse article with Postlight";
-                let meta = page_meta(&Html::parse_document(&html));
-                let cleaned = strip_junk(&html);
-                let (title, byline, published, content) = readability_parse(&cleaned, &url, OPERATION)?;
-                tracing::debug!(target: "PressPods.retrievers.postlight", chars = content.len(), "Parsed article with postlight");
-                Ok(Article {
-                    title: non_empty(meta.title).or_else(|| non_empty(Some(title))),
-                    text: clean_text(&content)?,
-                    author: non_empty(meta.author).or_else(|| non_empty(byline)),
-                    domain: extract_domain(&url),
-                    published_at: meta
-                        .published
-                        .or(published)
-                        .and_then(|p| parse_js_date(&p, &tz)),
-                    lead_image_url: non_empty(meta.image),
-                    url,
-                })
+                postlight_article(&html, &url, &tz)
             })
             .await
         })
     }
+}
+
+/// The `postlight` strategy over already-fetched HTML.
+pub(super) fn postlight_article(
+    html: &str,
+    url: &str,
+    tz: &jiff::tz::TimeZone,
+) -> Result<Article, PressPodsError> {
+    const OPERATION: &str = "parse article with Postlight";
+    let meta = page_meta(&Html::parse_document(html));
+    let cleaned = strip_junk(html);
+    let (title, byline, published, content) = readability_parse(&cleaned, url, OPERATION)?;
+    tracing::debug!(target: "PressPods.retrievers.postlight", chars = content.len(), "Parsed article with postlight");
+    Ok(Article {
+        title: non_empty(meta.title).or_else(|| non_empty(Some(title))),
+        text: clean_text(&content)?,
+        author: non_empty(meta.author).or_else(|| non_empty(byline)),
+        domain: extract_domain(url),
+        published_at: meta
+            .published
+            .or(published)
+            .and_then(|p| parse_js_date(&p, tz)),
+        lead_image_url: non_empty(meta.image),
+        url: url.to_owned(),
+    })
 }
 
 /// Containers that usually hold the article body, best first.

@@ -496,6 +496,8 @@ config_struct! {
     elevenlabs_voice_female: Option<String> = "ELEVENLABS_VOICE_FEMALE",
     mistral_api_key: Option<String> = "MISTRAL_API_KEY",
     jina_api_key: Option<String> = "JINA_API_KEY",
+    /// Adds the Obscura headless browser to the article retrievers (default on).
+    presspods_obscura_enabled: bool = "PRESSPODS_OBSCURA_ENABLED",
     pushover_presspods_token: Option<String> = "PUSHOVER_PRESSPODS_TOKEN",
     /// At least 24 characters when set.
     ios_control_auth_token: Option<String> = "IOS_CONTROL_AUTH_TOKEN",
@@ -946,6 +948,7 @@ impl Config {
             elevenlabs_voice_female: env.opt("ELEVENLABS_VOICE_FEMALE"),
             mistral_api_key: env.opt("MISTRAL_API_KEY"),
             jina_api_key: env.opt("JINA_API_KEY"),
+            presspods_obscura_enabled: env.boolean("PRESSPODS_OBSCURA_ENABLED", true)?,
             pushover_presspods_token: env.opt("PUSHOVER_PRESSPODS_TOKEN"),
             ios_control_auth_token: match env.opt("IOS_CONTROL_AUTH_TOKEN") {
                 Some(token) if omni_core::js::utf16_len(&token) < 24 => {
