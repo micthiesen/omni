@@ -214,6 +214,9 @@ async fn fails_when_every_retriever_fails_or_is_invalid() {
         .create_episode_from_url("https://example.com/story", None)
         .await
         .unwrap_err();
-    assert_eq!(error.cause_message(), "All article retrievers failed");
+    assert_eq!(
+        error.cause_message(),
+        "All article retrievers failed (readability: Invalid article; fetch: HTTP 403)"
+    );
     assert!(!error.is_retryable());
 }

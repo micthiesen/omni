@@ -15,7 +15,6 @@ candidate. There is no fallback order.
 | `readability` | Fetches the page, plain Mozilla Readability |
 | `extractus` | Fetches the page, JSON-LD `articleBody` first, else the densest content container |
 | `wayback` | The newest Internet Archive snapshot, whole page cleaned |
-| `removepaywall` | The removepaywall.com proxy, whole page cleaned |
 | `fetch` | Fetches the page, whole page cleaned |
 | `jina` | Jina Reader (a hosted headless browser); only with `JINA_API_KEY` |
 | `obscura` | The page as Omni's own headless Obscura browser renders it; off with `PRESSPODS_OBSCURA_ENABLED=false` |
@@ -74,5 +73,19 @@ and `textChars` or its error. The episode page and `GET
 /api/press-pods/episodes` show them. To see whether a retriever earns its
 place, count how often it is `retrieverName` and how its ratings compare.
 
-A job whose every candidate failed is not retried and stores the failure in
-`lastError`.
+A job whose every candidate failed stores each retriever's reason in
+`lastError` (retrievers that failed the same way share an entry), for
+example `All article retrievers failed (postlight, readability: HTTP 401;
+wayback: No archived snapshot available for this URL; obscura: the site
+answered the browser with a bot challenge)`. It is not retried, with one
+exception: when an extraction existed but the rating model was temporarily
+unavailable (429, 5xx, network), the job is requeued with the usual backoff.
+
+## Known limits
+
+- DataDome sites (wsj.com, reuters.com) answer every retriever, the browser
+  included, with a bot challenge.
+- nytimes.com serves a preview to a plain fetch and replaces it with a
+  subscription wall in a fresh browser session, gift links included.
+- The removepaywall.com retriever was removed on 2026-11-16: it returned its
+  own search page for every one of 41 stored attempts.

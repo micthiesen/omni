@@ -115,3 +115,51 @@ async fn keeps_missing_usage_explicitly_unpriced_instead_of_inventing_a_cost() {
         }
     );
 }
+
+#[tokio::test]
+async fn reads_the_page_from_the_html_field_the_reader_returns_for_html_responses() {
+    let server = MockServer::start().await;
+    // The shape r.jina.ai returned on 2026-11-16 for `x-respond-with: html`:
+    // the page is in `data.html` and there is no `data.content`.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "code": 200,
+            "data": {
+                "title": "Jina title",
+                "url": "https://example.com/story",
+                "html": html(),
+                "usage": { "tokens": 10 }
+            }
+        })))
+        .mount(&server)
+        .await;
+    let (jina, _store) = retriever(&server).await;
+    let article = jina
+        .retrieve("https://example.com/story", "ignored")
+        .await
+        .unwrap();
+    assert!(article.text.contains("Article text."), "{}", article.text);
+    assert_eq!(article.title.as_deref(), Some("Jina title"));
+}
+
+#[tokio::test]
+async fn a_response_without_page_html_is_a_typed_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "data": { "title": "Only a title" } })),
+        )
+        .mount(&server)
+        .await;
+    let (jina, store) = retriever(&server).await;
+    let error = jina
+        .retrieve("https://example.com/story", "ignored")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "retrieve article with Jina: Jina returned empty or too short content"
+    );
+    assert!(events(&store).await.is_empty());
+}

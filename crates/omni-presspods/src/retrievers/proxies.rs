@@ -1,5 +1,5 @@
-//! Retrievers that go through a third-party service (Wayback Machine,
-//! RemovePaywall, Jina Reader).
+//! Retrievers that go through a third-party service (Wayback Machine, Jina
+//! Reader).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,7 +22,6 @@ use crate::public_http::{
 use crate::types::Article;
 
 const WAYBACK_AVAILABILITY_API: &str = "https://archive.org/wayback/available";
-const REMOVEPAYWALL_BASE: &str = "https://www.removepaywall.com";
 const JINA_API_BASE: &str = "https://r.jina.ai";
 
 /// Standard prepaid Jina API rate: US $0.05 per million tokens.
@@ -154,55 +153,6 @@ impl ArticleRetriever for WaybackRetriever {
     }
 }
 
-/// The removepaywall.com proxy, for paywalled articles.
-pub struct RemovepaywallRetriever(pub Arc<RetrieverContext>);
-
-impl ArticleRetriever for RemovepaywallRetriever {
-    fn name(&self) -> &str {
-        "removepaywall"
-    }
-
-    fn retrieve<'a>(
-        &'a self,
-        url: &'a str,
-        _user_agent: &'a str,
-    ) -> BoxFuture<'a, Result<Article, PressPodsError>> {
-        Box::pin(async move {
-            let proxy_url = format!(
-                "{REMOVEPAYWALL_BASE}/search?url={}",
-                encode_uri_component(url)
-            );
-            let html = fetch_public_text(
-                &self.0.public_http,
-                &PublicGet {
-                    url: &proxy_url,
-                    headers: vec![],
-                    timeout: Duration::from_secs(30),
-                    retries: 0,
-                    max_bytes: PRESS_PODS_HTML_MAX_BYTES,
-                    operation: "retrieve article with removepaywall",
-                },
-            )
-            .await?;
-            if omni_core::js::utf16_len(&html) < 100 {
-                return Err(PressPodsError::failed(
-                    "retrieve article with removepaywall",
-                    "removepaywall returned empty or too short content",
-                ));
-            }
-            Ok(Article {
-                title: extract_title_from_html(&html),
-                text: clean_text(&html)?,
-                author: None,
-                domain: extract_domain(url),
-                published_at: None,
-                lead_image_url: None,
-                url: url.to_owned(),
-            })
-        })
-    }
-}
-
 #[derive(Deserialize)]
 struct JinaResponse {
     data: JinaData,
@@ -211,7 +161,10 @@ struct JinaResponse {
 #[derive(Deserialize)]
 struct JinaData {
     title: Option<String>,
-    content: String,
+    /// Where the Reader puts the page for `x-respond-with: html`.
+    html: Option<String>,
+    /// The same page in older Reader responses.
+    content: Option<String>,
     usage: Option<JinaUsage>,
 }
 
@@ -264,7 +217,12 @@ impl ArticleRetriever for JinaRetriever {
             )
             .await?;
             let response: JinaResponse = decode(raw, "decode Jina Reader response")?;
-            let html = response.data.content;
+            let html = response
+                .data
+                .html
+                .filter(|html| !html.is_empty())
+                .or(response.data.content)
+                .unwrap_or_default();
             if omni_core::js::utf16_len(&html) < 100 {
                 return Err(PressPodsError::failed(
                     "retrieve article with Jina",

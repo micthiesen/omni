@@ -71,6 +71,26 @@ pub fn attempt_error(error: &PressPodsError) -> String {
     }
 }
 
+/// One retriever's failure in a few words, for the job's stored error: the
+/// HTTP status alone (response bodies are whole challenge pages), else the
+/// first line of the cause, capped at 60 characters.
+pub fn failure_reason(error: &PressPodsError) -> String {
+    if let PressPodsError::Http {
+        source: omni_http::HttpError::Status { status, .. },
+        ..
+    } = error
+    {
+        return format!("HTTP {status}");
+    }
+    let cause = error.cause_message();
+    let line = cause.lines().next().unwrap_or("").trim();
+    if line.chars().count() > 60 {
+        format!("{}...", line.chars().take(57).collect::<String>())
+    } else {
+        line.to_owned()
+    }
+}
+
 /// The compact per-retriever outcome persisted
 /// on the episode (full results carry every article text).
 pub fn summarize_retriever_attempts(results: &[RetrieverResult]) -> Vec<RetrieverAttempt> {

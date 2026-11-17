@@ -98,14 +98,7 @@ async fn context(
 ) -> (Arc<RetrieverContext>, TestStore) {
     let clock: omni_core::clock::SharedClock = test_clock(TEST_EPOCH_MS);
     let store = TestStore::new(clock.clone()).await;
-    let http = mock_http(
-        server,
-        &[
-            "https://news.test",
-            "https://archive.org",
-            "https://www.removepaywall.com",
-        ],
-    );
+    let http = mock_http(server, &["https://news.test", "https://archive.org"]);
     let ctx = Arc::new(RetrieverContext {
         public_http: omni_http::public::PublicHttpClient::new(&http).allow_loopback_for_tests(),
         http,

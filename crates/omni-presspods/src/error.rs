@@ -210,7 +210,7 @@ impl PressPodsError {
 
     /// The stored failure summary: `"<status>: <body or message>"` when the
     /// cause itself carries a status (TTS/STT status errors, provider errors),
-    /// else `"<name>: <message>"` capped at 300 UTF-16 units. HTTP client
+    /// else `"<name>: <message>"` capped at [`SUMMARY_UNITS`]. HTTP client
     /// failures keep the established wording (`HTTPError: Response code 503
     /// (Service Unavailable)`, `RequestError: ...`).
     pub fn summary(&self) -> String {
@@ -236,7 +236,7 @@ impl PressPodsError {
             _ => {}
         }
         let text = format!("{}: {}", self.cause_name(), self.summary_message());
-        omni_core::js::utf16_slice(&text, 0, 300).into_owned()
+        omni_core::js::utf16_slice(&text, 0, SUMMARY_UNITS).into_owned()
     }
 
     /// The message half of [`Self::summary`].
@@ -277,6 +277,10 @@ impl PressPodsError {
         }
     }
 }
+
+/// Cap on a stored failure summary, in UTF-16 units. Sized so a failed
+/// retrieval can name all eight retrievers with distinct 60-character reasons.
+const SUMMARY_UNITS: usize = 700;
 
 /// HTTP statuses worth an automatic retry: 429 and 5xx.
 pub fn is_retryable_status(status: u16) -> bool {

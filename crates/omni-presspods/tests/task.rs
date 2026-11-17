@@ -109,6 +109,41 @@ async fn requeues_a_transient_tts_outage_with_backoff() {
     assert!(row.next_attempt_at > row.updated_at);
 }
 
+#[tokio::test(start_paused = true)]
+async fn requeues_when_the_rating_model_is_down_instead_of_failing_the_article() {
+    let h = harness(options(FakeTts::clean())).await;
+    for _ in 0..8 {
+        h.app.ai.script_failure(
+            ModelRole::PressPodsMetadata,
+            omni_testkit::FakeFailure {
+                status: 503,
+                message: "overloaded".to_owned(),
+            },
+        );
+    }
+    let job = h
+        .service
+        .submit_episode_url("https://example.com/story")
+        .await
+        .unwrap();
+    assert_eq!(
+        task(&h).drain(None).await.unwrap(),
+        "0 episode(s) created, 1 requeued, 0 failed"
+    );
+    let row = h
+        .service
+        .persistence()
+        .get_job(&job.job_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.status, JobStatus::Queued);
+    assert_eq!(
+        row.last_error.as_deref(),
+        Some("Error: All article retrievers failed (readability: provider error 503: overloaded)")
+    );
+}
+
 #[tokio::test]
 async fn fails_a_permanently_bad_article() {
     let h = harness(options(FakeTts::clean())).await;
@@ -135,7 +170,7 @@ async fn fails_a_permanently_bad_article() {
     assert_eq!(row.status, JobStatus::Failed);
     assert_eq!(
         row.last_error.as_deref(),
-        Some("Error: All article retrievers failed")
+        Some("Error: All article retrievers failed (readability: Invalid article)")
     );
 }
 

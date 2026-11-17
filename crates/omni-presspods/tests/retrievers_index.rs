@@ -206,14 +206,7 @@ async fn keeps_generic_retrievers_for_non_status_and_lookalike_urls() {
     );
     assert_eq!(
         retriever_names("https://example.com/a").await,
-        [
-            "postlight",
-            "readability",
-            "extractus",
-            "wayback",
-            "removepaywall",
-            "fetch"
-        ]
+        ["postlight", "readability", "extractus", "wayback", "fetch"]
     );
 }
 
@@ -302,5 +295,144 @@ fn selects_the_highest_rating_and_the_first_on_ties() {
         error: PressPodsError::failed("x", "y"),
     }])
     .unwrap_err();
-    assert_eq!(error.cause_message(), "All article retrievers failed");
+    assert_eq!(
+        error.cause_message(),
+        "All article retrievers failed (a: y)"
+    );
+    assert!(!error.is_retryable());
+}
+
+fn failed_rating(name: &str, source: PressPodsError) -> RetrieverResult {
+    RetrieverResult::Failure {
+        retriever_name: name.into(),
+        error: PressPodsError::Failed {
+            operation: omni_presspods::retrievers::RATING_OPERATION.into(),
+            message: source.cause_message(),
+            retryable: Some(source.is_retryable()),
+        },
+    }
+}
+
+#[test]
+fn the_failure_names_each_retrievers_reason_without_response_bodies() {
+    let blocked = || {
+        PressPodsError::http(
+            "fetch public PressPods HTML",
+            omni_http::HttpError::Status {
+                status: 401,
+                body: "<html><body>Please enable JS and disable any ad blocker</body></html>"
+                    .into(),
+            },
+        )
+    };
+    let error = omni_presspods::retrievers::select_best(vec![
+        RetrieverResult::Failure {
+            retriever_name: "postlight".into(),
+            error: blocked(),
+        },
+        RetrieverResult::Failure {
+            retriever_name: "wayback".into(),
+            error: PressPodsError::failed(
+                "retrieve article with Wayback",
+                "No archived snapshot available for this URL",
+            ),
+        },
+        failed_rating("fetch", PressPodsError::failed("rate", "Invalid article")),
+        RetrieverResult::Failure {
+            retriever_name: "obscura".into(),
+            error: PressPodsError::failed(
+                "render article with Obscura",
+                "the site answered the browser with a bot challenge",
+            ),
+        },
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.summary(),
+        "Error: All article retrievers failed (postlight: HTTP 401; \
+         wayback: No archived snapshot available for this URL; fetch: Invalid article; \
+         obscura: the site answered the browser with a bot challenge)"
+    );
+    assert!(!error.is_retryable());
+}
+
+#[test]
+fn eight_distinct_reasons_all_fit_in_the_stored_summary() {
+    let names = [
+        "postlight",
+        "readability",
+        "extractus",
+        "wayback",
+        "fetch",
+        "jina",
+        "obscura",
+        "x",
+    ];
+    let failures = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| RetrieverResult::Failure {
+            retriever_name: (*name).into(),
+            error: PressPodsError::failed("retrieve", format!("{i}{}", "y".repeat(90))),
+        })
+        .collect();
+    let summary = omni_presspods::retrievers::select_best(failures)
+        .unwrap_err()
+        .summary();
+    assert!(summary.contains("obscura: 6yyy"), "{summary}");
+    assert!(summary.ends_with("...)"), "{summary}");
+}
+
+#[test]
+fn retrievers_that_failed_the_same_way_share_one_reason() {
+    let blocked = || PressPodsError::failed("fetch", "HTTP 403");
+    let error = omni_presspods::retrievers::select_best(vec![
+        RetrieverResult::Failure {
+            retriever_name: "postlight".into(),
+            error: blocked(),
+        },
+        RetrieverResult::Failure {
+            retriever_name: "wayback".into(),
+            error: PressPodsError::failed("retrieve", "No snapshot"),
+        },
+        RetrieverResult::Failure {
+            retriever_name: "fetch".into(),
+            error: blocked(),
+        },
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.cause_message(),
+        "All article retrievers failed (postlight, fetch: HTTP 403; wayback: No snapshot)"
+    );
+}
+
+#[test]
+fn a_rating_model_outage_is_retried_but_a_rejected_article_is_not() {
+    let outage = PressPodsError::status("generate PressPods article metadata", 503, "overloaded");
+    let error = omni_presspods::retrievers::select_best(vec![
+        RetrieverResult::Failure {
+            retriever_name: "wayback".into(),
+            error: PressPodsError::failed("retrieve", "No archived snapshot"),
+        },
+        failed_rating("postlight", outage),
+    ])
+    .unwrap_err();
+    assert!(error.is_retryable());
+
+    let rejected = omni_presspods::retrievers::select_best(vec![failed_rating(
+        "postlight",
+        PressPodsError::failed("rate", "Invalid article"),
+    )])
+    .unwrap_err();
+    assert!(!rejected.is_retryable());
+}
+
+#[test]
+fn long_failure_reasons_are_cut_to_their_first_line() {
+    let reason = omni_presspods::types::failure_reason(&PressPodsError::failed(
+        "decode",
+        format!("{}\nsecond line", "x".repeat(80)),
+    ));
+    assert_eq!(reason, format!("{}...", "x".repeat(57)));
 }

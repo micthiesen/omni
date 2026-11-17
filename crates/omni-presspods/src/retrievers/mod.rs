@@ -18,7 +18,7 @@ use omni_http::HttpClient;
 use omni_http::public::PublicHttpClient;
 
 use crate::error::PressPodsError;
-use crate::types::{Article, MetadataInfo, RetrieverResult};
+use crate::types::{Article, MetadataInfo, RetrieverResult, failure_reason};
 use crate::url::X_HOSTS;
 
 pub mod html;
@@ -98,7 +98,6 @@ pub fn article_retrievers(
         Arc::new(local::ReadabilityRetriever(ctx.clone())),
         Arc::new(local::ExtractusRetriever(ctx.clone())),
         Arc::new(proxies::WaybackRetriever(ctx.clone())),
-        Arc::new(proxies::RemovepaywallRetriever(ctx.clone())),
         Arc::new(local::FetchRetriever(ctx.clone())),
     ];
     if let Some(key) = ctx.jina_api_key.as_ref().filter(|k| !k.is_empty()) {
@@ -271,9 +270,15 @@ where
                     retriever_name,
                     error: PressPodsError::failed(RATING_OPERATION, "Invalid article"),
                 },
+                // A model outage is not a verdict on the article: keep
+                // whether it is worth another attempt.
                 Err(error) => RetrieverResult::Failure {
                     retriever_name,
-                    error: PressPodsError::failed(RATING_OPERATION, error.cause_message()),
+                    error: PressPodsError::Failed {
+                        operation: RATING_OPERATION.to_owned(),
+                        message: error.cause_message(),
+                        retryable: Some(error.is_retryable()),
+                    },
                 },
             };
             if let Some(slot) = slots.get_mut(index) {
@@ -293,8 +298,47 @@ pub struct BestArticle {
     pub all_results: Vec<RetrieverResult>,
 }
 
+/// Why no candidate could be used: every retriever's reason in the stored
+/// summary, retryable only when an extraction existed but the rating model
+/// was temporarily unavailable.
+fn all_failed(all_results: &[RetrieverResult]) -> PressPodsError {
+    // Retrievers that failed the same way share one entry, so the stored
+    // summary has room for all of them.
+    let mut reasons: Vec<(String, Vec<&str>)> = Vec::new();
+    let mut rating_outage = false;
+    for result in all_results {
+        if let RetrieverResult::Failure {
+            retriever_name,
+            error,
+        } = result
+        {
+            tracing::warn!(target: LOG, error = %error, "Retriever {retriever_name} failed:");
+            let reason = failure_reason(error);
+            match reasons.iter_mut().find(|(known, _)| *known == reason) {
+                Some((_, names)) => names.push(retriever_name),
+                None => reasons.push((reason, vec![retriever_name])),
+            }
+            rating_outage |= error.operation() == RATING_OPERATION && error.is_retryable();
+        }
+    }
+    let message = if reasons.is_empty() {
+        "All article retrievers failed".to_owned()
+    } else {
+        let reasons: Vec<String> = reasons
+            .iter()
+            .map(|(reason, names)| format!("{}: {reason}", names.join(", ")))
+            .collect();
+        format!("All article retrievers failed ({})", reasons.join("; "))
+    };
+    PressPodsError::Failed {
+        operation: "retrieve PressPods article".to_owned(),
+        message,
+        retryable: Some(rating_outage),
+    }
+}
+
 /// Picks the highest-rated successful result (the first on ties). Logs every
-/// failure and errors when nothing succeeded.
+/// candidate's outcome and errors when nothing succeeded.
 pub fn select_best(all_results: Vec<RetrieverResult>) -> Result<BestArticle, PressPodsError> {
     let best = all_results
         .iter()
@@ -307,35 +351,35 @@ pub fn select_best(all_results: Vec<RetrieverResult>) -> Result<BestArticle, Pre
             Some((_, top)) if top >= rating => best,
             _ => Some((i, rating)),
         });
-    let Some((index, _)) = best else {
-        for result in &all_results {
-            if let RetrieverResult::Failure {
+    let Some((article, metadata, retriever_name)) =
+        best.and_then(|(index, _)| match all_results.get(index) {
+            Some(RetrieverResult::Success {
+                article,
+                metadata,
                 retriever_name,
-                error,
-            } = result
-            {
-                tracing::warn!(target: LOG, error = %error, "Retriever {retriever_name} failed:");
-            }
-        }
-        return Err(PressPodsError::failed(
-            "retrieve PressPods article",
-            "All article retrievers failed",
-        ));
+            }) => Some((article.clone(), metadata.clone(), retriever_name.clone())),
+            _ => None,
+        })
+    else {
+        return Err(all_failed(&all_results));
     };
-    let (article, metadata, retriever_name) = match all_results.get(index) {
-        Some(RetrieverResult::Success {
-            article,
-            metadata,
-            retriever_name,
-        }) => (article.clone(), metadata.clone(), retriever_name.clone()),
-        _ => {
-            return Err(PressPodsError::failed(
-                "retrieve PressPods article",
-                "All article retrievers failed",
-            ));
-        }
-    };
-    tracing::info!(target: LOG, "Retriever {retriever_name} selected as best");
+    let candidates = all_results
+        .iter()
+        .map(|result| match result {
+            RetrieverResult::Success {
+                retriever_name,
+                article,
+                metadata,
+            } => format!(
+                "{retriever_name}={} ({} chars)",
+                metadata.content_rating,
+                omni_core::js::utf16_len(&article.text)
+            ),
+            RetrieverResult::Failure { retriever_name, .. } => format!("{retriever_name}=failed"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    tracing::info!(target: LOG, candidates = candidates.as_str(), "Retriever {retriever_name} selected as best");
     Ok(BestArticle {
         article,
         metadata,
