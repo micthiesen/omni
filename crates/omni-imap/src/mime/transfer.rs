@@ -1,6 +1,6 @@
-//! Content-Transfer-Encoding decoders with the leniency of libbase64, libqp and
-//! Node's `Buffer.from(s, "base64")`, plus RFC 3676 format=flowed unfolding
-//! (libmime `decodeFlowed`).
+//! Content-Transfer-Encoding decoders with the leniency of libbase64 and
+//! Node's `Buffer.from(s, "base64")`, a byte-preserving quoted-printable
+//! decoder, plus RFC 3676 format=flowed unfolding (libmime `decodeFlowed`).
 
 fn b64_value(c: u8) -> Option<u8> {
     match c {
@@ -58,8 +58,7 @@ pub(crate) fn decode_base64_body(input: &[u8]) -> Vec<u8> {
     node_base64(&filtered)
 }
 
-fn hex(c: u16) -> Option<u8> {
-    let c = u8::try_from(c).ok()?;
+fn hex(c: u8) -> Option<u8> {
     match c {
         b'0'..=b'9' => Some(c - b'0'),
         b'a'..=b'f' => Some(c - b'a' + 10),
@@ -68,68 +67,50 @@ fn hex(c: u16) -> Option<u8> {
     }
 }
 
-/// libqp `decode`: the input is read as UTF-8 (lossy), trailing tabs/spaces
-/// are removed from every line, soft breaks (`=` + line end, or a final `=`)
-/// are dropped, `=XX` becomes a byte, and every other UTF-16 unit is written
-/// as its low byte (so raw 8-bit text is not preserved, exactly like libqp).
+/// Lenient quoted-printable decoding over bytes: trailing tabs/spaces are
+/// removed from every line, soft breaks (`=` + optional blanks + line end, or
+/// a final `=`) are dropped, `=XX` becomes a byte, and everything else,
+/// including a malformed escape and raw 8-bit bytes, is kept as it is. The
+/// input is never read as text: real servers send unencoded bytes >= 0x80 in
+/// quoted-printable parts, and the part's charset is applied afterwards.
 pub(crate) fn decode_quoted_printable(input: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(input);
-    let units: Vec<u16> = text.encode_utf16().collect();
-
-    // `.replace(/[\t ]+$/gm, "")`: strip blanks before any JS line terminator or the end.
-    let is_terminator = |u: u16| matches!(u, 0x0a | 0x0d | 0x2028 | 0x2029);
-    let mut stripped: Vec<u16> = Vec::with_capacity(units.len());
+    let is_blank = |b: u8| matches!(b, b'\t' | b' ');
+    let blanks_end = |from: usize| {
+        input[from..]
+            .iter()
+            .position(|b| !is_blank(*b))
+            .map_or(input.len(), |offset| from + offset)
+    };
+    let mut out = Vec::with_capacity(input.len());
     let mut i = 0;
-    while i < units.len() {
-        let u = units[i];
-        if u == u16::from(b'\t') || u == u16::from(b' ') {
-            let start = i;
-            while i < units.len() && (units[i] == u16::from(b'\t') || units[i] == u16::from(b' ')) {
-                i += 1;
+    while i < input.len() {
+        let byte = input[i];
+        if is_blank(byte) {
+            let end = blanks_end(i);
+            if end < input.len() && !matches!(input[end], b'\r' | b'\n') {
+                out.extend_from_slice(&input[i..end]);
             }
-            if i == units.len() || is_terminator(units[i]) {
-                continue;
-            }
-            stripped.extend_from_slice(&units[start..i]);
+            i = end;
             continue;
         }
-        stripped.push(u);
-        i += 1;
-    }
-
-    // `.replace(/\=(?:\r?\n|$)/g, "")`.
-    let mut soft: Vec<u16> = Vec::with_capacity(stripped.len());
-    let mut i = 0;
-    while i < stripped.len() {
-        if stripped[i] == u16::from(b'=') {
-            if i + 1 == stripped.len() {
+        if byte == b'=' {
+            let rest = &input[blanks_end(i + 1)..];
+            if rest.is_empty() {
                 break;
             }
-            if stripped[i + 1] == 0x0a {
-                i += 2;
+            if rest.starts_with(b"\n") || rest.starts_with(b"\r\n") {
+                i = input.len() - rest.len() + if rest[0] == b'\n' { 1 } else { 2 };
                 continue;
             }
-            if stripped[i + 1] == 0x0d && stripped.get(i + 2) == Some(&0x0a) {
+            if let (Some(&a), Some(&b)) = (input.get(i + 1), input.get(i + 2))
+                && let (Some(high), Some(low)) = (hex(a), hex(b))
+            {
+                out.push((high << 4) | low);
                 i += 3;
                 continue;
             }
         }
-        soft.push(stripped[i]);
-        i += 1;
-    }
-
-    let mut out = Vec::with_capacity(soft.len());
-    let mut i = 0;
-    while i < soft.len() {
-        if soft[i] == u16::from(b'=')
-            && let (Some(&a), Some(&b)) = (soft.get(i + 1), soft.get(i + 2))
-            && let (Some(high), Some(low)) = (hex(a), hex(b))
-        {
-            out.push((high << 4) | low);
-            i += 3;
-            continue;
-        }
-        out.push(soft[i].to_le_bytes()[0]);
+        out.push(byte);
         i += 1;
     }
     out
@@ -249,14 +230,34 @@ mod tests {
     }
 
     #[test]
-    fn quoted_printable_matches_libqp() {
+    fn quoted_printable_decodes_escapes_and_soft_breaks() {
         assert_eq!(
-            decode_quoted_printable(b"a=3Db  \r\nc=\r\nd="),
-            b"a=b\r\ncd"
+            decode_quoted_printable(b"a=3Db  \r\nc=\r\nd=\ne=  \r\nf="),
+            b"a=b\r\ncdef"
         );
-        assert_eq!(decode_quoted_printable(b"=XYz"), b"=XYz");
-        // Raw UTF-8 text is reduced to the low byte of each UTF-16 unit.
-        assert_eq!(decode_quoted_printable("é".as_bytes()), vec![0xe9]);
+    }
+
+    #[test]
+    fn quoted_printable_keeps_raw_8bit_bytes() {
+        // Raw UTF-8 next to the same character escaped.
+        assert_eq!(
+            decode_quoted_printable("caf\u{e9} =C3=A9 \u{20ac}=\r\n\u{1f600}".as_bytes()),
+            "caf\u{e9} \u{e9} \u{20ac}\u{1f600}".as_bytes()
+        );
+        // Raw Latin-1 and bytes that are not valid UTF-8 in any charset.
+        assert_eq!(
+            decode_quoted_printable(b"caf\xe9 =E9\r\n\x80\xff\xc3=\n\xa9"),
+            b"caf\xe9 \xe9\r\n\x80\xff\xc3\xa9"
+        );
+        let every_high_byte: Vec<u8> = (0x80..=0xff).collect();
+        assert_eq!(decode_quoted_printable(&every_high_byte), every_high_byte);
+    }
+
+    #[test]
+    fn quoted_printable_keeps_malformed_escapes() {
+        assert_eq!(decode_quoted_printable(b"=ZZ =XYz =4"), b"=ZZ =XYz =4");
+        assert_eq!(decode_quoted_printable(b"a=4\r\nb=G1"), b"a=4\r\nb=G1");
+        assert_eq!(decode_quoted_printable(b"=\xc3\xa9=41"), b"=\xc3\xa9A");
     }
 
     #[test]

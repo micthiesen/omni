@@ -7,6 +7,10 @@
 //! declared types, filename, disposition, Content-ID, cid, related flag, size,
 //! content digest), and the mapped `FetchedEmail` except the enrichment fields
 //! owned by omni-email (`textBody` of HTML messages, `links`, `linkMetadata`).
+//!
+//! One deliberate difference: `qp-soft-and-8bit.json` expects the raw 8-bit
+//! bytes of a quoted-printable part to survive, where mailparser's libqp
+//! mangles them.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;

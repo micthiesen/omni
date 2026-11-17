@@ -11,7 +11,7 @@
   "bcc": null,
   "replyTo": null,
   "html": null,
-  "text": "line one is long continued \ncaf� raw é encoded\nend",
+  "text": "line one is long continued \ncafé raw é encoded\nend",
   "headerKeys": [
     "message-id",
     "content-type",
@@ -32,7 +32,7 @@
     "replyTo": [],
     "messageId": "<qp@example.test>",
     "references": [],
-    "textBody": "line one is long continued \ncaf� raw é encoded\nend",
+    "textBody": "line one is long continued \ncafé raw é encoded\nend",
     "receivedAt": "2026-09-30T12:00:00.000Z",
     "attachments": []
   }
