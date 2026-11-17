@@ -187,6 +187,8 @@ fn processing(id: &str, url: &str, created_at: i64) -> PressPodsJob {
         updated_at: created_at,
         claimed_at: Some(created_at),
         last_run_id: None,
+        speech_unreachable_since: None,
+        speech_unreachable_checks: None,
         extra: Default::default(),
     }
 }

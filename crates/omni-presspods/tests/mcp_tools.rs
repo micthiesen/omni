@@ -96,6 +96,8 @@ async fn lists_and_filters_episodes_and_jobs() {
             updated_at: 1,
             claimed_at: None,
             last_run_id: None,
+            speech_unreachable_since: None,
+            speech_unreachable_checks: None,
             extra: Default::default(),
         };
         h.service

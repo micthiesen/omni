@@ -302,6 +302,14 @@ pub struct PressPodsJob {
     pub claimed_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_id: Option<String>,
+    /// When the speech server was first found unreachable in the current
+    /// outage; cleared when a preflight next passes. The give-up deadline
+    /// counts from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speech_unreachable_since: Option<i64>,
+    /// Failed preflights in the current outage (drives the backoff).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speech_unreachable_checks: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }

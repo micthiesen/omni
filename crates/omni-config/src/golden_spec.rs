@@ -29,6 +29,7 @@ const RUST_ONLY: &[&str] = &[
     "YOUTUBE_REDIRECT_URI",
     "CLAUDE_NOTIFY_TARGETS",
     "PRESSPODS_OBSCURA_ENABLED",
+    "PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS",
 ];
 
 fn env(case: &Value) -> BTreeMap<String, String> {
@@ -169,6 +170,23 @@ fn the_presspods_obscura_retriever_is_on_unless_disabled() {
             .expect("disabled")
             .presspods_obscura_enabled
     );
+}
+
+#[test]
+fn the_presspods_speech_outage_deadline_defaults_to_a_day() {
+    assert_eq!(
+        load(&[])
+            .expect("defaults")
+            .presspods_tts_unreachable_deadline_hours,
+        24
+    );
+    assert_eq!(
+        load(&[("PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS", "6")])
+            .expect("override")
+            .presspods_tts_unreachable_deadline_hours,
+        6
+    );
+    assert!(load(&[("PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS", "0")]).is_err());
 }
 
 #[test]

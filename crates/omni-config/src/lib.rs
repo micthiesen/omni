@@ -487,6 +487,9 @@ config_struct! {
     presspods_tts_provider: TtsProvider = "PRESSPODS_TTS_PROVIDER",
     presspods_tts_url: Option<String> = "PRESSPODS_TTS_URL",
     presspods_tts_model: Option<String> = "PRESSPODS_TTS_MODEL",
+    /// How long a job waits for an unreachable speech server before it fails
+    /// (default 24).
+    presspods_tts_unreachable_deadline_hours: u32 = "PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS",
     presspods_stt_url: Option<String> = "PRESSPODS_STT_URL",
     presspods_stt_model: Option<String> = "PRESSPODS_STT_MODEL",
     presspods_higgs_ref_audio: Option<String> = "PRESSPODS_HIGGS_REF_AUDIO",
@@ -937,6 +940,8 @@ impl Config {
                 .opt("PRESSPODS_TTS_URL")
                 .map(|v| trim_trailing_slashes(&v)),
             presspods_tts_model: env.opt("PRESSPODS_TTS_MODEL"),
+            presspods_tts_unreachable_deadline_hours: env
+                .positive_int_with_default("PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS", 24)?,
             presspods_stt_url: env
                 .opt("PRESSPODS_STT_URL")
                 .map(|v| trim_trailing_slashes(&v)),

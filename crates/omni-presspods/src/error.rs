@@ -72,6 +72,20 @@ pub enum PressPodsError {
     /// signal and does not trigger the job queue's backoff retry.
     #[error("{operation}: timed out")]
     Timeout { operation: String },
+    /// The self-hosted speech server did not answer at the connection level
+    /// (no route, refused, no response in time). The host is a laptop that
+    /// sleeps and changes address, so this is an outage to wait out, not a
+    /// fault of the article.
+    #[error("{operation}: speech server unreachable at {url}: {reason}")]
+    SpeechUnreachable {
+        operation: String,
+        /// The server's origin, without userinfo, path or query.
+        url: String,
+        reason: String,
+        /// No response in time, as opposed to a connection that failed
+        /// outright; a busy server looks the same.
+        timed_out: bool,
+    },
 }
 
 impl PressPodsError {
@@ -135,6 +149,54 @@ impl PressPodsError {
         }
     }
 
+    /// A connection-level failure against the speech server at `base_url`,
+    /// or `None` when the server answered (any status) or the failure is not
+    /// about reaching it.
+    pub fn speech_unreachable(
+        operation: impl Into<String>,
+        base_url: &str,
+        source: &HttpError,
+        timeout: std::time::Duration,
+    ) -> Option<Self> {
+        let reason = match source {
+            HttpError::Timeout => format!("no response within {} s", timeout.as_secs()),
+            HttpError::Network(message) => message.clone(),
+            _ => return None,
+        };
+        let url = url::Url::parse(base_url)
+            .ok()
+            .map(|url| url.origin().ascii_serialization())
+            .filter(|origin| origin != "null")
+            .unwrap_or_else(|| "the configured PRESSPODS_TTS_URL".to_owned());
+        // The HTTP client appends the origin to network errors; say it once.
+        let reason = reason
+            .strip_suffix(&format!(" ({url})"))
+            .map(str::to_owned)
+            .unwrap_or(reason);
+        Some(PressPodsError::SpeechUnreachable {
+            operation: operation.into(),
+            url,
+            reason,
+            timed_out: matches!(source, HttpError::Timeout),
+        })
+    }
+
+    pub fn is_speech_unreachable(&self) -> bool {
+        matches!(self, PressPodsError::SpeechUnreachable { .. })
+    }
+
+    /// The connection itself failed (no route, refused), so asking again
+    /// right away cannot work.
+    pub fn is_speech_connect_failure(&self) -> bool {
+        matches!(
+            self,
+            PressPodsError::SpeechUnreachable {
+                timed_out: false,
+                ..
+            }
+        )
+    }
+
     /// The failing operation.
     pub fn operation(&self) -> &str {
         match self {
@@ -146,6 +208,7 @@ impl PressPodsError {
             | PressPodsError::Process { operation, .. }
             | PressPodsError::InvalidData { operation, .. }
             | PressPodsError::Failed { operation, .. }
+            | PressPodsError::SpeechUnreachable { operation, .. }
             | PressPodsError::Timeout { operation } => operation,
         }
     }
@@ -162,6 +225,9 @@ impl PressPodsError {
             | PressPodsError::InvalidData { message, .. }
             | PressPodsError::Failed { message, .. } => message.clone(),
             PressPodsError::Timeout { .. } => "timed out".to_owned(),
+            PressPodsError::SpeechUnreachable { url, reason, .. } => {
+                format!("speech server unreachable at {url}: {reason}")
+            }
         }
     }
 
@@ -200,6 +266,7 @@ impl PressPodsError {
             },
             PressPodsError::Status { status, .. } => is_retryable_status(*status),
             PressPodsError::Failed { retryable, .. } => retryable.unwrap_or(false),
+            PressPodsError::SpeechUnreachable { .. } => true,
             PressPodsError::Timeout { .. }
             | PressPodsError::Store { .. }
             | PressPodsError::Io { .. }
@@ -233,6 +300,10 @@ impl PressPodsError {
                 source: AiError::Http(HttpError::Status { status, body }),
                 ..
             } => return format!("{status}: {}", omni_core::js::utf16_slice(body, 0, 200)),
+            PressPodsError::SpeechUnreachable { .. } => {
+                return omni_core::js::utf16_slice(&self.cause_message(), 0, SUMMARY_UNITS)
+                    .into_owned();
+            }
             _ => {}
         }
         let text = format!("{}: {}", self.cause_name(), self.summary_message());
@@ -382,6 +453,59 @@ mod errors_spec {
             .summary(),
             "429: slow down"
         );
+    }
+
+    #[test]
+    fn connection_failures_against_the_speech_server_name_it_once() {
+        let timeout = std::time::Duration::from_secs(240);
+        let error = PressPodsError::speech_unreachable(
+            "synthesize Higgs chunk",
+            "http://user:pw@10.0.0.9:8000/base?key=1",
+            &HttpError::Network(
+                "tcp connect error: No route to host (http://10.0.0.9:8000)".into(),
+            ),
+            timeout,
+        )
+        .unwrap();
+        assert!(error.is_speech_unreachable() && error.is_retryable());
+        assert!(error.is_speech_connect_failure());
+        assert_eq!(
+            error.summary(),
+            "speech server unreachable at http://10.0.0.9:8000: tcp connect error: No route to host"
+        );
+        let slow = PressPodsError::speech_unreachable(
+            "call",
+            "http://10.0.0.9:8000",
+            &HttpError::Timeout,
+            timeout,
+        )
+        .unwrap();
+        assert!(slow.is_speech_unreachable() && !slow.is_speech_connect_failure());
+        assert_eq!(
+            slow.summary(),
+            "speech server unreachable at http://10.0.0.9:8000: no response within 240 s"
+        );
+    }
+
+    #[test]
+    fn an_answer_from_the_speech_server_is_not_an_outage() {
+        let timeout = std::time::Duration::from_secs(5);
+        for answered in [
+            HttpError::Status {
+                status: 400,
+                body: "bad request".into(),
+            },
+            HttpError::Status {
+                status: 503,
+                body: String::new(),
+            },
+            HttpError::TooLarge { limit: 1 },
+        ] {
+            assert!(
+                PressPodsError::speech_unreachable("call", "http://h:1", &answered, timeout)
+                    .is_none()
+            );
+        }
     }
 
     #[test]

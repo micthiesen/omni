@@ -423,6 +423,8 @@ fn job(job_id: &str) -> PressPodsJob {
         updated_at: TEST_EPOCH_MS,
         claimed_at: None,
         last_run_id: None,
+        speech_unreachable_since: None,
+        speech_unreachable_checks: None,
         extra: Default::default(),
     }
 }

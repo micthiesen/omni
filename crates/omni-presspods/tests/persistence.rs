@@ -33,6 +33,8 @@ fn job(job_id: &str) -> PressPodsJob {
         updated_at: NOW - 60_000,
         claimed_at: None,
         last_run_id: None,
+        speech_unreachable_since: None,
+        speech_unreachable_checks: None,
         extra: Default::default(),
     }
 }

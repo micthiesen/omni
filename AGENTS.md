@@ -429,6 +429,16 @@ bodies, expire after 180 days, and are never deleted with the job: deleting,
 retrying or resubmitting a job must leave them in place. Resolution is
 computed on read. `presspods_list` `resource: "history"` is the only reader.
 
+Before claiming a job the worker checks that the Higgs speech server answers
+(`TtsFactory::preflight`). An unreachable server defers the job with a capped
+backoff: no retrieval, no model call, no attempt used, one history row per
+outage (`operation: "TTS preflight"`), and a permanent failure only after
+`PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS` (default 24) from the job's first
+failed check. Connection failures against that server, in the preflight or
+mid-synthesis, are `PressPodsError::SpeechUnreachable`; an error the server
+answers with keeps its own classification. See "Speech server" in
+`docs/presspods-audio.md`.
+
 Speech is chunked and verified before the finished episode is exposed.
 Every sample-rate conversion in
 `crates/omni-presspods/src/speech/audio_chain.rs` must retain `RESAMPLE_HQ`; the

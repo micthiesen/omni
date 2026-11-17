@@ -92,6 +92,11 @@ wrong is therefore kept separately, in `press-pods-job-attempt` rows
   the job change: `outcome: "retrying"` when the job was requeued with
   backoff, `"failed"` when it failed for good. A crash or restart mid-run
   counts as an attempt and gets a row too.
+- A job deferred because the speech server is unreachable has not made an
+  attempt. It gets one `"retrying"` row with `operation: "TTS preflight"`
+  when the outage starts and one `"failed"` row if the job is given up on,
+  both numbered as the attempt that could not start. See "Speech server" in
+  `docs/presspods-audio.md`.
 - When a job produces an episode and the article has an unresolved failure
   in the history (or the job itself failed earlier), a `"succeeded"` row with
   the `episodeId` is appended. An article that works first time adds nothing.

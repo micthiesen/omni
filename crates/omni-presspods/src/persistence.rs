@@ -20,6 +20,7 @@ use crate::model::{
     AttemptOutcome, JobStatus, PressPodsEpisode, PressPodsJob, PressPodsJobAttempt,
     RetrieverOutcome,
 };
+use crate::speech::providers::SPEECH_PREFLIGHT_OPERATION;
 use crate::url::{normalize_url, url_domain};
 
 /// Attempts before a retryable failure becomes permanent.
@@ -28,6 +29,10 @@ pub const MAX_JOB_ATTEMPTS: i64 = 6;
 pub const BASE_RETRY_DELAY_MS: i64 = 60_000;
 /// A `processing` claim older than this is presumed crashed and reclaimed.
 pub const STALE_CLAIM_MS: i64 = 30 * 60_000;
+/// First wait after the speech server is found unreachable; doubles per
+/// failed preflight up to [`MAX_SPEECH_RETRY_DELAY_MS`].
+pub const BASE_SPEECH_RETRY_DELAY_MS: i64 = 2 * 60_000;
+pub const MAX_SPEECH_RETRY_DELAY_MS: i64 = 30 * 60_000;
 
 /// CSPRNG ids: episode ids double as publicly served audio file names whose
 /// only protection is unguessability.
@@ -57,6 +62,54 @@ pub fn retry_delay_ms(attempts: i64) -> i64 {
         .unwrap_or(u32::MAX)
         .min(40);
     BASE_RETRY_DELAY_MS.saturating_mul(1_i64 << exponent)
+}
+
+/// `2 min * 2^(checks - 1)`, capped at 30 minutes.
+pub fn speech_retry_delay_ms(checks: i64) -> i64 {
+    let exponent = u32::try_from((checks - 1).max(0))
+        .unwrap_or(u32::MAX)
+        .min(40);
+    BASE_SPEECH_RETRY_DELAY_MS
+        .saturating_mul(1_i64 << exponent)
+        .min(MAX_SPEECH_RETRY_DELAY_MS)
+}
+
+/// The outcome of a failed speech preflight: wait with backoff without
+/// spending an attempt, or fail once the server has been unreachable for
+/// `deadline_ms` since the outage's first failed preflight. Pure; `base` is
+/// the live row.
+pub fn speech_deferred_job(
+    base: PressPodsJob,
+    error: &str,
+    now: i64,
+    deadline_ms: i64,
+) -> PressPodsJob {
+    let since = base.speech_unreachable_since.unwrap_or(now);
+    let checks = base.speech_unreachable_checks.unwrap_or(0) + 1;
+    let (status, next_attempt_at, last_error) = if now - since >= deadline_ms {
+        let hours = deadline_ms / 3_600_000;
+        (
+            JobStatus::Failed,
+            0,
+            format!("{error} (gave up after {hours} h unreachable)"),
+        )
+    } else {
+        (
+            JobStatus::Queued,
+            now + speech_retry_delay_ms(checks),
+            error.to_owned(),
+        )
+    };
+    PressPodsJob {
+        last_error: Some(last_error),
+        updated_at: now,
+        claimed_at: None,
+        status,
+        next_attempt_at,
+        speech_unreachable_since: Some(since),
+        speech_unreachable_checks: Some(checks),
+        ..base
+    }
 }
 
 /// Jobs runnable now: due queued rows plus stale processing claims, oldest
@@ -259,6 +312,8 @@ impl Persistence {
                     updated_at: now,
                     claimed_at: None,
                     last_run_id: None,
+                    speech_unreachable_since: None,
+                    speech_unreachable_checks: None,
                     extra: Default::default(),
                 };
                 tx.upsert(&job, UpsertOpts::default())?;
@@ -306,6 +361,9 @@ impl Persistence {
                         claimed_at: Some(now),
                         updated_at: now,
                         last_run_id: run_id,
+                        // Claimed only after a passing preflight: the outage is over.
+                        speech_unreachable_since: None,
+                        speech_unreachable_checks: None,
                         ..job
                     },
                     ModifyOpts::default(),
@@ -410,6 +468,59 @@ impl Persistence {
             .map_err(|e| PressPodsError::store("record PressPods job failure", e))
     }
 
+    /// A queued job whose speech preflight failed: put it back with backoff
+    /// and its attempt budget untouched, or fail it past the deadline (see
+    /// [`speech_deferred_job`]). The history gets one row when the outage
+    /// starts and one if the job is given up on, not one per failed check,
+    /// which would bury real failures under dozens of identical rows. A row
+    /// that is missing or no longer queued (deleted, or claimed elsewhere)
+    /// is left alone and `None` is returned.
+    pub async fn record_speech_unreachable(
+        &self,
+        job_id: &str,
+        error: &str,
+        run_id: Option<String>,
+        deadline_ms: i64,
+    ) -> Result<Option<PressPodsJob>, PressPodsError> {
+        let key = job_id.to_owned();
+        let error = error.to_owned();
+        self.store
+            .write(move |tx| {
+                let now = omni_store::DocOps::now_ms(tx);
+                let Some(existing) = tx.get::<PressPodsJob>(&key)? else {
+                    return Ok(None);
+                };
+                if existing.status != JobStatus::Queued {
+                    return Ok(None);
+                }
+                let first = existing.speech_unreachable_since.is_none();
+                let updated = PressPodsJob {
+                    last_run_id: run_id.or_else(|| existing.last_run_id.clone()),
+                    ..speech_deferred_job(existing, &error, now, deadline_ms)
+                };
+                tx.upsert(&updated, UpsertOpts::default())?;
+                let outcome = match updated.status {
+                    JobStatus::Failed => AttemptOutcome::Failed,
+                    JobStatus::Queued | JobStatus::Processing => AttemptOutcome::Retrying,
+                };
+                if first || outcome == AttemptOutcome::Failed {
+                    let row = PressPodsJobAttempt {
+                        error: updated
+                            .last_error
+                            .as_deref()
+                            .map(|error| capped(error, HISTORY_ERROR_UNITS)),
+                        operation: Some(SPEECH_PREFLIGHT_OPERATION.to_owned()),
+                        // The attempt that could not start.
+                        ..history_row(&updated, updated.attempts + 1, outcome, now)
+                    };
+                    tx.upsert(&row, UpsertOpts::default())?;
+                }
+                Ok::<_, StoreError>(Some(updated))
+            })
+            .await
+            .map_err(|e| PressPodsError::store("defer PressPods job for speech outage", e))
+    }
+
     /// One job; a row the typed model rejects is `InvalidData`.
     pub async fn get_job(&self, job_id: &str) -> Result<Option<PressPodsJob>, PressPodsError> {
         let key = job_id.to_owned();
@@ -443,6 +554,8 @@ impl Persistence {
                     claimed_at: None,
                     last_error: None,
                     updated_at: now,
+                    speech_unreachable_since: None,
+                    speech_unreachable_checks: None,
                     ..job
                 };
                 tx.upsert(&updated, UpsertOpts::default())?;

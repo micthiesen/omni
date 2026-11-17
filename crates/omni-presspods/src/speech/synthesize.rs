@@ -291,6 +291,11 @@ impl Synthesizer {
                 }
                 Err(error) => {
                     tracing::warn!(target: LOG, "Chunk synth/prepare failed (attempt {i}/{max_attempts}): {error}");
+                    // Another take cannot reach a server that is not there. A
+                    // timeout may be one slow take, so it keeps its retries.
+                    if error.is_speech_connect_failure() {
+                        return Err(error);
+                    }
                     if retryable_error.is_none() && error.is_retryable() {
                         retryable_error = Some(error);
                     } else {

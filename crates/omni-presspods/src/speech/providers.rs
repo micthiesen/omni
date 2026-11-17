@@ -17,6 +17,7 @@ use crate::error::PressPodsError;
 use crate::model::AuthorGender;
 
 const MAX_TTS_CHUNK_BYTES: usize = 25 * 1024 * 1024;
+const MAX_PREFLIGHT_BYTES: usize = 1024 * 1024;
 
 /// A TTS backend.
 pub trait TtsProvider: Send + Sync {
@@ -38,6 +39,13 @@ pub trait TtsProvider: Send + Sync {
 /// Builds the configured provider for an episode's author gender.
 pub trait TtsFactory: Send + Sync {
     fn create(&self, gender: Option<AuthorGender>) -> Result<Arc<dyn TtsProvider>, PressPodsError>;
+
+    /// A cheap check, before a job spends anything, that the speech server
+    /// can be reached. Fails only with [`PressPodsError::SpeechUnreachable`];
+    /// a server that answers at all passes.
+    fn preflight(&self) -> BoxFuture<'_, Result<(), PressPodsError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// An ElevenLabs voice.
@@ -151,6 +159,9 @@ const HIGGS_SPEED: f64 = 0.9;
 /// Output token cap: a complete ~900-char chunk needs ~1700; bounds a runaway.
 const HIGGS_MAX_TOKENS: u32 = 3000;
 const HIGGS_TIMEOUT: Duration = Duration::from_secs(4 * 60);
+/// A reachable mlx-audio server lists its models in well under a second.
+pub const SPEECH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const SPEECH_PREFLIGHT_OPERATION: &str = "TTS preflight";
 pub const HIGGS_DEFAULT_MODEL: &str = "bosonai/higgs-audio-v3-tts-4b";
 
 impl HiggsProvider {
@@ -264,6 +275,16 @@ impl TtsProvider for HiggsProvider {
                 )
             })
             .await
+            .map_err(|error| match &error {
+                PressPodsError::Http { source, .. } => PressPodsError::speech_unreachable(
+                    OPERATION,
+                    &self.base_url,
+                    source,
+                    HIGGS_TIMEOUT,
+                )
+                .unwrap_or(error),
+                _ => error,
+            })
         })
     }
 }
@@ -382,6 +403,45 @@ impl TtsFactory for ConfiguredTts {
                 gender,
                 self.mode,
             )?),
+        })
+    }
+
+    /// Higgs only: `GET /v1/models` on the mlx-audio server. ElevenLabs is a
+    /// hosted API, and an unset URL keeps its own error from `create`.
+    fn preflight(&self) -> BoxFuture<'_, Result<(), PressPodsError>> {
+        Box::pin(async move {
+            if self.config.presspods_tts_provider != TtsProviderKind::Higgs {
+                return Ok(());
+            }
+            let Some(base_url) = self
+                .config
+                .presspods_tts_url
+                .as_deref()
+                .filter(|u| !u.is_empty())
+            else {
+                return Ok(());
+            };
+            let Ok(url) = Url::parse(&format!("{base_url}/v1/models")) else {
+                return Ok(());
+            };
+            let answer = self
+                .http
+                .request(Method::GET, url)
+                .timeout(SPEECH_PREFLIGHT_TIMEOUT)
+                .send_bounded(MAX_PREFLIGHT_BYTES)
+                .await;
+            match answer {
+                Ok(_) => Ok(()),
+                Err(source) => match PressPodsError::speech_unreachable(
+                    SPEECH_PREFLIGHT_OPERATION,
+                    base_url,
+                    &source,
+                    SPEECH_PREFLIGHT_TIMEOUT,
+                ) {
+                    Some(unreachable) => Err(unreachable),
+                    None => Ok(()),
+                },
+            }
         })
     }
 }

@@ -155,6 +155,8 @@ async fn a_crashed_job_whose_episode_landed_publishes_that_episode() {
         updated_at: 500,
         claimed_at: Some(500),
         last_run_id: None,
+        speech_unreachable_since: None,
+        speech_unreachable_checks: None,
         extra: Default::default(),
     };
     h.service

@@ -64,13 +64,16 @@ impl PressPodsTask {
             }
         }
         let (mut processed, mut requeued, mut failed) = (0u32, 0u32, 0u32);
+        // One failed preflight covers the rest of the pass: every other due
+        // job is deferred without another probe.
+        let mut speech_outage: Option<String> = None;
         loop {
             let now = service.deps.clock.now_ms();
             let jobs = service.persistence().get_all_jobs().await?;
             let Some(job) = select_due_jobs(jobs, now).into_iter().next() else {
                 break;
             };
-            match self.process_job(job, run_id).await? {
+            match self.process_job(job, run_id, &mut speech_outage).await? {
                 JobOutcome::Processed => processed += 1,
                 JobOutcome::Requeued => requeued += 1,
                 JobOutcome::Failed => failed += 1,
@@ -91,6 +94,7 @@ impl PressPodsTask {
         &self,
         job: PressPodsJob,
         run_id: Option<&str>,
+        speech_outage: &mut Option<String>,
     ) -> Result<JobOutcome, PressPodsError> {
         let service = &self.service;
         let persistence = service.persistence();
@@ -135,6 +139,22 @@ impl PressPodsTask {
             tracing::error!(target: LOG, "Giving up on {}: crashed {} times mid-run", job.url, updated.attempts);
             crate::events::publish(&service.ports, crate::events::failed(&updated)).await;
             return Ok(JobOutcome::Failed);
+        }
+
+        // Before the claim and before anything is paid for: with the speech
+        // server unreachable the job waits instead of spending retrieval,
+        // model calls and an attempt on an episode that cannot be voiced.
+        if speech_outage.is_none()
+            && let Err(error) = service.deps.tts.preflight().await
+        {
+            if error.is_speech_unreachable() {
+                *speech_outage = Some(error.summary());
+            } else {
+                tracing::warn!(target: LOG, %error, "Speech preflight could not run; continuing");
+            }
+        }
+        if let Some(outage) = speech_outage.as_deref() {
+            return self.defer_for_speech_outage(&job, outage, run_id).await;
         }
 
         persistence
@@ -194,6 +214,41 @@ impl PressPodsTask {
                     Ok(JobOutcome::Failed)
                 }
             }
+        }
+    }
+
+    async fn defer_for_speech_outage(
+        &self,
+        job: &PressPodsJob,
+        outage: &str,
+        run_id: Option<&str>,
+    ) -> Result<JobOutcome, PressPodsError> {
+        let service = &self.service;
+        let deadline_ms =
+            i64::from(service.deps.config.presspods_tts_unreachable_deadline_hours) * 3_600_000;
+        let Some(updated) = service
+            .persistence()
+            .record_speech_unreachable(&job.job_id, outage, run_id.map(str::to_owned), deadline_ms)
+            .await?
+        else {
+            // Deleted or changed since selection; the next pass sees its real state.
+            return Ok(JobOutcome::Requeued);
+        };
+        let summary = updated.last_error.as_deref().unwrap_or(outage);
+        if updated.status == JobStatus::Queued {
+            tracing::warn!(
+                target: LOG,
+                url = job.url.as_str(),
+                error = summary,
+                "Episode creation deferred, no attempt used (check {} of this outage)",
+                updated.speech_unreachable_checks.unwrap_or(1)
+            );
+            omni_tasks::report_degraded(format!("episode creation deferred: {summary}"));
+            Ok(JobOutcome::Requeued)
+        } else {
+            tracing::error!(target: LOG, "Episode creation failed permanently for {} {summary}", job.url);
+            crate::events::publish(&service.ports, crate::events::failed(&updated)).await;
+            Ok(JobOutcome::Failed)
         }
     }
 }

@@ -6,6 +6,48 @@ refinement target. This doc records what the chain does, why each stage exists,
 the artifacts we've found and fixed (with the measurement method, so future
 issues can be diagnosed the same way), and the known next steps.
 
+## Speech server
+
+Higgs TTS and the STT verifier run on one mlx-audio server: Michael's MacBook
+(LaunchAgent `com.mlxaudio.server`, port 8000), reached at `PRESSPODS_TTS_URL`.
+Production sets that variable in `~/compose/docker-compose.yml` on Boris. The
+Mac gets its address from DHCP, so the address can change (it moved from
+`10.10.1.90` to `10.10.1.113` on 2026-11-16), and the Mac can be asleep or off
+the network. Both show up the same way, as a connection that cannot be made.
+
+The queue worker therefore checks the server before a job starts
+(`TtsFactory::preflight`, `GET /v1/models` with a 5-second timeout, Higgs
+only). Any HTTP answer passes. A connection failure or timeout defers the job:
+
+- Nothing is retrieved, no model is called, and the job's attempt count does
+  not change. The job stays `queued` with `lastError` set to
+  `speech server unreachable at <origin>: <reason>`.
+- The next check is 2 minutes later, doubling to a cap of 30 minutes (2, 4, 8,
+  16, 30, 30, ...). The worker sweeps every 5 minutes, so a short wait ends at
+  the next sweep. One failed check defers every job due in that pass.
+- The attempt history gets one `retrying` row with `operation: "TTS
+  preflight"` when the outage starts for a job, not one per check.
+- When the server has been unreachable for
+  `PRESSPODS_TTS_UNREACHABLE_DEADLINE_HOURS` (default 24) since the job's first
+  failed check, the job fails with the same message plus `(gave up after N h
+  unreachable)`, a `failed` history row and the usual failure alert. A manual
+  retry starts a new outage clock.
+- A check that passes ends the outage for that job; a later one starts again
+  from 2 minutes and a new deadline.
+
+A connection failure during synthesis (no route, refused, no response within
+the 4-minute chunk timeout) is reported with the same message and the
+operation `synthesize Higgs chunk`. Work was already paid for, so it uses an
+attempt and takes the ordinary retry backoff; the next attempt then meets the
+preflight. After an outright connection failure the remaining takes of that
+chunk are skipped; a timeout keeps them, since it may be one slow take. An
+error the server itself answers with (a 400, a 5xx) keeps its existing
+classification.
+
+If jobs sit deferred, check that the Mac is awake and that
+`PRESSPODS_TTS_URL` still names its address
+(`curl -m 5 http://<mlx-host>:8000/v1/models`).
+
 ## TTS providers and what their raw audio looks like
 
 | Provider | Native output | Bandwidth | Noise floor | Quirks |

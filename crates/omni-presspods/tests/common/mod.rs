@@ -5,7 +5,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
@@ -85,7 +85,14 @@ pub struct FakeTts {
     pub verify_content: bool,
     pub calls: AtomicUsize,
     pub fail_with: Mutex<Option<fn() -> PressPodsError>>,
+    /// Makes the factory's preflight report the speech server unreachable.
+    pub unreachable: AtomicBool,
+    pub preflights: AtomicUsize,
 }
+
+/// What the fake preflight reports while [`FakeTts::unreachable`] is set.
+pub const UNREACHABLE: &str =
+    "speech server unreachable at http://tts.test:8000: tcp connect error: No route to host";
 
 impl FakeTts {
     /// Higgs-like: denoised and verified (length and content).
@@ -107,6 +114,8 @@ impl FakeTts {
             verify_content: false,
             calls: AtomicUsize::new(0),
             fail_with: Mutex::new(None),
+            unreachable: AtomicBool::new(false),
+            preflights: AtomicUsize::new(0),
         }
     }
 }
@@ -154,6 +163,22 @@ impl TtsFactory for FakeTtsFactory {
         _gender: Option<AuthorGender>,
     ) -> Result<Arc<dyn TtsProvider>, PressPodsError> {
         Ok(self.0.clone())
+    }
+
+    fn preflight(&self) -> BoxFuture<'_, Result<(), PressPodsError>> {
+        self.0.preflights.fetch_add(1, Ordering::SeqCst);
+        let unreachable = self.0.unreachable.load(Ordering::SeqCst);
+        Box::pin(async move {
+            if unreachable {
+                return Err(PressPodsError::SpeechUnreachable {
+                    operation: "TTS preflight".to_owned(),
+                    url: "http://tts.test:8000".to_owned(),
+                    reason: "tcp connect error: No route to host".to_owned(),
+                    timed_out: false,
+                });
+            }
+            Ok(())
+        })
     }
 }
 
