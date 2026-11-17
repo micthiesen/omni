@@ -420,7 +420,16 @@ Obscura process per article, only navigates to the submitted public URL and
 reads the DOM (no clicks, typing, logins or downloads), is never given
 `--allow-private-network`, and is bounded by its own 55-second deadline and a
 5,000,000-character page cap. Rendered pages are untrusted and go through the
-same parsers as fetched ones. Speech is chunked and verified before the finished episode is exposed.
+same parsers as fetched ones.
+
+Every failed attempt, and every success after one, is appended to the
+`press-pods-job-attempt` history in the same transaction as the job change
+(`persistence.rs`). Rows are append-only, hold no article text or response
+bodies, expire after 180 days, and are never deleted with the job: deleting,
+retrying or resubmitting a job must leave them in place. Resolution is
+computed on read. `presspods_list` `resource: "history"` is the only reader.
+
+Speech is chunked and verified before the finished episode is exposed.
 Every sample-rate conversion in
 `crates/omni-presspods/src/speech/audio_chain.rs` must retain `RESAMPLE_HQ`; the
 Higgs denoise path retains `FIZZ_SHELF`. See `docs/presspods-audio.md` before

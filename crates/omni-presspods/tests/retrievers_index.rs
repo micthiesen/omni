@@ -293,6 +293,7 @@ fn selects_the_highest_rating_and_the_first_on_ties() {
     let error = omni_presspods::retrievers::select_best(vec![RetrieverResult::Failure {
         retriever_name: "a".into(),
         error: PressPodsError::failed("x", "y"),
+        text_chars: None,
     }])
     .unwrap_err();
     assert_eq!(
@@ -310,6 +311,7 @@ fn failed_rating(name: &str, source: PressPodsError) -> RetrieverResult {
             message: source.cause_message(),
             retryable: Some(source.is_retryable()),
         },
+        text_chars: None,
     }
 }
 
@@ -329,6 +331,7 @@ fn the_failure_names_each_retrievers_reason_without_response_bodies() {
         RetrieverResult::Failure {
             retriever_name: "postlight".into(),
             error: blocked(),
+            text_chars: None,
         },
         RetrieverResult::Failure {
             retriever_name: "wayback".into(),
@@ -336,6 +339,7 @@ fn the_failure_names_each_retrievers_reason_without_response_bodies() {
                 "retrieve article with Wayback",
                 "No archived snapshot available for this URL",
             ),
+            text_chars: None,
         },
         failed_rating("fetch", PressPodsError::failed("rate", "Invalid article")),
         RetrieverResult::Failure {
@@ -344,6 +348,7 @@ fn the_failure_names_each_retrievers_reason_without_response_bodies() {
                 "render article with Obscura",
                 "the site answered the browser with a bot challenge",
             ),
+            text_chars: None,
         },
     ])
     .unwrap_err();
@@ -374,6 +379,7 @@ fn eight_distinct_reasons_all_fit_in_the_stored_summary() {
         .map(|(i, name)| RetrieverResult::Failure {
             retriever_name: (*name).into(),
             error: PressPodsError::failed("retrieve", format!("{i}{}", "y".repeat(90))),
+            text_chars: None,
         })
         .collect();
     let summary = omni_presspods::retrievers::select_best(failures)
@@ -390,14 +396,17 @@ fn retrievers_that_failed_the_same_way_share_one_reason() {
         RetrieverResult::Failure {
             retriever_name: "postlight".into(),
             error: blocked(),
+            text_chars: None,
         },
         RetrieverResult::Failure {
             retriever_name: "wayback".into(),
             error: PressPodsError::failed("retrieve", "No snapshot"),
+            text_chars: None,
         },
         RetrieverResult::Failure {
             retriever_name: "fetch".into(),
             error: blocked(),
+            text_chars: None,
         },
     ])
     .unwrap_err();
@@ -414,6 +423,7 @@ fn a_rating_model_outage_is_retried_but_a_rejected_article_is_not() {
         RetrieverResult::Failure {
             retriever_name: "wayback".into(),
             error: PressPodsError::failed("retrieve", "No archived snapshot"),
+            text_chars: None,
         },
         failed_rating("postlight", outage),
     ])

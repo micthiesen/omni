@@ -35592,7 +35592,7 @@
                 {
                   "name": "presspods_list",
                   "title": "List PressPods Resources",
-                  "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+                  "description": "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -35601,7 +35601,8 @@
                         "type": "string",
                         "enum": [
                           "episodes",
-                          "jobs"
+                          "jobs",
+                          "history"
                         ]
                       },
                       "status": {
@@ -35610,11 +35611,28 @@
                           "queued",
                           "processing",
                           "failed"
-                        ]
+                        ],
+                        "description": "Jobs only."
                       },
                       "query": {
                         "type": "string",
-                        "maxLength": 300
+                        "maxLength": 300,
+                        "description": "Episodes: title, author, publication or domain text. Jobs and\nhistory: URL text."
+                      },
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "History only: the article's site, e.g. `theatlantic.com` (a full URL\nis reduced to its host); subdomains match and a leading `www.` is\nignored."
+                      },
+                      "since": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: first day to include, in the server's time zone."
+                      },
+                      "until": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: last day to include, in the server's time zone."
                       },
                       "cursor": {
                         "default": 0,
@@ -35941,6 +35959,293 @@
                                 "createdAt",
                                 "updatedAt",
                                 "lastRunId"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "nextCursor",
+                          "total",
+                          "resource",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nextCursor": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "resource": {
+                            "type": "string",
+                            "const": "history"
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "attemptId": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "attempt": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "Attempt number within the job's retry budget; a manual retry or\nresubmit starts again at 1."
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Epoch milliseconds."
+                                },
+                                "outcome": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "retrying",
+                                      "description": "Failed and requeued with backoff."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed",
+                                      "description": "Failed for good."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded",
+                                      "description": "Produced an episode after earlier failures for the same article."
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "operation": {
+                                  "description": "The pipeline step that failed.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "retrievers": {
+                                  "description": "Null when the attempt ended before retrieval finished.",
+                                  "anyOf": [
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "ok": {
+                                            "type": "boolean",
+                                            "description": "The extraction was rated a valid article."
+                                          },
+                                          "selected": {
+                                            "type": "boolean",
+                                            "description": "This extraction was the one narrated."
+                                          },
+                                          "errorClass": {
+                                            "anyOf": [
+                                              {
+                                                "oneOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "http_status",
+                                                      "timeout",
+                                                      "network",
+                                                      "other"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "invalid_article",
+                                                    "description": "Text was extracted but rated not an article."
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "rating_failed",
+                                                    "description": "Text was extracted but the rating model call failed."
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "httpStatus": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 65535
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "error": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "textChars": {
+                                            "description": "Length of the extracted text, when there was one.",
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "contentRating": {
+                                            "description": "The 0-10 extraction rating of a valid article.",
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "ok",
+                                          "selected",
+                                          "errorClass",
+                                          "httpStatus",
+                                          "error",
+                                          "textChars",
+                                          "contentRating"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "episodeId": {
+                                  "description": "The episode a succeeded attempt produced.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedAt": {
+                                  "description": "On a failure: when the same article next produced an episode. Null\nwhile unresolved.",
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedByEpisodeId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "attemptId",
+                                "jobId",
+                                "url",
+                                "domain",
+                                "attempt",
+                                "at",
+                                "outcome",
+                                "error",
+                                "operation",
+                                "retrievers",
+                                "runId",
+                                "episodeId",
+                                "resolvedAt",
+                                "resolvedByEpisodeId"
                               ],
                               "additionalProperties": false
                             }
@@ -84827,7 +85132,7 @@
                 {
                   "name": "presspods_list",
                   "title": "List PressPods Resources",
-                  "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+                  "description": "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -84836,7 +85141,8 @@
                         "type": "string",
                         "enum": [
                           "episodes",
-                          "jobs"
+                          "jobs",
+                          "history"
                         ]
                       },
                       "status": {
@@ -84845,11 +85151,28 @@
                           "queued",
                           "processing",
                           "failed"
-                        ]
+                        ],
+                        "description": "Jobs only."
                       },
                       "query": {
                         "type": "string",
-                        "maxLength": 300
+                        "maxLength": 300,
+                        "description": "Episodes: title, author, publication or domain text. Jobs and\nhistory: URL text."
+                      },
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "History only: the article's site, e.g. `theatlantic.com` (a full URL\nis reduced to its host); subdomains match and a leading `www.` is\nignored."
+                      },
+                      "since": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: first day to include, in the server's time zone."
+                      },
+                      "until": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: last day to include, in the server's time zone."
                       },
                       "cursor": {
                         "default": 0,
@@ -85176,6 +85499,293 @@
                                 "createdAt",
                                 "updatedAt",
                                 "lastRunId"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "nextCursor",
+                          "total",
+                          "resource",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nextCursor": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "resource": {
+                            "type": "string",
+                            "const": "history"
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "attemptId": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "attempt": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "Attempt number within the job's retry budget; a manual retry or\nresubmit starts again at 1."
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Epoch milliseconds."
+                                },
+                                "outcome": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "retrying",
+                                      "description": "Failed and requeued with backoff."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed",
+                                      "description": "Failed for good."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded",
+                                      "description": "Produced an episode after earlier failures for the same article."
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "operation": {
+                                  "description": "The pipeline step that failed.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "retrievers": {
+                                  "description": "Null when the attempt ended before retrieval finished.",
+                                  "anyOf": [
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "ok": {
+                                            "type": "boolean",
+                                            "description": "The extraction was rated a valid article."
+                                          },
+                                          "selected": {
+                                            "type": "boolean",
+                                            "description": "This extraction was the one narrated."
+                                          },
+                                          "errorClass": {
+                                            "anyOf": [
+                                              {
+                                                "oneOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "http_status",
+                                                      "timeout",
+                                                      "network",
+                                                      "other"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "invalid_article",
+                                                    "description": "Text was extracted but rated not an article."
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "rating_failed",
+                                                    "description": "Text was extracted but the rating model call failed."
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "httpStatus": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 65535
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "error": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "textChars": {
+                                            "description": "Length of the extracted text, when there was one.",
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "contentRating": {
+                                            "description": "The 0-10 extraction rating of a valid article.",
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "ok",
+                                          "selected",
+                                          "errorClass",
+                                          "httpStatus",
+                                          "error",
+                                          "textChars",
+                                          "contentRating"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "episodeId": {
+                                  "description": "The episode a succeeded attempt produced.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedAt": {
+                                  "description": "On a failure: when the same article next produced an episode. Null\nwhile unresolved.",
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedByEpisodeId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "attemptId",
+                                "jobId",
+                                "url",
+                                "domain",
+                                "attempt",
+                                "at",
+                                "outcome",
+                                "error",
+                                "operation",
+                                "retrievers",
+                                "runId",
+                                "episodeId",
+                                "resolvedAt",
+                                "resolvedByEpisodeId"
                               ],
                               "additionalProperties": false
                             }
@@ -134253,7 +134863,7 @@
                 {
                   "name": "presspods_list",
                   "title": "List PressPods Resources",
-                  "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+                  "description": "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -134262,7 +134872,8 @@
                         "type": "string",
                         "enum": [
                           "episodes",
-                          "jobs"
+                          "jobs",
+                          "history"
                         ]
                       },
                       "status": {
@@ -134271,11 +134882,28 @@
                           "queued",
                           "processing",
                           "failed"
-                        ]
+                        ],
+                        "description": "Jobs only."
                       },
                       "query": {
                         "type": "string",
-                        "maxLength": 300
+                        "maxLength": 300,
+                        "description": "Episodes: title, author, publication or domain text. Jobs and\nhistory: URL text."
+                      },
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "History only: the article's site, e.g. `theatlantic.com` (a full URL\nis reduced to its host); subdomains match and a leading `www.` is\nignored."
+                      },
+                      "since": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: first day to include, in the server's time zone."
+                      },
+                      "until": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: last day to include, in the server's time zone."
                       },
                       "cursor": {
                         "default": 0,
@@ -134602,6 +135230,293 @@
                                 "createdAt",
                                 "updatedAt",
                                 "lastRunId"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "nextCursor",
+                          "total",
+                          "resource",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nextCursor": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "resource": {
+                            "type": "string",
+                            "const": "history"
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "attemptId": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "attempt": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "Attempt number within the job's retry budget; a manual retry or\nresubmit starts again at 1."
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Epoch milliseconds."
+                                },
+                                "outcome": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "retrying",
+                                      "description": "Failed and requeued with backoff."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed",
+                                      "description": "Failed for good."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded",
+                                      "description": "Produced an episode after earlier failures for the same article."
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "operation": {
+                                  "description": "The pipeline step that failed.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "retrievers": {
+                                  "description": "Null when the attempt ended before retrieval finished.",
+                                  "anyOf": [
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "ok": {
+                                            "type": "boolean",
+                                            "description": "The extraction was rated a valid article."
+                                          },
+                                          "selected": {
+                                            "type": "boolean",
+                                            "description": "This extraction was the one narrated."
+                                          },
+                                          "errorClass": {
+                                            "anyOf": [
+                                              {
+                                                "oneOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "http_status",
+                                                      "timeout",
+                                                      "network",
+                                                      "other"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "invalid_article",
+                                                    "description": "Text was extracted but rated not an article."
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "rating_failed",
+                                                    "description": "Text was extracted but the rating model call failed."
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "httpStatus": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 65535
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "error": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "textChars": {
+                                            "description": "Length of the extracted text, when there was one.",
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "contentRating": {
+                                            "description": "The 0-10 extraction rating of a valid article.",
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "ok",
+                                          "selected",
+                                          "errorClass",
+                                          "httpStatus",
+                                          "error",
+                                          "textChars",
+                                          "contentRating"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "episodeId": {
+                                  "description": "The episode a succeeded attempt produced.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedAt": {
+                                  "description": "On a failure: when the same article next produced an episode. Null\nwhile unresolved.",
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedByEpisodeId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "attemptId",
+                                "jobId",
+                                "url",
+                                "domain",
+                                "attempt",
+                                "at",
+                                "outcome",
+                                "error",
+                                "operation",
+                                "retrievers",
+                                "runId",
+                                "episodeId",
+                                "resolvedAt",
+                                "resolvedByEpisodeId"
                               ],
                               "additionalProperties": false
                             }
@@ -182940,7 +183855,7 @@
                 {
                   "name": "presspods_list",
                   "title": "List PressPods Resources",
-                  "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+                  "description": "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -182949,7 +183864,8 @@
                         "type": "string",
                         "enum": [
                           "episodes",
-                          "jobs"
+                          "jobs",
+                          "history"
                         ]
                       },
                       "status": {
@@ -182958,11 +183874,28 @@
                           "queued",
                           "processing",
                           "failed"
-                        ]
+                        ],
+                        "description": "Jobs only."
                       },
                       "query": {
                         "type": "string",
-                        "maxLength": 300
+                        "maxLength": 300,
+                        "description": "Episodes: title, author, publication or domain text. Jobs and\nhistory: URL text."
+                      },
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "History only: the article's site, e.g. `theatlantic.com` (a full URL\nis reduced to its host); subdomains match and a leading `www.` is\nignored."
+                      },
+                      "since": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: first day to include, in the server's time zone."
+                      },
+                      "until": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "description": "History only: last day to include, in the server's time zone."
                       },
                       "cursor": {
                         "default": 0,
@@ -183289,6 +184222,293 @@
                                 "createdAt",
                                 "updatedAt",
                                 "lastRunId"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "nextCursor",
+                          "total",
+                          "resource",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nextCursor": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "resource": {
+                            "type": "string",
+                            "const": "history"
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "attemptId": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "attempt": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "Attempt number within the job's retry budget; a manual retry or\nresubmit starts again at 1."
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Epoch milliseconds."
+                                },
+                                "outcome": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "retrying",
+                                      "description": "Failed and requeued with backoff."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed",
+                                      "description": "Failed for good."
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded",
+                                      "description": "Produced an episode after earlier failures for the same article."
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "operation": {
+                                  "description": "The pipeline step that failed.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "retrievers": {
+                                  "description": "Null when the attempt ended before retrieval finished.",
+                                  "anyOf": [
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "ok": {
+                                            "type": "boolean",
+                                            "description": "The extraction was rated a valid article."
+                                          },
+                                          "selected": {
+                                            "type": "boolean",
+                                            "description": "This extraction was the one narrated."
+                                          },
+                                          "errorClass": {
+                                            "anyOf": [
+                                              {
+                                                "oneOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "http_status",
+                                                      "timeout",
+                                                      "network",
+                                                      "other"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "invalid_article",
+                                                    "description": "Text was extracted but rated not an article."
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "const": "rating_failed",
+                                                    "description": "Text was extracted but the rating model call failed."
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "httpStatus": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 65535
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "error": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "textChars": {
+                                            "description": "Length of the extracted text, when there was one.",
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "contentRating": {
+                                            "description": "The 0-10 extraction rating of a valid article.",
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "ok",
+                                          "selected",
+                                          "errorClass",
+                                          "httpStatus",
+                                          "error",
+                                          "textChars",
+                                          "contentRating"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "episodeId": {
+                                  "description": "The episode a succeeded attempt produced.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedAt": {
+                                  "description": "On a failure: when the same article next produced an episode. Null\nwhile unresolved.",
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "resolvedByEpisodeId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "attemptId",
+                                "jobId",
+                                "url",
+                                "domain",
+                                "attempt",
+                                "at",
+                                "outcome",
+                                "error",
+                                "operation",
+                                "retrievers",
+                                "runId",
+                                "episodeId",
+                                "resolvedAt",
+                                "resolvedByEpisodeId"
                               ],
                               "additionalProperties": false
                             }

@@ -12,7 +12,7 @@ pub static PRESSPODS_LIST: ToolDef<PresspodsListInput, PresspodsListOutput> = To
     ToolInfo {
         name: "presspods_list",
         title: "List PressPods Resources",
-        description: "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+        description: "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
         annotations: Annotations {
             read_only_hint: true,
             destructive_hint: false,
@@ -146,6 +146,7 @@ pub static TOOLS: [&dyn ToolDefinition; 6] = [
 pub enum Resource {
     Episodes,
     Jobs,
+    History,
 }
 
 #[derive(JsonSchema)]
@@ -160,9 +161,23 @@ pub enum Status {
 #[schemars(deny_unknown_fields)]
 pub struct PresspodsListInput {
     pub resource: Resource,
+    /// Jobs only.
     pub status: Option<Status>,
+    /// Episodes: title, author, publication or domain text. Jobs and
+    /// history: URL text.
     #[schemars(length(max = 300))]
     pub query: Option<String>,
+    /// History only: the article's site, e.g. `theatlantic.com` (a full URL
+    /// is reduced to its host); subdomains match and a leading `www.` is
+    /// ignored.
+    #[schemars(length(max = 2000))]
+    pub domain: Option<String>,
+    /// History only: first day to include, in the server's time zone.
+    #[schemars(pattern(r"^\d{4}-\d{2}-\d{2}$"))]
+    pub since: Option<String>,
+    /// History only: last day to include, in the server's time zone.
+    #[schemars(pattern(r"^\d{4}-\d{2}-\d{2}$"))]
+    pub until: Option<String>,
     #[schemars(description = "Zero-based result offset", extend("default" = 0))]
     pub cursor: Option<u64>,
     #[schemars(range(min = 1, max = 100), extend("default" = 25))]
@@ -228,10 +243,89 @@ pub struct PresspodsListOutputJobs {
 }
 
 #[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+pub enum AttemptOutcome {
+    /// Failed and requeued with backoff.
+    Retrying,
+    /// Failed for good.
+    Failed,
+    /// Produced an episode after earlier failures for the same article.
+    Succeeded,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "snake_case")]
+pub enum RetrieverErrorClass {
+    HttpStatus,
+    Timeout,
+    Network,
+    /// Text was extracted but rated not an article.
+    InvalidArticle,
+    /// Text was extracted but the rating model call failed.
+    RatingFailed,
+    Other,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresspodsListOutputHistoryRetriever {
+    pub name: String,
+    /// The extraction was rated a valid article.
+    pub ok: bool,
+    /// This extraction was the one narrated.
+    pub selected: bool,
+    pub error_class: Option<RetrieverErrorClass>,
+    pub http_status: Option<u16>,
+    pub error: Option<String>,
+    /// Length of the extracted text, when there was one.
+    pub text_chars: Option<u64>,
+    /// The 0-10 extraction rating of a valid article.
+    pub content_rating: Option<f64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresspodsListOutputHistoryItem {
+    pub attempt_id: String,
+    pub job_id: String,
+    pub url: String,
+    pub domain: Option<String>,
+    /// Attempt number within the job's retry budget; a manual retry or
+    /// resubmit starts again at 1.
+    pub attempt: u64,
+    /// Epoch milliseconds.
+    pub at: i64,
+    pub outcome: AttemptOutcome,
+    pub error: Option<String>,
+    /// The pipeline step that failed.
+    pub operation: Option<String>,
+    /// Null when the attempt ended before retrieval finished.
+    pub retrievers: Option<Vec<PresspodsListOutputHistoryRetriever>>,
+    pub run_id: Option<String>,
+    /// The episode a succeeded attempt produced.
+    pub episode_id: Option<String>,
+    /// On a failure: when the same article next produced an episode. Null
+    /// while unresolved.
+    pub resolved_at: Option<i64>,
+    pub resolved_by_episode_id: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresspodsListOutputHistory {
+    pub next_cursor: Option<u64>,
+    pub total: u64,
+    #[schemars(transform = Literal("history"))]
+    pub resource: Lit,
+    pub items: Vec<PresspodsListOutputHistoryItem>,
+}
+
+#[derive(JsonSchema)]
 #[schemars(untagged, transform = one_of)]
 pub enum PresspodsListOutput {
     Episodes(PresspodsListOutputEpisodes),
     Jobs(PresspodsListOutputJobs),
+    History(PresspodsListOutputHistory),
 }
 
 #[derive(JsonSchema)]

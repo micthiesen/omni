@@ -11,7 +11,7 @@ use crate::audio::{audio_duration_seconds, tag_episode_audio};
 use crate::costs::CostCounter;
 use crate::error::PressPodsError;
 use crate::formatting::{FinalTextInput, build_final_text};
-use crate::model::PressPodsEpisode;
+use crate::model::{PressPodsEpisode, RetrieverOutcome};
 use crate::persistence::secure_id;
 use crate::retrievers::{
     BestArticle, RETRIEVER_TIMEOUT, rate_retrieved_articles, run_article_retrievers, select_best,
@@ -19,7 +19,7 @@ use crate::retrievers::{
 use crate::service::PressPods;
 use crate::speech::synthesize::Synthesizer;
 use crate::storage::checkpoint_work_id;
-use crate::types::{Article, summarize_retriever_attempts};
+use crate::types::{Article, RetrieverResult, retriever_outcomes, summarize_retriever_attempts};
 use crate::url::normalize_url;
 pub use omni_core::js::to_fixed as js_to_fixed;
 
@@ -96,12 +96,21 @@ impl PressPods {
         url: &str,
         costs: &CostCounter,
     ) -> Result<BestArticle, PressPodsError> {
+        select_best(self.rated_results(url, costs).await?)
+    }
+
+    /// Runs every retriever and rates the results.
+    async fn rated_results(
+        &self,
+        url: &str,
+        costs: &CostCounter,
+    ) -> Result<Vec<RetrieverResult>, PressPodsError> {
         self.deps.url_guard.check(url).await?;
         let retrievers = self.deps.retrievers.for_url(url);
         let retrieved = run_article_retrievers(url, &retrievers, RETRIEVER_TIMEOUT).await;
         let agents = self.deps.agents.clone();
         let costs = costs.clone();
-        let results = rate_retrieved_articles(retrieved, move |article: Article| {
+        Ok(rate_retrieved_articles(retrieved, move |article: Article| {
             let agents = agents.clone();
             let costs = costs.clone();
             async move {
@@ -116,8 +125,7 @@ impl PressPods {
                 }
             }
         })
-        .await;
-        select_best(results)
+        .await)
     }
 
     /// The whole pipeline for one submitted URL.
@@ -126,13 +134,41 @@ impl PressPods {
         url: &str,
         run_id: Option<String>,
     ) -> Result<PressPodsEpisode, PressPodsError> {
+        self.create_episode_traced(url, run_id).await.0
+    }
+
+    /// [`Self::create_episode_from_url`] plus every retriever's outcome for
+    /// the attempt history (empty when the attempt ended before retrieval
+    /// finished), whether or not an episode came out.
+    pub async fn create_episode_traced(
+        &self,
+        url: &str,
+        run_id: Option<String>,
+    ) -> (
+        Result<PressPodsEpisode, PressPodsError>,
+        Vec<RetrieverOutcome>,
+    ) {
+        let mut outcomes = Vec::new();
+        let result = self.create_episode(url, run_id, &mut outcomes).await;
+        (result, outcomes)
+    }
+
+    async fn create_episode(
+        &self,
+        url: &str,
+        run_id: Option<String>,
+        outcomes: &mut Vec<RetrieverOutcome>,
+    ) -> Result<PressPodsEpisode, PressPodsError> {
         let deps = &self.deps;
         let start = deps.clock.now_ms();
         let costs = CostCounter::new();
         let normalized_url = normalize_url(url);
         let work_id = checkpoint_work_id(&normalized_url);
 
-        let best = self.article_from_url(url, &costs).await?;
+        let results = self.rated_results(url, &costs).await?;
+        *outcomes = retriever_outcomes(&results, None);
+        let best = select_best(results)?;
+        *outcomes = retriever_outcomes(&best.all_results, Some(&best.retriever_name));
         let retrieved = &best.article;
         let metadata = &best.metadata;
         tracing::info!(

@@ -7,8 +7,11 @@ use omni_mcp_kit::{McpTool, ToolError, ToolMetaError, paginate, truncate_utf16, 
 use serde::{Deserialize, Serialize};
 
 use crate::error::PressPodsError;
-use crate::model::{JobStatus, PressPodsEpisode, PressPodsJob};
-use crate::persistence::job_normalized_url;
+use crate::model::{
+    AttemptOutcome, JobStatus, PressPodsEpisode, PressPodsJob, RetrieverErrorClass,
+    RetrieverOutcome,
+};
+use crate::persistence::{AttemptHistoryEntry, job_normalized_url};
 use crate::routes::{cost_cents, job_dto, js_numbers};
 use crate::service::PressPods;
 use crate::storage::checkpoint_work_id;
@@ -64,6 +67,112 @@ fn mcp_episode(e: &PressPodsEpisode) -> McpEpisode {
 pub enum ListResource {
     Episodes,
     Jobs,
+    History,
+}
+
+/// One retriever's outcome in a history item.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpRetrieverOutcome {
+    pub name: String,
+    pub ok: bool,
+    pub selected: bool,
+    pub error_class: Option<RetrieverErrorClass>,
+    pub http_status: Option<u16>,
+    pub error: Option<String>,
+    pub text_chars: Option<i64>,
+    pub content_rating: Option<f64>,
+}
+
+fn mcp_retriever_outcome(o: &RetrieverOutcome) -> McpRetrieverOutcome {
+    McpRetrieverOutcome {
+        name: o.name.clone(),
+        ok: o.ok,
+        selected: o.selected.unwrap_or(false),
+        error_class: o.error_class,
+        http_status: o.http_status,
+        error: o.error.clone(),
+        text_chars: o.text_chars,
+        content_rating: o.content_rating,
+    }
+}
+
+/// One recorded job attempt for MCP.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAttempt {
+    pub attempt_id: String,
+    pub job_id: String,
+    pub url: String,
+    pub domain: Option<String>,
+    pub attempt: i64,
+    pub at: i64,
+    pub outcome: AttemptOutcome,
+    pub error: Option<String>,
+    pub operation: Option<String>,
+    pub retrievers: Option<Vec<McpRetrieverOutcome>>,
+    pub run_id: Option<String>,
+    pub episode_id: Option<String>,
+    pub resolved_at: Option<i64>,
+    pub resolved_by_episode_id: Option<String>,
+}
+
+fn mcp_attempt(entry: &AttemptHistoryEntry) -> McpAttempt {
+    let a = &entry.attempt;
+    McpAttempt {
+        attempt_id: a.attempt_id.clone(),
+        job_id: a.job_id.clone(),
+        url: a.url.clone(),
+        domain: a.domain.clone(),
+        attempt: a.attempt,
+        at: a.at,
+        outcome: a.outcome,
+        error: a.error.clone(),
+        operation: a.operation.clone(),
+        retrievers: a
+            .retrievers
+            .as_ref()
+            .map(|all| all.iter().map(mcp_retriever_outcome).collect()),
+        run_id: a.run_id.clone(),
+        episode_id: a.episode_id.clone(),
+        resolved_at: entry.resolved_at,
+        resolved_by_episode_id: entry.resolved_by_episode_id.clone(),
+    }
+}
+
+/// Start of a `YYYY-MM-DD` day in `tz`, plus `days`, as epoch milliseconds.
+fn day_start_ms(date: &str, days: i64, tz: &jiff::tz::TimeZone) -> Result<i64, ToolError> {
+    let invalid = || ToolError::input(format!("\"{date}\" is not a YYYY-MM-DD date"));
+    let day: jiff::civil::Date = date.parse().map_err(|_| invalid())?;
+    let day = day
+        .checked_add(jiff::Span::new().days(days))
+        .map_err(|_| invalid())?;
+    let start = day.to_zoned(tz.clone()).map_err(|_| invalid())?;
+    Ok(start.timestamp().as_millisecond())
+}
+
+/// The `domain` filter as a bare host: a pasted URL is reduced to its host,
+/// and case, a leading `www.` and a trailing dot are ignored.
+fn wanted_domain(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.contains("://")
+        && let Some(host) = crate::url::url_domain(raw)
+    {
+        return host;
+    }
+    let lowered = raw.to_lowercase();
+    let host = lowered.strip_prefix("www.").unwrap_or(&lowered);
+    host.strip_suffix('.').unwrap_or(host).to_owned()
+}
+
+/// `domain` matches itself and its subdomains, ignoring case and `www.`.
+fn domain_matches(row: Option<&str>, wanted: &str) -> bool {
+    row.is_some_and(|domain| {
+        domain == wanted
+            || domain
+                .strip_suffix(wanted)
+                .is_some_and(|rest| rest.ends_with('.'))
+    })
 }
 
 #[derive(Deserialize)]
@@ -72,6 +181,9 @@ struct ListInput {
     resource: ListResource,
     status: Option<JobStatus>,
     query: Option<String>,
+    domain: Option<String>,
+    since: Option<String>,
+    until: Option<String>,
     #[serde(default)]
     cursor: usize,
     #[serde(default = "default_limit")]
@@ -219,6 +331,47 @@ pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
                         }
                         let items: Vec<omni_api::presspods::PressPodsJob> =
                             values.iter().map(job_dto).collect();
+                        let page = paginate(items, input.cursor, input.limit);
+                        (
+                            serde_json::to_value(page.items),
+                            page.next_cursor,
+                            page.total,
+                        )
+                    }
+                    ListResource::History => {
+                        let tz = jiff::tz::TimeZone::get(&service.config().tz)
+                            .unwrap_or(jiff::tz::TimeZone::UTC);
+                        let since = input
+                            .since
+                            .as_deref()
+                            .map(|date| day_start_ms(date, 0, &tz))
+                            .transpose()?;
+                        let until = input
+                            .until
+                            .as_deref()
+                            .map(|date| day_start_ms(date, 1, &tz))
+                            .transpose()?;
+                        let domain = input
+                            .domain
+                            .as_deref()
+                            .map(wanted_domain)
+                            .filter(|d| !d.is_empty());
+                        let mut values = persistence
+                            .get_attempt_history()
+                            .await
+                            .map_err(|e| execute(&e))?;
+                        values.retain(|entry| {
+                            let a = &entry.attempt;
+                            since.is_none_or(|since| a.at >= since)
+                                && until.is_none_or(|until| a.at < until)
+                                && domain
+                                    .as_deref()
+                                    .is_none_or(|d| domain_matches(a.domain.as_deref(), d))
+                                && needle
+                                    .as_deref()
+                                    .is_none_or(|needle| contains_ci(Some(&a.url), needle))
+                        });
+                        let items: Vec<McpAttempt> = values.iter().map(mcp_attempt).collect();
                         let page = paginate(items, input.cursor, input.limit);
                         (
                             serde_json::to_value(page.items),

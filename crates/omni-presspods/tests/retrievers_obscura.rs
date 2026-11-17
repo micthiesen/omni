@@ -162,6 +162,7 @@ fn failure<'a>(best: &'a BestArticle, name: &str) -> &'a PressPodsError {
             RetrieverResult::Failure {
                 retriever_name,
                 error,
+                ..
             } if retriever_name == name => Some(error),
             _ => None,
         })

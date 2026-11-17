@@ -109,7 +109,7 @@ pub trait Entity: Serialize + DeserializeOwned + Send + Sync + 'static {
     /// Entity name, e.g. `"streamer-status"`; must not contain `#`.
     const NAME: &'static str;
     const VERSION: i64 = 0;
-    /// Only `*-reset-delivery` uses it (90 days).
+    /// Used by `*-reset-delivery` (90 days) and `press-pods-job-attempt` (180 days).
     const DEFAULT_TTL_MS: Option<i64> = None;
     type Key: EntityKey + Send;
     fn key(&self) -> Self::Key;

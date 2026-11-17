@@ -59,6 +59,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
     vec![
         EntityDescriptor::of::<PressPodsEpisode>(),
         EntityDescriptor::of::<PressPodsJob>(),
+        EntityDescriptor::of::<model::PressPodsJobAttempt>(),
     ]
 }
 

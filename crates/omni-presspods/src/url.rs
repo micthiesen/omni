@@ -121,6 +121,15 @@ pub fn normalize_url(raw: &str) -> String {
     url.to_string()
 }
 
+/// The article's site for grouping: the lowercase host without a leading
+/// `www.`, or `None` when the string is not a URL with a host.
+pub fn url_domain(raw: &str) -> Option<String> {
+    Url::parse(&normalize_url(raw))
+        .ok()?
+        .host_str()
+        .map(str::to_owned)
+}
+
 #[cfg(test)]
 mod url_spec {
     //! URL normalization cases.

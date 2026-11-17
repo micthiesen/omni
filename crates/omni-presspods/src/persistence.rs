@@ -6,13 +6,21 @@
 //! permanent failures stay visible for a manual retry. Persistence stays free
 //! of filesystem I/O: deletions return the removed rows so the caller can
 //! remove their audio files.
+//!
+//! Every failed attempt, and every success that follows one, is also appended
+//! to the `press-pods-job-attempt` history in the same transaction as the job
+//! change. Nothing here ever deletes or rewrites a history row, so the
+//! evidence outlives the job; rows expire 180 days after they were written.
 
 use omni_store::entity::{EntityOps, EntityWrite, ModifyOpts, UpsertOpts};
 use omni_store::{Store, StoreError};
 
 use crate::error::PressPodsError;
-use crate::model::{JobStatus, PressPodsEpisode, PressPodsJob};
-use crate::url::normalize_url;
+use crate::model::{
+    AttemptOutcome, JobStatus, PressPodsEpisode, PressPodsJob, PressPodsJobAttempt,
+    RetrieverOutcome,
+};
+use crate::url::{normalize_url, url_domain};
 
 /// Attempts before a retryable failure becomes permanent.
 pub const MAX_JOB_ATTEMPTS: i64 = 6;
@@ -83,6 +91,76 @@ pub fn failed_job(base: PressPodsJob, error: &str, retryable: bool, now: i64) ->
         status,
         next_attempt_at,
         ..base
+    }
+}
+
+/// Caps on stored history text, in UTF-16 units.
+const HISTORY_ERROR_UNITS: usize = 500;
+const HISTORY_URL_UNITS: usize = 2000;
+const HISTORY_OPERATION_UNITS: usize = 120;
+
+fn capped(text: &str, units: usize) -> String {
+    omni_core::js::utf16_slice(text, 0, units).into_owned()
+}
+
+/// What a failed attempt adds to its history row beyond the job's own fields.
+#[derive(Clone, Debug, Default)]
+pub struct FailureDetail {
+    /// The pipeline step that failed.
+    pub operation: Option<String>,
+    /// Empty when the attempt ended before retrieval finished.
+    pub retrievers: Vec<RetrieverOutcome>,
+}
+
+/// A history row with whether a later success for the same article resolved it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttemptHistoryEntry {
+    pub attempt: PressPodsJobAttempt,
+    /// When the article next produced an episode; `None` for an unresolved
+    /// failure and for `succeeded` rows.
+    pub resolved_at: Option<i64>,
+    pub resolved_by_episode_id: Option<String>,
+}
+
+/// The success that resolved a failure: the earliest `succeeded` row for the
+/// same article at or after it. Pure.
+pub fn resolving_success<'a>(
+    failure: &PressPodsJobAttempt,
+    rows: &'a [PressPodsJobAttempt],
+) -> Option<&'a PressPodsJobAttempt> {
+    if failure.outcome == AttemptOutcome::Succeeded {
+        return None;
+    }
+    rows.iter()
+        .filter(|row| {
+            row.outcome == AttemptOutcome::Succeeded
+                && row.normalized_url == failure.normalized_url
+                && row.at >= failure.at
+        })
+        .min_by_key(|row| row.at)
+}
+
+fn history_row(
+    job: &PressPodsJob,
+    attempt: i64,
+    outcome: AttemptOutcome,
+    at: i64,
+) -> PressPodsJobAttempt {
+    PressPodsJobAttempt {
+        attempt_id: secure_id(),
+        job_id: job.job_id.clone(),
+        url: capped(&job.url, HISTORY_URL_UNITS),
+        normalized_url: capped(&job_normalized_url(job), HISTORY_URL_UNITS),
+        domain: url_domain(&job.url),
+        attempt,
+        at,
+        outcome,
+        error: None,
+        operation: None,
+        retrievers: None,
+        run_id: job.last_run_id.clone(),
+        episode_id: None,
+        extra: Default::default(),
     }
 }
 
@@ -238,20 +316,68 @@ impl Persistence {
             .map_err(|e| PressPodsError::store("claim PressPods job", e))
     }
 
-    pub async fn complete_job(&self, job_id: &str) -> Result<(), PressPodsError> {
-        self.delete_job(job_id).await
+    /// Removes a finished job. When the article has an unresolved failure in
+    /// the history (or this job failed before succeeding), the success is
+    /// appended too, so the history shows which failures were later resolved.
+    pub async fn complete_job(
+        &self,
+        job: &PressPodsJob,
+        episode_id: &str,
+        retrievers: Vec<RetrieverOutcome>,
+    ) -> Result<(), PressPodsError> {
+        let snapshot = job.clone();
+        let episode_id = episode_id.to_owned();
+        self.store
+            .write(move |tx| {
+                let now = omni_store::DocOps::now_ms(tx);
+                let job = tx
+                    .get::<PressPodsJob>(&snapshot.job_id)?
+                    .unwrap_or(snapshot);
+                tx.delete::<PressPodsJob>(&job.job_id)?;
+                let normalized = job_normalized_url(&job);
+                let rows = tx.get_all::<PressPodsJobAttempt>()?;
+                let unresolved = rows.iter().any(|row| {
+                    row.normalized_url == normalized
+                        && row.outcome != AttemptOutcome::Succeeded
+                        && resolving_success(row, &rows).is_none()
+                });
+                if unresolved || job.attempts > 0 {
+                    let row = PressPodsJobAttempt {
+                        retrievers: (!retrievers.is_empty()).then_some(retrievers),
+                        episode_id: Some(episode_id),
+                        ..history_row(&job, job.attempts + 1, AttemptOutcome::Succeeded, now)
+                    };
+                    tx.upsert(&row, UpsertOpts::default())?;
+                }
+                Ok::<_, StoreError>(())
+            })
+            .await
+            .map_err(|e| PressPodsError::store("complete PressPods job", e))
     }
 
     /// Requeue with backoff, or mark failed once attempts are exhausted. The
     /// update is based on the live row (fields written since selection, such
     /// as the claim's `lastRunId`, survive). A missing row means a concurrent
     /// delete: the outcome is computed for logging but the job is not
-    /// resurrected.
+    /// resurrected. Either way the attempt is appended to the history.
     pub async fn record_job_failure(
         &self,
         job: &PressPodsJob,
         error: &str,
         retryable: bool,
+    ) -> Result<PressPodsJob, PressPodsError> {
+        self.record_job_failure_with(job, error, retryable, FailureDetail::default())
+            .await
+    }
+
+    /// [`Self::record_job_failure`] with the failing step and the retrievers'
+    /// outcomes for the history row.
+    pub async fn record_job_failure_with(
+        &self,
+        job: &PressPodsJob,
+        error: &str,
+        retryable: bool,
+        detail: FailureDetail,
     ) -> Result<PressPodsJob, PressPodsError> {
         let snapshot = job.clone();
         let error = error.to_owned();
@@ -264,6 +390,20 @@ impl Persistence {
                 if exists {
                     tx.upsert(&updated, UpsertOpts::default())?;
                 }
+                let outcome = match updated.status {
+                    JobStatus::Failed => AttemptOutcome::Failed,
+                    JobStatus::Queued | JobStatus::Processing => AttemptOutcome::Retrying,
+                };
+                let row = PressPodsJobAttempt {
+                    error: Some(capped(&error, HISTORY_ERROR_UNITS)),
+                    operation: detail
+                        .operation
+                        .as_deref()
+                        .map(|operation| capped(operation, HISTORY_OPERATION_UNITS)),
+                    retrievers: (!detail.retrievers.is_empty()).then_some(detail.retrievers),
+                    ..history_row(&updated, updated.attempts, outcome, now)
+                };
+                tx.upsert(&row, UpsertOpts::default())?;
                 Ok::<_, StoreError>(updated)
             })
             .await
@@ -320,6 +460,30 @@ impl Persistence {
             .await
             .map_err(|e| decode_error("decode PressPods job", e))?;
         Ok(sorted_newest_first(rows, |j| j.created_at))
+    }
+
+    /// The attempt history, newest first, each failure with the success that
+    /// later resolved it. Rows older than 180 days have expired.
+    pub async fn get_attempt_history(&self) -> Result<Vec<AttemptHistoryEntry>, PressPodsError> {
+        let rows = self
+            .store
+            .read(|docs| docs.get_all::<PressPodsJobAttempt>())
+            .await
+            .map_err(|e| decode_error("decode PressPods job attempt", e))?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let resolved = resolving_success(row, &rows);
+                AttemptHistoryEntry {
+                    attempt: row.clone(),
+                    resolved_at: resolved.map(|success| success.at),
+                    resolved_by_episode_id: resolved.and_then(|s| s.episode_id.clone()),
+                }
+            })
+            .collect();
+        Ok(sorted_newest_first(entries, |e: &AttemptHistoryEntry| {
+            e.attempt.at
+        }))
     }
 
     /// Boot-time crash recovery: in this single-process deployment any job

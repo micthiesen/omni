@@ -313,3 +313,108 @@ impl Entity for PressPodsJob {
         self.job_id.clone()
     }
 }
+
+/// How long an attempt-history row is kept (the docstore hides and then
+/// removes expired rows).
+pub const ATTEMPT_HISTORY_TTL_MS: i64 = 180 * 24 * 60 * 60 * 1000;
+
+/// How a recorded job attempt ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttemptOutcome {
+    /// Failed and requeued with backoff.
+    Retrying,
+    /// Failed for good (permanent error or attempts exhausted).
+    Failed,
+    /// Produced an episode after earlier failures for the same article.
+    Succeeded,
+}
+
+/// Why a retriever produced no usable article.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrieverErrorClass {
+    /// The site or proxy answered with an HTTP error status.
+    HttpStatus,
+    Timeout,
+    Network,
+    /// Text was extracted but the rating model judged it not an article.
+    InvalidArticle,
+    /// Text was extracted but the rating model call failed.
+    RatingFailed,
+    /// Anything else: nothing extractable, a bot challenge, a blocked URL.
+    #[serde(other)]
+    Other,
+}
+
+/// One retriever's part in a recorded attempt. No article text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrieverOutcome {
+    pub name: String,
+    /// The extraction was rated a valid article.
+    pub ok: bool,
+    /// This extraction was the one narrated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<RetrieverErrorClass>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    /// A short reason, never a response body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// UTF-16 length of the extracted text, when there was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_chars: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_rating: Option<f64>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// `press-pods-job-attempt`, keyed by `attemptId`: the append-only history of
+/// failed attempts and of the successes that followed them. Rows are never
+/// updated and are not tied to the job row, so deleting or resubmitting a job
+/// leaves them in place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PressPodsJobAttempt {
+    pub attempt_id: String,
+    pub job_id: String,
+    pub url: String,
+    pub normalized_url: String,
+    /// Lowercase host without a leading `www.`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Attempt number within the job's current retry budget (a manual retry
+    /// or resubmit starts again at 1).
+    pub attempt: i64,
+    pub at: i64,
+    pub outcome: AttemptOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// The pipeline step that failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    /// Absent when the attempt ended before retrieval finished (a crash, a
+    /// refused URL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrievers: Option<Vec<RetrieverOutcome>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    /// The episode a `succeeded` attempt produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub episode_id: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Entity for PressPodsJobAttempt {
+    const NAME: &'static str = "press-pods-job-attempt";
+    const DEFAULT_TTL_MS: Option<i64> = Some(ATTEMPT_HISTORY_TTL_MS);
+    type Key = String;
+    fn key(&self) -> String {
+        self.attempt_id.clone()
+    }
+}

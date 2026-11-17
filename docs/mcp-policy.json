@@ -1894,7 +1894,7 @@
     {
       "name": "presspods_list",
       "title": "List PressPods Resources",
-      "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+      "description": "List persisted PressPods episodes, queued, processing, and failed jobs, or the attempt history. `history` is the durable record of every failed attempt (retried or final) and of each success that followed one, newest first, kept 180 days; it survives deleting or resubmitting the job. Each item has the URL, domain, attempt number, error, failing step and every retriever's outcome (error class, HTTP status, extracted length, rating); `resolvedAt` is set on a failure once the same article later produced an episode. Filter history with `query` (URL text), `domain`, `since` and `until`. Audio filenames, bytes and article text are not exposed.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

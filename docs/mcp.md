@@ -60,7 +60,8 @@ families cover:
   and podcast transcript search over Exa's podcast index
   (`podcast_transcript_search`, `podcast_transcript_get`, see
   `docs/exa-podcasts.md`)
-- PressPods jobs and episodes, pet weights and weekly health trends
+- PressPods jobs, episodes and the 180-day job attempt history
+  (`presspods_list` `resource: "history"`, see `docs/presspods-retrieval.md`), pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
 - adding one delivery to the Parcel app (`parcels_add`): validated tracking
   number and carrier code, deduplicated against the email pipeline's

@@ -81,6 +81,46 @@ answered the browser with a bot challenge)`. It is not retried, with one
 exception: when an extraction existed but the rating model was temporarily
 unavailable (429, 5xx, network), the job is requeued with the usual backoff.
 
+## Attempt history
+
+A job row is deleted when its episode lands, when it is dismissed, and its
+error is cleared when it is retried or resubmitted. The evidence of what went
+wrong is therefore kept separately, in `press-pods-job-attempt` rows
+(`PressPodsJobAttempt` in `model.rs`):
+
+- One row is appended for every failed attempt, in the same transaction as
+  the job change: `outcome: "retrying"` when the job was requeued with
+  backoff, `"failed"` when it failed for good. A crash or restart mid-run
+  counts as an attempt and gets a row too.
+- When a job produces an episode and the article has an unresolved failure
+  in the history (or the job itself failed earlier), a `"succeeded"` row with
+  the `episodeId` is appended. An article that works first time adds nothing.
+- A row holds `jobId`, `url`, `normalizedUrl`, `domain` (lowercase host
+  without `www.`), `attempt` (the number within the job's retry budget; a
+  manual retry or resubmit starts again at 1), `at`, the stored error (at
+  most 500 characters), `operation` (the pipeline step that failed), `runId`
+  and `retrievers`: per retriever its `name`, `ok`, whether it was
+  `selected`, an `errorClass` (`http_status`, `timeout`, `network`,
+  `invalid_article`, `rating_failed`, `other`), `httpStatus`, a short `error`,
+  `textChars` and `contentRating`. `retrievers` is absent when the attempt
+  ended before retrieval finished. No article text, HTML or audio is stored,
+  and a retriever's `error` never holds a response body. The attempt's own
+  `error` is the job's `lastError`, which for a TTS, STT or model status
+  error includes up to 200 characters of that service's error response.
+  `url` keeps the submitted query string, as the job row does.
+- Rows are never updated or deleted by PressPods, and nothing ties them to
+  the job row: deleting, dismissing, retrying or resubmitting a job leaves
+  them in place. They are not in the data manager.
+- A failure is resolved by the earliest `succeeded` row for the same
+  `normalizedUrl` at or after it. This is computed when the history is read
+  (`resolvedAt`, `resolvedByEpisodeId`), so rows stay append-only.
+- Each row expires 180 days after it was written (`ATTEMPT_HISTORY_TTL_MS`,
+  the docstore's row expiry); the store maintenance sweep removes it.
+
+Read it with `presspods_list` and `resource: "history"`, newest first, with
+optional `query` (URL text), `domain` (subdomains match), and `since` and
+`until` days in the server's time zone. There is no HTTP route or page for it.
+
 ## Known limits
 
 - DataDome sites (wsj.com, reuters.com) answer every retriever, the browser

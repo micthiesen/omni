@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::error::PressPodsError;
-use crate::model::{AuthorGender, RetrieverAttempt};
+use crate::model::{AuthorGender, RetrieverAttempt, RetrieverErrorClass, RetrieverOutcome};
 
 /// A retrieved article.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -48,6 +48,9 @@ pub enum RetrieverResult {
     Failure {
         retriever_name: String,
         error: PressPodsError,
+        /// UTF-16 length of the text the retriever extracted, when it got
+        /// that far (the rating rejected it or could not run).
+        text_chars: Option<i64>,
     },
 }
 
@@ -104,16 +107,90 @@ pub fn summarize_retriever_attempts(results: &[RetrieverResult]) -> Vec<Retrieve
             } => RetrieverAttempt::Success {
                 name: retriever_name.clone(),
                 content_rating: metadata.content_rating,
-                text_chars: i64::try_from(omni_core::js::utf16_len(&article.text))
-                    .unwrap_or(i64::MAX),
+                text_chars: text_chars(&article.text),
                 extra: Default::default(),
             },
             RetrieverResult::Failure {
                 retriever_name,
                 error,
+                ..
             } => RetrieverAttempt::Failure {
                 name: retriever_name.clone(),
                 error: attempt_error(error),
+                extra: Default::default(),
+            },
+        })
+        .collect()
+}
+
+/// UTF-16 length of an extracted text, as stored.
+pub fn text_chars(text: &str) -> i64 {
+    i64::try_from(omni_core::js::utf16_len(text)).unwrap_or(i64::MAX)
+}
+
+fn error_class(error: &PressPodsError) -> RetrieverErrorClass {
+    if error.operation() == crate::retrievers::RATING_OPERATION {
+        return if error.cause_message() == crate::retrievers::INVALID_ARTICLE {
+            RetrieverErrorClass::InvalidArticle
+        } else {
+            RetrieverErrorClass::RatingFailed
+        };
+    }
+    match error {
+        PressPodsError::Timeout { .. }
+        | PressPodsError::Http {
+            source: omni_http::HttpError::Timeout,
+            ..
+        } => RetrieverErrorClass::Timeout,
+        PressPodsError::Http {
+            source: omni_http::HttpError::Network(_),
+            ..
+        } => RetrieverErrorClass::Network,
+        _ if error.status_code().is_some() => RetrieverErrorClass::HttpStatus,
+        _ => RetrieverErrorClass::Other,
+    }
+}
+
+/// Every retriever's outcome for the attempt history: names, classes, lengths
+/// and ratings only. `selected` names the winning retriever, if one won.
+pub fn retriever_outcomes(
+    results: &[RetrieverResult],
+    selected: Option<&str>,
+) -> Vec<RetrieverOutcome> {
+    results
+        .iter()
+        .map(|result| match result {
+            RetrieverResult::Success {
+                retriever_name,
+                article,
+                metadata,
+            } => RetrieverOutcome {
+                name: retriever_name.clone(),
+                ok: true,
+                selected: (selected == Some(retriever_name.as_str())).then_some(true),
+                error_class: None,
+                http_status: None,
+                error: None,
+                text_chars: Some(text_chars(&article.text)),
+                content_rating: Some(metadata.content_rating),
+                extra: Default::default(),
+            },
+            RetrieverResult::Failure {
+                retriever_name,
+                error,
+                text_chars,
+            } => RetrieverOutcome {
+                name: retriever_name.clone(),
+                ok: false,
+                selected: None,
+                error_class: Some(error_class(error)),
+                // Only the site's or proxy's own status, never the rating model's.
+                http_status: (error_class(error) == RetrieverErrorClass::HttpStatus)
+                    .then(|| error.status_code())
+                    .flatten(),
+                error: Some(failure_reason(error)),
+                text_chars: *text_chars,
+                content_rating: None,
                 extra: Default::default(),
             },
         })

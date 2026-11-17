@@ -25,7 +25,14 @@ async fn without_a_token_only_tools_entities_and_data_rows_are_registered() {
     assert!(subsystem.tasks.is_empty());
     assert_eq!(subsystem.mcp_tools.len(), 6);
     let names: Vec<&str> = subsystem.entities.iter().map(|e| e.name).collect();
-    assert_eq!(names, ["press-pods-episode", "press-pods-job"]);
+    assert_eq!(
+        names,
+        [
+            "press-pods-episode",
+            "press-pods-job",
+            "press-pods-job-attempt"
+        ]
+    );
     let slugs: Vec<&str> = subsystem.managed_entities.iter().map(|e| e.slug).collect();
     assert_eq!(slugs, ["press-pods-episode", "press-pods-job"]);
     assert_eq!(subsystem.managed_entities[0].primary_key, ["episodeId"]);

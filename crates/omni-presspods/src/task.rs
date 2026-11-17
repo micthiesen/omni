@@ -11,7 +11,7 @@ use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
 use crate::error::PressPodsError;
 use crate::model::{JobStatus, PressPodsJob};
-use crate::persistence::{MAX_JOB_ATTEMPTS, job_normalized_url, select_due_jobs};
+use crate::persistence::{FailureDetail, MAX_JOB_ATTEMPTS, job_normalized_url, select_due_jobs};
 use crate::service::{PressPods, TASK_NAME};
 use crate::storage::checkpoint_work_id;
 
@@ -115,7 +115,9 @@ impl PressPodsTask {
                     .audio()
                     .clear_chunk_checkpoints(&checkpoint_work_id(&normalized))
                     .await;
-                persistence.complete_job(&job.job_id).await?;
+                persistence
+                    .complete_job(&job, &existing.episode_id, Vec::new())
+                    .await?;
                 return Ok(JobOutcome::Processed);
             }
             let updated = persistence
@@ -150,23 +152,29 @@ impl PressPodsTask {
             tracing::info!(target: LOG, "Creating episode for {}", job.url);
         }
 
-        match service
-            .create_episode_from_url(&job.url, run_id.map(str::to_owned))
-            .await
-        {
+        let (result, retrievers) = service
+            .create_episode_traced(&job.url, run_id.map(str::to_owned))
+            .await;
+        match result {
             Ok(episode) => {
                 // Before completing: a crash in between recovers this episode
                 // from the job and replays the same event key.
                 crate::events::publish(&service.ports, crate::events::published(&episode, &job))
                     .await;
-                persistence.complete_job(&job.job_id).await?;
+                persistence
+                    .complete_job(&job, &episode.episode_id, retrievers)
+                    .await?;
                 Ok(JobOutcome::Processed)
             }
             Err(error) => {
                 let retryable = error.is_retryable();
                 let summary = error.summary();
+                let detail = FailureDetail {
+                    operation: Some(error.operation().to_owned()),
+                    retrievers,
+                };
                 let updated = persistence
-                    .record_job_failure(&job, &summary, retryable)
+                    .record_job_failure_with(&job, &summary, retryable, detail)
                     .await?;
                 if updated.status == JobStatus::Queued {
                     tracing::warn!(

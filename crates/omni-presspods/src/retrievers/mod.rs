@@ -18,7 +18,7 @@ use omni_http::HttpClient;
 use omni_http::public::PublicHttpClient;
 
 use crate::error::PressPodsError;
-use crate::types::{Article, MetadataInfo, RetrieverResult, failure_reason};
+use crate::types::{Article, MetadataInfo, RetrieverResult, failure_reason, text_chars};
 use crate::url::X_HOSTS;
 
 pub mod html;
@@ -36,6 +36,8 @@ pub const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac O
 /// attempt error is the rating cause itself (`"Invalid article"`, the model
 /// error), with no operation prefix.
 pub const RATING_OPERATION: &str = "rate retrieved PressPods article";
+/// The rating outcome of an extraction the model judged not to be an article.
+pub const INVALID_ARTICLE: &str = "Invalid article";
 
 /// Per-retriever (and per-rating) deadline.
 pub const RETRIEVER_TIMEOUT: Duration = Duration::from_secs(60);
@@ -231,6 +233,7 @@ where
             } => slots.push(Some(RetrieverResult::Failure {
                 retriever_name,
                 error,
+                text_chars: None,
             })),
             Retrieved::Success {
                 retriever_name,
@@ -268,7 +271,8 @@ where
                 },
                 Ok(_) => RetrieverResult::Failure {
                     retriever_name,
-                    error: PressPodsError::failed(RATING_OPERATION, "Invalid article"),
+                    error: PressPodsError::failed(RATING_OPERATION, INVALID_ARTICLE),
+                    text_chars: Some(text_chars(&article.text)),
                 },
                 // A model outage is not a verdict on the article: keep
                 // whether it is worth another attempt.
@@ -279,6 +283,7 @@ where
                         message: error.cause_message(),
                         retryable: Some(error.is_retryable()),
                     },
+                    text_chars: Some(text_chars(&article.text)),
                 },
             };
             if let Some(slot) = slots.get_mut(index) {
@@ -310,6 +315,7 @@ fn all_failed(all_results: &[RetrieverResult]) -> PressPodsError {
         if let RetrieverResult::Failure {
             retriever_name,
             error,
+            ..
         } = result
         {
             tracing::warn!(target: LOG, error = %error, "Retriever {retriever_name} failed:");
