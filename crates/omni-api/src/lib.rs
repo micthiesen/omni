@@ -64,3 +64,6 @@ pub mod pets;
 
 /// The read-only stylist ledger overview.
 pub mod stylist;
+
+/// Fond, the recipe app on its own host.
+pub mod fond;

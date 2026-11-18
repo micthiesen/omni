@@ -18,6 +18,7 @@ pub mod karakeep;
 pub mod mcp;
 pub mod model;
 pub mod mp3;
+pub mod page_fetch;
 pub mod persistence;
 pub mod pipeline;
 pub mod public_http;

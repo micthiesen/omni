@@ -19,6 +19,7 @@ use omni_http::public::PublicHttpClient;
 use omni_http::{HttpClient, SideEffectMode};
 use omni_mailer::Mailer;
 use omni_mcp_kit::McpTool;
+use omni_server_kit::host_app::HostApp;
 use omni_store::Store;
 use omni_store::cbor::JsValue;
 use omni_store::entity::EntityDescriptor;
@@ -71,6 +72,8 @@ pub struct AppPaths {
     pub presspods_audio: PathBuf,
     /// Stylist evidence files and archives (mode 0700).
     pub stylist_private: PathBuf,
+    /// Recipe images and archives.
+    pub recipes_dir: PathBuf,
 }
 
 /// What one subsystem contributes to the app.
@@ -90,6 +93,9 @@ pub struct Subsystem {
     pub services: Vec<BackgroundService>,
     pub email_handlers: Vec<Arc<dyn EmailHandler>>,
     pub alert_gates: Vec<Arc<dyn AlertGate>>,
+    /// Apps served on a host of their own. Requests for such a host reach
+    /// only that app's router, which is never merged into `router`.
+    pub host_apps: Vec<HostApp>,
 }
 
 impl Default for Subsystem {
@@ -105,6 +111,7 @@ impl Default for Subsystem {
             services: Vec::new(),
             email_handlers: Vec::new(),
             alert_gates: Vec::new(),
+            host_apps: Vec::new(),
         }
     }
 }

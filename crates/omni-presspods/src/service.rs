@@ -18,7 +18,6 @@ use crate::agents::Agents;
 use crate::error::PressPodsError;
 use crate::karakeep::{Bookmarker, Karakeep};
 use crate::persistence::Persistence;
-use crate::retrievers::obscura::{ObscuraRenderer, PageRenderer};
 use crate::retrievers::{ArticleRetriever, RetrieverContext, article_retrievers};
 use crate::speech::audio_chain::{AudioChain, DENOISE_MODEL_ASSET};
 use crate::speech::providers::{ConfiguredTts, TtsFactory};
@@ -27,9 +26,6 @@ use crate::storage::{AudioStore, resolve_audio_dir};
 
 /// The task name, shared by registration and the worker kick.
 pub const TASK_NAME: &str = "PressPods";
-
-/// The image installs Obscura on `PATH` (Dockerfile `obscura` stage).
-const OBSCURA_PROGRAM: &str = "obscura";
 
 /// Validates that a submitted URL is public before work is accepted.
 pub trait UrlGuard: Send + Sync {
@@ -141,16 +137,7 @@ impl PressPods {
             &ctx.paths.assets_dir.join(DENOISE_MODEL_ASSET),
             std::env::temp_dir(),
         )?;
-        let retriever_ctx = Arc::new(RetrieverContext {
-            public_http: ctx.public_http.clone(),
-            http: ctx.http.clone(),
-            jina_api_key: config.jina_api_key.clone(),
-            renderer: config
-                .presspods_obscura_enabled
-                .then(|| Arc::new(ObscuraRenderer::new(OBSCURA_PROGRAM)) as Arc<dyn PageRenderer>),
-            costs: ctx.costs.clone(),
-            tz: tz.clone(),
-        });
+        let retriever_ctx = Arc::new(RetrieverContext::from_context(ctx));
         let stt = HttpStt::from_config(ctx.http.clone(), ctx.costs.clone(), &config)
             .map(|stt| Arc::new(stt) as Arc<dyn SttClient>);
         Ok(Self::new(PressPodsDeps {

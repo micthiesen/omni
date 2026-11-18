@@ -11,7 +11,11 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
 
 - **Foundation:** `omni-core`, `omni-config`, `omni-store`, `omni-tasks`,
   `omni-http`, `omni-alerts`, `omni-mailer`, `omni-ai`, `omni-server-kit`,
-  `omni-mcp-kit`, `omni-runtime`, `omni-api`. They know nothing about features.
+  `omni-mcp-kit`, `omni-runtime`, `omni-api`, `omni-image`. They know nothing
+  about features. `omni-image` depends on no other workspace crate: it decodes
+  untrusted images (JPEG, PNG, GIF, WebP, HEIC by magic bytes) in memory under
+  pixel, allocation and time limits, one at a time, and produces oriented JPEG
+  variants and an average colour.
 - **Subsystems:** `omni-imap`, `omni-email`, `omni-parcel`, `omni-calendar`,
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
@@ -49,13 +53,28 @@ shutdown token, `TaskTracker`, ports, `SideEffectMode` and resolved paths.
 
 A `Subsystem` contributes its axum router (routes at absolute paths), tasks, MCP
 tools, entity descriptors, data-manager rows, boot steps, background services,
-email handlers and alert gates. `omni` merges the routers, registers the
-tasks and tools, and starts the services.
+email handlers, alert gates and host apps. `omni` merges the routers, registers
+the tasks and tools, and starts the services.
+
+A host app (`omni_server_kit::host_app::HostApp`) is a second web app on a host
+of its own, such as the recipe app on `RECIPES_APP_URL`. Its router is never
+merged into Omni's. `boot::app_router` applies `host_app::dispatch` outermost,
+outside the public-host allowlists: a request whose `Host` (lowercased, without
+port or trailing dot) is the app's goes to the app's router and nowhere else, so
+on that host there is no Omni UI, `/api/*` or `/gateway`, and on every other
+host the app's routes do not exist. An unmatched path there is a 404 (JSON under
+`/api`), never a fallback page, and panics are caught as on Omni's router.
+Config refuses an app host equal to the gateway's or PressPods' public host. A
+host app has no login, so its mutations pass `host_app::MutationGuard`: the
+exact app `Origin`, a same-origin `Sec-Fetch-Site` when present, and
+`application/json` or, on the app's upload paths, its custom header.
 
 Cross-subsystem calls go through the port traits in
 `crates/omni-runtime/src/ports.rs`: `EmailReader`, `ArchiveEcho`,
 `EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
 `SpeechTranscriber` (the local speech model, for YouTube transcripts),
+`PageFetcher` (the PressPods retrievers' candidates for a public URL;
+`docs/presspods-retrieval.md`),
 `OnDeckSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
 port is set once during wiring (`crates/omni/src/wiring.rs`); a consumer

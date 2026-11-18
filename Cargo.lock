@@ -3135,6 +3135,7 @@ dependencies = [
  "omni-device-link",
  "omni-email",
  "omni-http",
+ "omni-image",
  "omni-imap",
  "omni-ios-controls",
  "omni-live",
@@ -3415,12 +3416,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni-image"
+version = "0.1.0"
+dependencies = [
+ "heic-rs",
+ "image",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "omni-imap"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "futures",
- "heic-rs",
  "hex",
  "image",
  "imap-proto",
@@ -3430,6 +3441,7 @@ dependencies = [
  "mail-parser",
  "omni-core",
  "omni-http",
+ "omni-image",
  "omni-imap",
  "omni-mailer",
  "omni-mcp-kit",
@@ -3837,6 +3849,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni-recipe-format"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "omni-reminders"
 version = "0.1.0"
 dependencies = [
@@ -3890,6 +3913,7 @@ dependencies = [
  "omni-http",
  "omni-mailer",
  "omni-mcp-kit",
+ "omni-server-kit",
  "omni-store",
  "omni-tasks",
  "serde",

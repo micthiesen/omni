@@ -20,11 +20,13 @@ use omni_http::public::assert_public_http_url_syntax;
 use serde::Deserialize;
 
 use super::local::{blocking, postlight_article, readability_article};
-use super::{ArticleRetriever, RetrieverContext};
+use super::{ArticleRetriever, RetrievedPage, RetrieverContext};
 use crate::error::PressPodsError;
 use crate::types::Article;
 
 const OPERATION: &str = "render article with Obscura";
+/// The image installs Obscura on `PATH` (Dockerfile `obscura` stage).
+pub const OBSCURA_PROGRAM: &str = "obscura";
 
 /// Whole-render bound (start, navigation, settling, reading the DOM). Under
 /// [`super::RETRIEVER_TIMEOUT`], so a slow page fails with this retriever's
@@ -214,8 +216,16 @@ impl ArticleRetriever for ObscuraRetriever {
     fn retrieve<'a>(
         &'a self,
         url: &'a str,
-        _user_agent: &'a str,
+        user_agent: &'a str,
     ) -> BoxFuture<'a, Result<Article, PressPodsError>> {
+        Box::pin(async move { self.retrieve_page(url, user_agent).await?.article })
+    }
+
+    fn retrieve_page<'a>(
+        &'a self,
+        url: &'a str,
+        _user_agent: &'a str,
+    ) -> BoxFuture<'a, Result<RetrievedPage, PressPodsError>> {
         Box::pin(async move {
             assert_public_http_url_syntax(url).map_err(|e| PressPodsError::http(OPERATION, e))?;
             let page = tokio::time::timeout(RENDER_TIMEOUT, self.renderer.render(url))
@@ -229,14 +239,20 @@ impl ArticleRetriever for ObscuraRetriever {
                         ),
                     )
                 })??;
+            let href = page.href.clone();
             let html = usable_html(page)?;
             let url = url.to_owned();
             let tz = self.ctx.tz.clone();
             blocking(OPERATION, move || {
                 // The strategy that wins most ratings on fetched pages, then
                 // the plain Readability pass for pages its junk strip empties.
-                postlight_article(&html, &url, &tz)
-                    .or_else(|_| readability_article(&html, &url, &tz))
+                let article = postlight_article(&html, &url, &tz)
+                    .or_else(|_| readability_article(&html, &url, &tz));
+                Ok(RetrievedPage {
+                    html: Some(html),
+                    url: href,
+                    article,
+                })
             })
             .await
         })

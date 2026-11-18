@@ -65,6 +65,27 @@ a plain fetch gets a preview or an empty shell.
   is a failed candidate (`the site answered the browser with a bot
   challenge`). Obscura did not pass either kind in testing on 2026-11-16.
 
+## Page fetching for other subsystems
+
+Other subsystems read a submitted public page through the `PageFetcher` port
+(`omni_runtime::ports`, implemented in `crates/omni-presspods/src/page_fetch.rs`
+and set in wiring whether or not PressPods itself is enabled).
+`fetch_pages(url)` runs the same retriever set for the URL, at once, with the
+same 60-second bound per retriever and the same SSRF-guarded client, and
+returns every candidate in retriever order. Nothing is rated, stored or
+queued, and no attempt history is written.
+
+Each `FetchedPage` names its `source` and carries what that retriever has:
+`title`, `text`, `author` and `leadImageUrl` from its extraction, and `html`
+from the three sources that hold a whole page: `fetch` (the page as served),
+`wayback` (the snapshot) and `obscura` (the rendered DOM, when the renderer is
+enabled). A page whose HTML arrived but had no extractable text is still
+returned, with `html` only. When no source has the page the error starts with
+`The host refused the request (HTTP n)`, `The host timed out` or `All page
+sources failed`, followed by each source's reason; it never includes a
+response body. `ArticleRetriever::retrieve_page` is the seam: `retrieve` is the
+same call with the page dropped.
+
 ## What is recorded
 
 An episode stores `retrieverName` (the winner), `retrieverSeconds` and

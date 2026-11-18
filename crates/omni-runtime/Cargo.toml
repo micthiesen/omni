@@ -20,6 +20,7 @@ omni-core.workspace = true
 omni-http.workspace = true
 omni-mailer.workspace = true
 omni-mcp-kit.workspace = true
+omni-server-kit.workspace = true
 omni-store.workspace = true
 omni-tasks.workspace = true
 serde.workspace = true

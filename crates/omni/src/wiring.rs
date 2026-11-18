@@ -132,6 +132,11 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
 
     subsystems.push(wire!("personal", omni_personal::subsystem(ctx).await));
     subsystems.push(wire!("presspods", omni_presspods::subsystem(ctx)));
+    // Page fetching needs none of PressPods' credentials, so it is set even
+    // when the PressPods routes and worker are disabled.
+    let _ = ports.set_page_fetcher(Arc::new(
+        omni_presspods::page_fetch::PressPodsPageFetcher::from_context(ctx),
+    ));
     subsystems.push(wire!("media", omni_media::subsystem(ctx)));
     subsystems.push(wire!("youtube", omni_youtube::subsystem(ctx)));
     subsystems.push(wire!("contacts", omni_contacts::subsystem(ctx)));

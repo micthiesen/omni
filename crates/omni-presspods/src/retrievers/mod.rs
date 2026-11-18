@@ -52,6 +52,35 @@ pub trait ArticleRetriever: Send + Sync {
         url: &'a str,
         user_agent: &'a str,
     ) -> BoxFuture<'a, Result<Article, PressPodsError>>;
+
+    /// [`Self::retrieve`] together with the page it read. Retrievers that
+    /// hold the page's HTML (the direct fetch, the Wayback snapshot, the
+    /// Obscura render) return it here; the others return their article alone.
+    fn retrieve_page<'a>(
+        &'a self,
+        url: &'a str,
+        user_agent: &'a str,
+    ) -> BoxFuture<'a, Result<RetrievedPage, PressPodsError>> {
+        Box::pin(async move {
+            Ok(RetrievedPage {
+                html: None,
+                url: url.to_owned(),
+                article: Ok(self.retrieve(url, user_agent).await?),
+            })
+        })
+    }
+}
+
+/// A page one retriever read, for [`crate::page_fetch`].
+#[derive(Debug)]
+pub struct RetrievedPage {
+    /// The page's HTML as this retriever got it, when it holds a whole page.
+    pub html: Option<String>,
+    /// Where the page was read: the submitted URL, or where the browser
+    /// ended up for a render.
+    pub url: String,
+    /// The extraction [`ArticleRetriever::retrieve`] returns.
+    pub article: Result<Article, PressPodsError>,
 }
 
 /// What the retrievers share.
@@ -66,6 +95,24 @@ pub struct RetrieverContext {
     pub renderer: Option<Arc<dyn obscura::PageRenderer>>,
     pub costs: CostRecorder,
     pub tz: TimeZone,
+}
+
+impl RetrieverContext {
+    /// Production wiring from the app context.
+    pub fn from_context(ctx: &omni_runtime::AppContext) -> Self {
+        let config = &ctx.config;
+        Self {
+            public_http: ctx.public_http.clone(),
+            http: ctx.http.clone(),
+            jina_api_key: config.jina_api_key.clone(),
+            renderer: config.presspods_obscura_enabled.then(|| {
+                Arc::new(obscura::ObscuraRenderer::new(obscura::OBSCURA_PROGRAM))
+                    as Arc<dyn obscura::PageRenderer>
+            }),
+            costs: ctx.costs.clone(),
+            tz: TimeZone::get(&config.tz).unwrap_or(TimeZone::UTC),
+        }
+    }
 }
 
 /// An X/Twitter status permalink (any username, `i/web`).

@@ -38,6 +38,8 @@ omni-server-kit = { path = "crates/omni-server-kit" }
 omni-mcp-kit = { path = "crates/omni-mcp-kit" }
 omni-runtime = { path = "crates/omni-runtime" }
 omni-api = { path = "crates/omni-api" }
+omni-image = { path = "crates/omni-image" }
+omni-recipe-format = { path = "crates/omni-recipe-format" }
 omni-testkit = { path = "crates/omni-testkit" }
 omni-email = { path = "crates/omni-email" }
 omni-parcel = { path = "crates/omni-parcel" }
@@ -113,7 +115,7 @@ hmac = "=0.13.0"
 aes-gcm = "=0.11.1"
 subtle = "=2.6.1"
 base64 = "=0.23.1"
-# Image attachments returned by email_attachment_get: decode, resize, re-encode.
+# omni-image: decode, resize and re-encode untrusted images.
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 # Pure-Rust HEIC decoder (no unsafe, no C); single-threaded, so no rayon.
 heic-rs = { version = "=0.1.4", default-features = false, features = ["std"] }

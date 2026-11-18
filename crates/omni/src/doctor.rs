@@ -159,7 +159,7 @@ pub async fn checks(env: &DoctorEnv, assets_dir: &Path) -> Vec<Check> {
         Err(error) => Check::new("obscura --version", false, error),
     });
     // email_attachment_get converts HEIC attachments in process.
-    out.push(match omni_imap::attachment_images::heic_self_test() {
+    out.push(match omni_image::heic_self_test() {
         Ok((width, height)) => {
             Check::new("HEIC to JPEG conversion", true, format!("{width}x{height}"))
         }

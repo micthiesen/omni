@@ -140,10 +140,15 @@ change; reuse authorization already given in the conversation.
 - `omni-alerts`: Pushover client, alert throttle, ERROR-log alert layer and gates.
 - `omni-mailer`: outgoing SMTP and MIME with the fixed sender identity.
 - `omni-ai`: model registry, provider clients, tool loop, cost accounting.
-- `omni-server-kit`: axum helpers (body caps, errors, origin guard, SSE, SPA).
+- `omni-server-kit`: axum helpers (body caps, errors, origin guard, SSE, SPA),
+  public-host allowlists, and host apps (`host_app`: an app served on a host of
+  its own, dispatched in front of Omni's router, with its mutation guard).
 - `omni-mcp-kit`: MCP tool interface, schema derivation and generated snapshots.
-- `omni-runtime`: `AppContext`, `Subsystem`, boot steps, services, ports.
+- `omni-runtime`: `AppContext`, `Subsystem` (routes, tasks, tools, host apps),
+  boot steps, services, ports.
 - `omni-api`: wire DTOs shared by backend and frontend (serde only).
+- `omni-image`: bounded decoding of untrusted images (magic-byte types, EXIF
+  orientation, resize, JPEG variants, average colour, HEIC), one decode at a time.
 - `omni-testkit`: temp stores, test clock, recorders, fake models, no-network
   HTTP, golden helpers (dev-dependency only).
 - `omni-imap`: iCloud IMAP transport, cursors, archive actions, drafts, Sent
@@ -746,7 +751,7 @@ Private PDF and image attachment MCP reads bind exact Message-ID to actual MIME 
 revalidate identity, and cap source and decoded bytes. Images (JPEG, PNG, GIF,
 WebP, HEIC) need a declared MIME type that matches their magic bytes, are decoded
 only in memory by pure-Rust decoders under pixel, allocation and time limits
-(`omni-imap/src/attachment_images.rs`), return as MCP image blocks, and never get
+(`omni-image`, through `omni-imap/src/attachment_images.rs`), return as MCP image blocks, and never get
 an `attachmentReference`. A PDF is a part declared `application/pdf`, or an
 unspecific type with a `.pdf` filename, whose `%PDF-` header starts within the
 first 1024 decoded bytes and is not preceded by another format's signature;

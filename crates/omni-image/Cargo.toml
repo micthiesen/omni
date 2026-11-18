@@ -1,0 +1,21 @@
+[package]
+name = "omni-image"
+description = "Bounded decoding of untrusted images: format sniffing, EXIF orientation, resizing, JPEG variants and HEIC."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+heic-rs.workspace = true
+image.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

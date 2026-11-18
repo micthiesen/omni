@@ -34,7 +34,7 @@ use super::html::{
     collapse, extract_domain, extract_title_from_html, page_meta, paragraph_chars, selector,
     strip_junk,
 };
-use super::{ArticleRetriever, RetrieverContext};
+use super::{ArticleRetriever, RetrievedPage, RetrieverContext};
 use crate::dates::parse_js_date;
 use crate::error::PressPodsError;
 use crate::formatting::clean_text;
@@ -68,6 +68,14 @@ impl ArticleRetriever for FetchRetriever {
         url: &'a str,
         user_agent: &'a str,
     ) -> BoxFuture<'a, Result<Article, PressPodsError>> {
+        Box::pin(async move { self.retrieve_page(url, user_agent).await?.article })
+    }
+
+    fn retrieve_page<'a>(
+        &'a self,
+        url: &'a str,
+        user_agent: &'a str,
+    ) -> BoxFuture<'a, Result<RetrievedPage, PressPodsError>> {
         Box::pin(async move {
             let html = fetch_public_html(
                 &self.0.public_http,
@@ -78,14 +86,19 @@ impl ArticleRetriever for FetchRetriever {
             .await?;
             let url = url.to_owned();
             blocking("clean fetched article", move || {
-                Ok(Article {
+                let article = clean_text(&html).map(|text| Article {
                     title: extract_title_from_html(&html),
-                    text: clean_text(&html)?,
+                    text,
                     author: None,
                     domain: extract_domain(&url),
                     published_at: None,
                     lead_image_url: None,
+                    url: url.clone(),
+                });
+                Ok(RetrievedPage {
+                    html: Some(html),
                     url,
+                    article,
                 })
             })
             .await

@@ -113,6 +113,41 @@ pub trait CalendarConnection: Send + Sync {
     fn status(&self) -> CalendarConnectionStatus;
 }
 
+/// One source's copy of a public web page, unrated.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FetchedPage {
+    /// The retriever that produced it: `fetch` (the page itself), `wayback`
+    /// (an archived snapshot), `obscura` (a browser render), or an extractor
+    /// (`readability`, `postlight`, `extractus`, `jina`, `x`).
+    pub source: String,
+    /// Where this copy was read: the requested URL, the snapshot's URL for
+    /// `wayback`, or where the browser ended up for `obscura`.
+    pub url: String,
+    /// The page's HTML when the source holds a whole page (`fetch`,
+    /// `wayback`, `obscura`). Untrusted.
+    pub html: Option<String>,
+    pub title: Option<String>,
+    /// Readable article text when the source extracted any. Untrusted.
+    pub text: Option<String>,
+    pub lead_image_url: Option<String>,
+    pub author: Option<String>,
+}
+
+/// Implemented by `omni-presspods` over its article retrievers; used by
+/// subsystems that read a public page a person submitted.
+pub trait PageFetcher: Send + Sync {
+    /// Every candidate the PressPods retrievers produce for a public
+    /// `http(s)` URL, in retriever order and without the metadata model's
+    /// rating. The retrievers run at once, each within 60 seconds, through
+    /// the SSRF-guarded client. `Ok` holds at least one page; the failure
+    /// message says whether the host refused, the host timed out or every
+    /// source failed, and never carries a response body.
+    fn fetch_pages<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<FetchedPage>, PortError>>;
+}
+
 /// Implemented by `omni-live`; used by `omni-live-intel`, `omni-mcp` and the
 /// dashboard snapshot. Values are serialized
 /// `omni_api::streamers` DTOs.
@@ -396,6 +431,7 @@ ports! {
     live_directory, set_live_directory: LiveDirectory,
     live_intelligence, set_live_intelligence: LiveIntelligence,
     speech_transcriber, set_speech_transcriber: SpeechTranscriber,
+    page_fetcher, set_page_fetcher: PageFetcher,
     on_deck_source, set_on_deck_source: OnDeckSource,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,
     claude_host, set_claude_host: ClaudeHost,

@@ -1,0 +1,604 @@
+
+======== chocolate-chip-cookies: validation ========
+
+0 errors, 0 warnings
+
+======== chocolate-chip-cookies: list view ========
+
+# Chocolate Chip Cookies
+
+Crisp-edged, soft-centred cookies from a creamed-butter dough.
+
+Makes 28 cookies · 20 min hands-on, 35 min start to finish
+
+## Ingredients
+
+- 280 g (2¼ cups) all-purpose flour
+- 1 tsp baking soda
+- 1 tsp fine sea salt
+- 225 g (1 cup) unsalted butter, softened
+- 150 g (¾ cup) granulated sugar
+- 165 g (¾ cup) light brown sugar
+- 2 large eggs
+- 2 tsp vanilla extract
+- 340 g (2 cups) semisweet chocolate chips
+- 100 g walnuts, chopped (optional)
+- flaky salt, to taste (optional)
+
+## Steps
+
+1. Heat the oven to 375°F (190°C) with racks in the upper and lower thirds. Line two baking sheets with parchment.
+2. Whisk 280 g all-purpose flour, 1 tsp baking soda and 1 tsp fine sea salt together in a bowl.
+3. Beat 225 g unsalted butter with 150 g granulated sugar and 165 g light brown sugar until pale and fluffy, 3–4 minutes.
+4. Beat 2 large eggs into the creamed butter one at a time, then 2 tsp vanilla extract.
+5. Add the dry mix to the wet mix and mix on low just until no dry flour remains.
+6. Fold 340 g semisweet chocolate chips and, if using, 100 g walnuts into the dough.
+7. Scoop the cookie dough into 45 g balls and space them 5 cm apart on the lined sheets.
+8. Bake the scooped dough in the hot oven for 9–11 minutes, swapping the sheets halfway, until the edges are golden and the centres still look soft.
+9. Sprinkle the baked cookies with flaky salt if you like. Cool on the sheets for 5 minutes, then move to a rack.
+
+
+======== chocolate-chip-cookies: chart ========
+
+┌──────────────────────────────────────────────────────────────────────────────────────┬───────────┬───────────┐
+│ heat oven 375°F 15 min                                                               │           │           │
+├──────────────────────────────┬─────────────────────┬───────────┬─────────┬───────────┤           │           │
+│ 280 g all-purpose flour      │                     │           │         │           │           │           │
+├──────────────────────────────┤                     │           │         │           │           │           │
+│ 1 tsp baking soda            │        whisk        │           │         │           │           │           │
+├──────────────────────────────┤                     │           │         │           │           │           │
+│ 1 tsp fine sea salt          │                     │           │         │           │           │           │
+├──────────────────────────────┼───────────┬─────────┤           │         │           │           │           │
+│ 225 g unsalted butter,       │           │         │           │         │           │           │           │
+│ softened                     │           │         │  mix on   │         │           │   bake    │           │
+├──────────────────────────────┤ cream 3–4 │         │    low    │         │           │   375°F   │           │
+│ 150 g granulated sugar       │    min    │         │           │ fold in │  scoop 8  │ 9–11 min  │  cool 5   │
+├──────────────────────────────┤           │ beat in │           │         │    min    │           │    min    │
+│ 165 g light brown sugar      │           │         │           │         │           │           │           │
+├──────────────────────────────┴───────────┤         │           │         │           │           │           │
+│ 2 large eggs                             │         │           │         │           │           │           │
+├──────────────────────────────────────────┤         │           │         │           │           │           │
+│ 2 tsp vanilla extract                    │         │           │         │           │           │           │
+├──────────────────────────────────────────┴─────────┴───────────┤         │           │           │           │
+│ 340 g semisweet chocolate chips                                │         │           │           │           │
+├────────────────────────────────────────────────────────────────┤         │           │           │           │
+│ 100 g walnuts, chopped (optional)                              │         │           │           │           │
+├────────────────────────────────────────────────────────────────┴─────────┴───────────┴───────────┤           │
+│ flaky salt (optional)                                                                            │           │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
+
+======== chocolate-chip-cookies: timeline ========
+
+0:00 → 0:01  hands-on    whisk
+0:01 → 0:05  hands-on    cream 3–4 min
+0:02 → 0:17  unattended  heat oven 375°F 15 min
+0:05 → 0:07  hands-on    beat in
+0:07 → 0:08  hands-on    mix on low
+0:08 → 0:09  hands-on    fold in
+0:09 → 0:17  hands-on    scoop 8 min
+0:17 → 0:28  unattended  bake 375°F 9–11 min
+0:28 → 0:33  unattended  cool 5 min
+elapsed 0:33
+
+======== chicken-piccata: validation ========
+
+0 errors, 0 warnings
+
+======== chicken-piccata: list view ========
+
+# Chicken Piccata
+
+Pan-seared cutlets in a lemon, caper and butter pan sauce.
+
+Makes 4 servings · 25 min hands-on, 25 min start to finish
+
+## Ingredients
+
+- 500 g boneless, skinless chicken breasts, halved horizontally into cutlets
+- kosher salt, to taste
+- black pepper, to taste
+- 60 g (½ cup) all-purpose flour (for dredging)
+- 2 tbsp olive oil
+- 4 tbsp unsalted butter, cold, divided
+- 120 ml (½ cup) dry white wine
+- 180 ml (¾ cup) chicken stock
+- 2 lemons, divided
+- 2 tbsp capers, drained (optional)
+- 2 tbsp flat-leaf parsley, chopped
+
+## Steps
+
+1. Season 500 g boneless, skinless chicken breasts on both sides with kosher salt and black pepper. Dredge in 60 g all-purpose flour and shake off the excess.
+2. Heat 2 tbsp olive oil and 2 tbsp unsalted butter in a large skillet over medium-high heat until the butter foams. Cook the dredged cutlets until golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat.
+3. Pour 120 ml dry white wine into the hot pan and scrape up the browned bits. Boil until reduced by half, about 2 minutes.
+4. Add 180 ml chicken stock, the juice of 1 lemon and 2 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes.
+5. Take the sauce base off the heat and swirl in the remaining 2 tbsp unsalted butter a piece at a time. Taste and adjust with kosher salt.
+6. Return the seared cutlets to the pan and spoon the lemon butter sauce over them to warm through, about 1 minute. Scatter with 2 tbsp flat-leaf parsley and serve with 1 lemon, cut into wedges.
+
+
+======== chicken-piccata: chart ========
+
+┌──────────────────────────────┬───────────┬──────────────────────┬───────────┐
+│ 500 g boneless, skinless     │           │                      │           │
+│ chicken breasts, halved      │           │                      │           │
+│ horizontally into cutlets    │           │                      │           │
+├──────────────────────────────┤  season,  │                      │           │
+│ kosher salt                  │ dredge 5  │                      │           │
+├──────────────────────────────┤    min    │                      │           │
+│ black pepper                 │           │     sear 6–8 min     │           │
+├──────────────────────────────┤           │                      │           │
+│ 60 g all-purpose flour       │           │                      │           │
+├──────────────────────────────┴───────────┤                      │           │
+│ 2 tbsp olive oil                         │                      │           │
+├──────────────────────────────────────────┤                      │           │
+│ 2 tbsp unsalted butter, cold             │                      │           │
+├──────────────────────────────┬───────────┼───────────┬──────────┤           │
+│ pan drippings ← from sear    │           │           │          │  sauce,   │
+├──────────────────────────────┤  deglaze  │           │          │  garnish  │
+│ 120 ml dry white wine        │           │           │          │           │
+├──────────────────────────────┴───────────┤  simmer   │          │           │
+│ 180 ml chicken stock                     │  4–5 min  │          │           │
+├──────────────────────────────────────────┤           │          │           │
+│ juice of 1 lemon                         │           │ swirl in │           │
+├──────────────────────────────────────────┤           │          │           │
+│ 2 tbsp capers, drained (optional)        │           │          │           │
+├──────────────────────────────────────────┴───────────┤          │           │
+│ 2 tbsp unsalted butter, cold (the rest)              │          │           │
+├──────────────────────────────────────────────────────┤          │           │
+│ kosher salt                                          │          │           │
+├──────────────────────────────────────────────────────┴──────────┤           │
+│ 2 tbsp flat-leaf parsley, chopped                               │           │
+├─────────────────────────────────────────────────────────────────┤           │
+│ 1 lemon, cut into wedges                                        │           │
+└─────────────────────────────────────────────────────────────────┴───────────┘
+
+======== chicken-piccata: timeline ========
+
+0:00 → 0:05  hands-on    season, dredge 5 min
+0:05 → 0:13  hands-on    sear 6–8 min
+0:13 → 0:15  hands-on    deglaze
+0:15 → 0:20  hands-on    simmer 4–5 min
+0:20 → 0:21  hands-on    swirl in
+0:21 → 0:23  hands-on    sauce, garnish
+elapsed 0:23
+
+======== lasagne-bolognese: validation ========
+
+0 errors, 0 warnings
+
+======== lasagne-bolognese: list view ========
+
+# Lasagne alla Bolognese
+
+Slow-cooked ragù and béchamel layered with fresh pasta. The ragù is better made a day ahead.
+
+Makes 8 servings · 65 min hands-on, 4 h 25 min start to finish
+
+## Ingredients
+
+**Ragù** (make ahead: keeps 3 days in the fridge)
+
+- 2 tbsp olive oil
+- 1 yellow onion, finely chopped
+- 1 carrot, finely chopped
+- 1 stalk celery, finely chopped
+- 500 g ground beef
+- 250 g ground pork
+- kosher salt, to taste
+- 180 ml dry white wine
+- 240 ml whole milk
+- 700 g tomato passata
+- 2 tbsp tomato paste
+
+**Béchamel**
+
+- 60 g unsalted butter
+- 60 g all-purpose flour
+- 750 ml whole milk, warmed
+- 1 pinch nutmeg, freshly grated
+- kosher salt, to taste
+
+**Assembly**
+
+- 1 tbsp butter (for the dish)
+- 250 g fresh lasagne sheets
+- 100 g Parmigiano Reggiano, finely grated, divided
+- Ragù (from above)
+- Béchamel (from above)
+
+## Steps
+
+**Ragù**
+
+1. Warm 2 tbsp olive oil in a Dutch oven over medium-low heat. Cook 1 yellow onion, 1 carrot and 1 stalk celery until soft but not browned, about 10 minutes.
+2. Raise the heat to medium-high. Add 500 g ground beef and 250 g ground pork to the soffritto, season with kosher salt, and cook, breaking the meat up, until it has lost its pink colour and starts to brown, about 10 minutes.
+3. Pour 180 ml dry white wine over the browned meat and boil until the pan is nearly dry, about 5 minutes.
+4. Add 240 ml whole milk to the meat base and simmer until it has been absorbed, about 10 minutes.
+5. Stir 700 g tomato passata and 2 tbsp tomato paste into the milk-braised meat. Cover with the lid ajar and simmer on the lowest heat for 2.5 hours, stirring now and then, until thick and glossy.
+
+**Béchamel**
+
+6. Melt 60 g unsalted butter in a saucepan over medium heat, whisk in 60 g all-purpose flour and cook for 2 minutes without colouring.
+7. Whisk 750 ml whole milk into the roux a ladle at a time. Simmer, whisking, until it coats the back of a spoon, 8–10 minutes.
+8. Season the white sauce with 1 pinch nutmeg and kosher salt.
+
+**Assembly**
+
+9. Heat the oven to 375°F (190°C).
+10. Grease a 23 x 33 cm baking dish with 1 tbsp butter. Using all of the ragù, 250 g fresh lasagne sheets, ¾ of the béchamel and 70 g Parmigiano Reggiano, build four layers: a thin coat of ragù, a sheet of pasta, a few spoonfuls of béchamel and a handful of cheese.
+11. Spread the remaining béchamel over the top and finish with the remaining 30 g Parmigiano Reggiano.
+12. Cover the topped lasagne with foil and bake in the hot oven for 25 minutes.
+13. Remove the foil from the lasagne and bake 15–20 minutes more, until browned and bubbling at the edges.
+14. Rest the browned lasagne for 15 minutes before cutting.
+
+
+======== lasagne-bolognese: chart ========
+
+RAGÙ  (make ahead: keeps 3 days in the fridge)
+┌──────────────────────────────┬───────────┬───────────┬───────────┬───────────┬───────────┐
+│ 2 tbsp olive oil             │           │           │           │           │           │
+├──────────────────────────────┤           │           │           │           │           │
+│ 1 yellow onion, finely       │           │           │           │           │           │
+│ chopped                      │ sweat 10  │           │           │           │           │
+├──────────────────────────────┤    min    │           │           │           │           │
+│ 1 carrot, finely chopped     │           │           │           │           │           │
+├──────────────────────────────┤           │ brown 10  │           │           │           │
+│ 1 stalk celery, finely       │           │    min    │ reduce 5  │           │           │
+│ chopped                      │           │           │    min    │ cook down │           │
+├──────────────────────────────┴───────────┤           │           │  10 min   │           │
+│ 500 g ground beef                        │           │           │           │  simmer   │
+├──────────────────────────────────────────┤           │           │           │   2.5 h   │
+│ 250 g ground pork                        │           │           │           │           │
+├──────────────────────────────────────────┤           │           │           │           │
+│ kosher salt                              │           │           │           │           │
+├──────────────────────────────────────────┴───────────┤           │           │           │
+│ 180 ml dry white wine                                │           │           │           │
+├──────────────────────────────────────────────────────┴───────────┤           │           │
+│ 240 ml whole milk                                                │           │           │
+├──────────────────────────────────────────────────────────────────┴───────────┤           │
+│ 700 g tomato passata                                                         │           │
+├──────────────────────────────────────────────────────────────────────────────┤           │
+│ 2 tbsp tomato paste                                                          │           │
+└──────────────────────────────────────────────────────────────────────────────┴───────────┘
+
+BÉCHAMEL
+┌────────────────────────┬──────┬───────────┬────────┐
+│ 60 g unsalted butter   │      │           │        │
+├────────────────────────┤ cook │ whisk in, │        │
+│ 60 g all-purpose flour │      │  simmer   │        │
+├────────────────────────┴──────┤ 8–10 min  │        │
+│ 750 ml whole milk, warmed     │           │ season │
+├───────────────────────────────┴───────────┤        │
+│ 1 pinch nutmeg, freshly grated            │        │
+├───────────────────────────────────────────┤        │
+│ kosher salt                               │        │
+└───────────────────────────────────────────┴────────┘
+
+ASSEMBLY
+┌────────────────────────────────────────────────┬───────────┬───────────┬───────────┐
+│ heat oven 375°F 15 min                         │           │           │           │
+├──────────────────────────────┬───────────┬─────┤           │           │           │
+│ 1 tbsp butter                │           │     │           │           │           │
+├──────────────────────────────┤           │     │           │           │           │
+│ ragù ←                       │           │     │           │           │           │
+├──────────────────────────────┤           │     │           │           │           │
+│ ¾ of the béchamel ←          │ layer 15  │     │   bake    │           │           │
+├──────────────────────────────┤    min    │     │  covered  │   bake    │  rest 15  │
+│ 250 g fresh lasagne sheets   │           │     │ 375°F 25  │ uncovered │    min    │
+├──────────────────────────────┤           │ top │    min    │ 15–20 min │           │
+│ 70 g Parmigiano Reggiano,    │           │     │           │           │           │
+│ finely grated                │           │     │           │           │           │
+├──────────────────────────────┴───────────┤     │           │           │           │
+│ rest of the béchamel ←                   │     │           │           │           │
+├──────────────────────────────────────────┤     │           │           │           │
+│ 30 g Parmigiano Reggiano, finely grated  │     │           │           │           │
+│ (the rest)                               │     │           │           │           │
+└──────────────────────────────────────────┴─────┴───────────┴───────────┴───────────┘
+
+======== lasagne-bolognese: timeline ========
+
+0:00 → 0:10  hands-on    Ragù: sweat 10 min
+0:10 → 0:20  hands-on    Ragù: brown 10 min
+0:20 → 0:25  hands-on    Ragù: reduce 5 min
+0:25 → 0:35  hands-on    Ragù: cook down 10 min
+0:35 → 3:05  unattended  Ragù: simmer 2.5 h
+0:35 → 0:37  hands-on    Béchamel: cook
+0:37 → 0:47  hands-on    Béchamel: whisk in, simmer 8–10 min
+0:47 → 0:48  hands-on    Béchamel: season
+3:05 → 3:20  hands-on    Assembly: layer 15 min
+3:07 → 3:22  unattended  Assembly: heat oven 375°F 15 min
+3:20 → 3:22  hands-on    Assembly: top
+3:22 → 3:47  unattended  Assembly: bake covered 375°F 25 min
+3:47 → 4:07  unattended  Assembly: bake uncovered 15–20 min
+4:07 → 4:22  unattended  Assembly: rest 15 min
+elapsed 4:22
+
+======== enchiladas: validation ========
+
+0 errors, 0 warnings
+
+======== enchiladas: list view ========
+
+# Chicken Enchiladas
+
+A split intermediate: two thirds of the sauce goes into the filling, the rest over the top.
+
+Makes 4 servings · 20 min hands-on, 50 min start to finish
+
+## Ingredients
+
+- 400 g chopped tomatoes
+- 1 tbsp chili powder
+- 200 g chicken thigh, diced
+- 1 onion, sliced
+- 4 flour tortillas
+- 100 g cheddar, grated
+
+## Steps
+
+1. Simmer 400 g chopped tomatoes with 1 tbsp chili powder until thick, about 15 minutes.
+2. Fry 200 g chicken thigh and 1 onion until the chicken is cooked through, about 8 minutes.
+3. Stir ⅔ of the tomato sauce into the fried chicken and onion and simmer for 5 minutes.
+4. Divide the filling between 4 flour tortillas, roll them up and lay them seam side down in a baking dish.
+5. Pour the remaining tomato sauce over the rolled tortillas and scatter with 100 g cheddar.
+6. Bake the covered enchiladas at 400°F (205°C) until golden, about 20 minutes.
+
+
+======== enchiladas: chart ========
+
+TOMATO SAUCE
+┌────────────────────────┬───────────┐
+│ 400 g chopped tomatoes │ boil down │
+├────────────────────────┤  15 min   │
+│ 1 tbsp chili powder    │           │
+└────────────────────────┴───────────┘
+
+CHICKEN ENCHILADAS
+┌────────────────────────────┬───────────┬───────────┬───────────┬───────────┬───────────┐
+│ 200 g chicken thigh, diced │           │           │           │           │           │
+├────────────────────────────┤ fry 8 min │ simmer 5  │           │           │           │
+│ 1 onion, sliced            │           │    min    │   fill,   │           │           │
+├────────────────────────────┴───────────┤           │  roll 5   │           │           │
+│ ⅔ of the tomato sauce ←                │           │    min    │           │   bake    │
+├────────────────────────────────────────┴───────────┤           │ pour over │ 400°F 20  │
+│ 4 flour tortillas                                  │           │           │    min    │
+├────────────────────────────────────────────────────┴───────────┤           │           │
+│ rest of the tomato sauce ←                                     │           │           │
+├────────────────────────────────────────────────────────────────┤           │           │
+│ 100 g cheddar, grated                                          │           │           │
+└────────────────────────────────────────────────────────────────┴───────────┴───────────┘
+
+======== enchiladas: timeline ========
+
+0:00 → 0:15  unattended  boil down 15 min
+0:00 → 0:08  hands-on    fry 8 min
+0:15 → 0:20  hands-on    simmer 5 min
+0:20 → 0:25  hands-on    fill, roll 5 min
+0:25 → 0:26  hands-on    pour over
+0:26 → 0:46  unattended  bake 400°F 20 min
+elapsed 0:46
+
+======== piccata scaled x1.5: list view ========
+
+# Chicken Piccata
+
+Pan-seared cutlets in a lemon, caper and butter pan sauce.
+
+Makes 6 servings (scaled ×1.5) · 25 min hands-on, 25 min start to finish
+
+## Ingredients
+
+- 750 g boneless, skinless chicken breasts, halved horizontally into cutlets
+- kosher salt, to taste
+- black pepper, to taste
+- 90 g (¾ cup) all-purpose flour (for dredging)
+- 3 tbsp olive oil
+- 6 tbsp unsalted butter, cold, divided
+- 180 ml (¾ cup) dry white wine
+- 270 ml (1⅛ cups) chicken stock
+- 3 lemons, divided
+- 3 tbsp capers, drained (optional)
+- 3 tbsp flat-leaf parsley, chopped
+
+## Steps
+
+1. Season 750 g boneless, skinless chicken breasts on both sides with kosher salt and black pepper. Dredge in 90 g all-purpose flour and shake off the excess.
+2. Heat 3 tbsp olive oil and 3 tbsp unsalted butter in a large skillet over medium-high heat until the butter foams. Cook the dredged cutlets until golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat.
+3. Pour 180 ml dry white wine into the hot pan and scrape up the browned bits. Boil until reduced by half, about 2 minutes.
+4. Add 270 ml chicken stock, the juice of 1½ lemons and 3 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes.
+5. Take the sauce base off the heat and swirl in the remaining 3 tbsp unsalted butter a piece at a time. Taste and adjust with kosher salt.
+6. Return the seared cutlets to the pan and spoon the lemon butter sauce over them to warm through, about 1 minute. Scatter with 3 tbsp flat-leaf parsley and serve with 1½ lemons, cut into wedges.
+
+
+======== piccata scaled x1.5: chart ========
+
+┌──────────────────────────────┬───────────┬──────────────────────┬───────────┐
+│ 750 g boneless, skinless     │           │                      │           │
+│ chicken breasts, halved      │           │                      │           │
+│ horizontally into cutlets    │           │                      │           │
+├──────────────────────────────┤  season,  │                      │           │
+│ kosher salt                  │ dredge 5  │                      │           │
+├──────────────────────────────┤    min    │                      │           │
+│ black pepper                 │           │     sear 6–8 min     │           │
+├──────────────────────────────┤           │                      │           │
+│ 90 g all-purpose flour       │           │                      │           │
+├──────────────────────────────┴───────────┤                      │           │
+│ 3 tbsp olive oil                         │                      │           │
+├──────────────────────────────────────────┤                      │           │
+│ 3 tbsp unsalted butter, cold             │                      │           │
+├──────────────────────────────┬───────────┼───────────┬──────────┤           │
+│ pan drippings ← from sear    │           │           │          │  sauce,   │
+├──────────────────────────────┤  deglaze  │           │          │  garnish  │
+│ 180 ml dry white wine        │           │           │          │           │
+├──────────────────────────────┴───────────┤  simmer   │          │           │
+│ 270 ml chicken stock                     │  4–5 min  │          │           │
+├──────────────────────────────────────────┤           │          │           │
+│ juice of 1½ lemons                       │           │ swirl in │           │
+├──────────────────────────────────────────┤           │          │           │
+│ 3 tbsp capers, drained (optional)        │           │          │           │
+├──────────────────────────────────────────┴───────────┤          │           │
+│ 3 tbsp unsalted butter, cold (the rest)              │          │           │
+├──────────────────────────────────────────────────────┤          │           │
+│ kosher salt                                          │          │           │
+├──────────────────────────────────────────────────────┴──────────┤           │
+│ 3 tbsp flat-leaf parsley, chopped                               │           │
+├─────────────────────────────────────────────────────────────────┤           │
+│ 1½ lemons, cut into wedges                                      │           │
+└─────────────────────────────────────────────────────────────────┴───────────┘
+
+======== piccata in cook mode: dredge and sear done ========
+
+┌──────────────────────────────┬───────────┬──────────────────────┬───────────┐
+│ ✓ 500 g boneless, skinless   │           │                      │           │
+│ chicken breasts, halved      │           │                      │           │
+│ horizontally into cutlets    │           │                      │           │
+├──────────────────────────────┤ ✓ season, │                      │           │
+│ ✓ kosher salt                │ dredge 5  │                      │           │
+├──────────────────────────────┤    min    │                      │           │
+│ ✓ black pepper               │           │    ✓ sear 6–8 min    │           │
+├──────────────────────────────┤           │                      │           │
+│ ✓ 60 g all-purpose flour     │           │                      │           │
+├──────────────────────────────┴───────────┤                      │           │
+│ ✓ 2 tbsp olive oil                       │                      │           │
+├──────────────────────────────────────────┤                      │           │
+│ ✓ 2 tbsp unsalted butter, cold           │                      │           │
+├──────────────────────────────┬───────────┼───────────┬──────────┤           │
+│ pan drippings ← from sear    │           │           │          │  sauce,   │
+├──────────────────────────────┤ ▶ deglaze │           │          │  garnish  │
+│ 120 ml dry white wine        │           │           │          │           │
+├──────────────────────────────┴───────────┤  simmer   │          │           │
+│ 180 ml chicken stock                     │  4–5 min  │          │           │
+├──────────────────────────────────────────┤           │          │           │
+│ juice of 1 lemon                         │           │ swirl in │           │
+├──────────────────────────────────────────┤           │          │           │
+│ 2 tbsp capers, drained (optional)        │           │          │           │
+├──────────────────────────────────────────┴───────────┤          │           │
+│ 2 tbsp unsalted butter, cold (the rest)              │          │           │
+├──────────────────────────────────────────────────────┤          │           │
+│ kosher salt                                          │          │           │
+├──────────────────────────────────────────────────────┴──────────┤           │
+│ 2 tbsp flat-leaf parsley, chopped                               │           │
+├─────────────────────────────────────────────────────────────────┤           │
+│ 1 lemon, cut into wedges                                        │           │
+└─────────────────────────────────────────────────────────────────┴───────────┘
+
+======== piccata chart HTML ========
+
+<table class="chart">
+  <tr><td class="leaf" data-key="dredge/chicken">500 g boneless, skinless chicken breasts, halved horizontally into cutlets</td><td class="step" data-key="dredge" rowspan="4">season, dredge 5 min</td><td class="step" data-key="sear" rowspan="6" colspan="2">sear 6–8 min</td><td class="step" data-key="serve" rowspan="15">sauce, garnish</td></tr>
+  <tr><td class="leaf" data-key="dredge/salt">kosher salt</td></tr>
+  <tr><td class="leaf" data-key="dredge/pepper">black pepper</td></tr>
+  <tr><td class="leaf" data-key="dredge/flour">60 g all-purpose flour</td></tr>
+  <tr><td class="leaf" data-key="sear/oil" colspan="2">2 tbsp olive oil</td></tr>
+  <tr><td class="leaf" data-key="sear/butter" colspan="2">2 tbsp unsalted butter, cold</td></tr>
+  <tr><td class="ref" data-key="deglaze/fond">pan drippings ← from sear</td><td class="step" data-key="deglaze" rowspan="2">deglaze</td><td class="step" data-key="simmer" rowspan="5">simmer 4–5 min</td><td class="step" data-key="mount" rowspan="7">swirl in</td></tr>
+  <tr><td class="leaf" data-key="deglaze/wine">120 ml dry white wine</td></tr>
+  <tr><td class="leaf" data-key="simmer/stock" colspan="2">180 ml chicken stock</td></tr>
+  <tr><td class="leaf" data-key="simmer/lemon:juice" colspan="2">juice of 1 lemon</td></tr>
+  <tr><td class="leaf optional" data-key="simmer/capers" colspan="2">2 tbsp capers, drained (optional)</td></tr>
+  <tr><td class="leaf" data-key="mount/butter" colspan="3">2 tbsp unsalted butter, cold (the rest)</td></tr>
+  <tr><td class="leaf" data-key="mount/salt" colspan="3">kosher salt</td></tr>
+  <tr><td class="leaf" data-key="serve/parsley" colspan="4">2 tbsp flat-leaf parsley, chopped</td></tr>
+  <tr><td class="leaf" data-key="serve/lemon" colspan="4">1 lemon, cut into wedges</td></tr>
+</table>
+
+======== broken draft: validation ========
+
+[invalid_recipe] 6 problems; nothing was saved.
+1. steps.sear.inputs.buter: [unknown_ref] no ingredient, step or component has id "buter" Hint: did you mean "butter"?
+2. steps.sear.text: [placeholder_not_input] {butter} is not one of this step's inputs Hint: did you mean {buter}?
+3. steps.deglaze.inputs.mount: [forward_ref] "mount" is produced by step "mount", which comes later Hint: steps are listed in cooking order; move the producing step earlier
+4. ingredients.butter: [under_allocated] uses add up to 3 tbsp but the ingredient list says 4 tbsp Hint: fix the amounts, or mark the last use {"rest": true}
+5. ingredients.capers: [unused_ingredient] "capers" is not an input of any step Hint: add it to the step that uses it, or remove the ingredient
+6. mount: [ambiguous_split] "mount" is used by 2 steps without saying how it is divided Hint: give each use a "fraction" (for example "1/2"), or mark the last one {"rest": true}
+2 warnings:
+- steps.mount.text: [input_not_mentioned] input "butter" has no {butter} placeholder Hint: amounts written as plain words do not scale and cannot be crossed off
+- steps.mount.text: [literal_quantity] "3 tbsp cold butter" is a hard-coded amount; it will not scale Hint: write {butter} and put the amount on the input
+
+======== edit ops on piccata ========
+
+[
+ {
+  "op": "set",
+  "target": "lemon",
+  "fields": {
+   "qty": 3
+  }
+ },
+ {
+  "op": "setInput",
+  "step": "simmer",
+  "ref": "lemon",
+  "fields": {
+   "qty": 2
+  }
+ },
+ {
+  "op": "set",
+  "target": "stock",
+  "fields": {
+   "qty": 300,
+   "alt": {
+    "qty": 1.25,
+    "unit": "cup"
+   }
+  }
+ },
+ {
+  "op": "setInput",
+  "step": "deglaze",
+  "ref": "wine",
+  "remove": true
+ },
+ {
+  "op": "setInput",
+  "step": "deglaze",
+  "ref": "stock",
+  "fields": {
+   "qty": 120,
+   "unit": "ml"
+  }
+ },
+ {
+  "op": "setInput",
+  "step": "simmer",
+  "ref": "stock",
+  "fields": {
+   "rest": true
+  }
+ },
+ {
+  "op": "replaceText",
+  "target": "deglaze",
+  "find": "{wine}",
+  "replace": "{stock}"
+ },
+ {
+  "op": "remove",
+  "target": "wine"
+ }
+]
+validation after ops: 0 errors, 0 warnings
+diff:
+− ingredient wine
+~ stock.alt: {"qty": 0.75, "unit": "cup"} → {"qty": 1.25, "unit": "cup"}
+~ stock.qty: 180 → 300
+~ lemon.qty: 2 → 3
+~ deglaze.inputs: [{"ref": "fond"}, {"ref": "wine"}] → [{"ref": "fond"}, {"ref": "stock", "qty": 120, "unit": "ml"}]
+~ deglaze.text: "Pour {wine} into {fond|the hot pan} and scrape up the browned bits. Boil until reduced by half, about {time}." → "Pour {stock} into {fond|the hot pan} and scrape up the browned bits. Boil until reduced by half, about {time}."
+~ simmer.inputs: [{"ref": "deglaze"}, {"ref": "stock"}, {"ref": "lemon", "qty": 1, "part": "juice"}, {"ref": "capers"}] → [{"ref": "deglaze"}, {"ref": "stock", "rest": true}, {"ref": "lemon", "qty": 2, "part": "juice"}, {"ref": "capers"}]
+deglaze: Pour 120 ml chicken stock into the hot pan and scrape up the browned bits. Boil until reduced by half, about 2 minutes.
+simmer: Add the remaining 180 ml chicken stock, the juice of 2 lemons and 2 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes.
+
+======== more ops: rename, unset, move, addComponent, unknown unit ========
+
+validation: 0 errors, 1 warnings
+ingredients.flour: [unknown_unit] unit "grams" is not in the unit list Hint: did you mean "g"?
+deglaze: Pour {wine} into {drippings|the hot pan} and scrape up the browned bits. Boil until reduced by half, about {time}.
+finish: Take {simmer} off the heat and swirl in {butter} a piece at a time. Taste and adjust with {salt}.
+serve: Return {sear} to the pan and spoon {finish} over them to warm through, about 1 minute. Scatter with {parsley} and serve with {lemon} over {rice}.
+ingredient order: lemon, chicken, salt, pepper, flour, oil, butter, wine, stock, capers, parsley
+components: rice, piccata
+op error: ops[1] (set): no ingredient, step or component has id "caper"
+removing an ingredient that a step still uses:
+steps.simmer.inputs.capers: [unknown_ref] no ingredient, step or component has id "capers"

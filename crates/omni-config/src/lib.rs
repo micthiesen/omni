@@ -474,6 +474,10 @@ config_struct! {
     /// The MCP gateway's public `https://` origin (no path), for downstream
     /// OAuth and upstream OAuth callbacks; unset keeps the gateway LAN-only.
     omni_gateway_public_url: Option<String> = "OMNI_GATEWAY_PUBLIC_URL",
+    /// The recipe app's `https://` origin (no path). Requests for its host
+    /// reach only that app; unset (or empty) serves no app. Its host must
+    /// differ from the gateway's and PressPods' public hosts.
+    recipes_app_url: Option<String> = "RECIPES_APP_URL",
     /// HTTP(S) without credentials, query or fragment; trailing slashes trimmed.
     hister_url: String = "HISTER_URL",
     hister_access_token: Option<String> = "HISTER_ACCESS_TOKEN",
@@ -566,6 +570,7 @@ const PUBLIC_TEXT_KEYS: &[&str] = &[
     "TZ",
     "SMTP_HOST",
     "OMNI_GATEWAY_PUBLIC_URL",
+    "RECIPES_APP_URL",
     "HISTER_URL",
     "PRINTER_IPP_URL",
     "PRESSPODS_PUBLIC_URL",
@@ -896,6 +901,10 @@ impl Config {
                 None => None,
                 Some(raw) => Some(public_origin("OMNI_GATEWAY_PUBLIC_URL", &raw)?),
             },
+            recipes_app_url: match env.get("RECIPES_APP_URL").map(str::trim) {
+                None | Some("") => None,
+                Some(raw) => Some(public_origin("RECIPES_APP_URL", raw)?),
+            },
             hister_url: {
                 let key = "HISTER_URL";
                 let url = env.trimmed_url(key, "https://hister.syas.ca")?;
@@ -974,6 +983,7 @@ impl Config {
             yt_dlp_path: env.opt("YT_DLP_PATH"),
         };
         validate_device_link_token(config.omni_device_link_token.as_deref())?;
+        validate_recipes_app_host(&config)?;
         Ok(config)
     }
 
@@ -1268,6 +1278,32 @@ fn is_uuid(value: &str) -> bool {
     UUID.as_ref().is_some_and(|re| re.is_match(value))
 }
 
+/// The lowercased host of a URL, without port or trailing dot.
+fn url_host(raw: &str) -> Option<String> {
+    let url = url::Url::parse(raw).ok()?;
+    Some(url.host_str()?.trim_end_matches('.').to_ascii_lowercase())
+}
+
+/// Host dispatch gives the recipe app's host to that app alone, so it can
+/// never share a host with a public proxy host that must keep serving Omni.
+fn validate_recipes_app_host(config: &Config) -> Result<(), ConfigError> {
+    let Some(app) = config.recipes_app_url.as_deref().and_then(url_host) else {
+        return Ok(());
+    };
+    for (key, other) in [
+        ("OMNI_GATEWAY_PUBLIC_URL", &config.omni_gateway_public_url),
+        ("PRESSPODS_PUBLIC_URL", &config.presspods_public_url),
+    ] {
+        if other.as_deref().and_then(url_host).as_deref() == Some(app.as_str()) {
+            return Err(invalid(
+                "RECIPES_APP_URL",
+                format!("its host must differ from the host of {key}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Optional; strong when present.
 fn validate_device_link_token(token: Option<&str>) -> Result<(), ConfigError> {
     match token {
@@ -1417,6 +1453,49 @@ mod tests {
         ] {
             assert!(public_origin("K", bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn recipes_app_url_is_an_https_origin_on_its_own_host() {
+        let load = |pairs: &[(&str, &str)]| {
+            let vars: BTreeMap<String, String> = pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+            Config::from_env(&vars)
+        };
+        let app = ("RECIPES_APP_URL", "https://Recipes.Example.com/");
+        assert_eq!(
+            load(&[app]).unwrap().recipes_app_url.as_deref(),
+            Some("https://recipes.example.com")
+        );
+        assert_eq!(load(&[]).unwrap().recipes_app_url, None);
+        assert_eq!(
+            load(&[("RECIPES_APP_URL", " ")]).unwrap().recipes_app_url,
+            None
+        );
+        for bad in [
+            "http://recipes.example.com",
+            "https://recipes.example.com/app",
+        ] {
+            assert!(load(&[("RECIPES_APP_URL", bad)]).is_err(), "{bad}");
+        }
+        for clash in [
+            (
+                "OMNI_GATEWAY_PUBLIC_URL",
+                "https://recipes.example.com:8443",
+            ),
+            ("PRESSPODS_PUBLIC_URL", "https://RECIPES.example.com./"),
+        ] {
+            let error = load(&[app, clash]).unwrap_err().to_string();
+            assert!(error.contains(clash.0), "{error}");
+        }
+        let apart = load(&[
+            app,
+            ("OMNI_GATEWAY_PUBLIC_URL", "https://gateway.example.com"),
+            ("PRESSPODS_PUBLIC_URL", "https://pods.example.com"),
+        ]);
+        assert!(apart.is_ok());
     }
 
     #[test]

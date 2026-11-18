@@ -46,7 +46,12 @@ const COMMANDS: &[(&str, &str)] = &[
 
 /// The web crates trunk builds for `wasm32-unknown-unknown`; workspace Clippy only
 /// checks them for the host target.
-const WASM_CRATES: &[&str] = &["omni-web", "omni-web-kit", "omni-web-pages"];
+const WASM_CRATES: &[&str] = &[
+    "omni-web",
+    "omni-web-kit",
+    "omni-web-pages",
+    "omni-recipe-format",
+];
 
 /// Runs `cargo <args>` from the repository root, failing on a non-zero exit.
 fn cargo(args: &[&str]) -> Result<()> {

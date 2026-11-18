@@ -88,6 +88,11 @@ pub fn app_paths(config: &Config, web_dist: PathBuf) -> AppPaths {
         } else {
             PathBuf::from(".local/stylist-private")
         },
+        recipes_dir: if config.dockerized {
+            PathBuf::from("/data/recipes")
+        } else {
+            PathBuf::from(".local/recipes")
+        },
     }
 }
 

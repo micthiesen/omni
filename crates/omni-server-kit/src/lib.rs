@@ -18,6 +18,7 @@ use omni_api::common::ApiErrorBody;
 use serde::de::DeserializeOwned;
 use tower::{Layer, Service};
 
+pub mod host_app;
 pub mod public_host;
 pub mod sse;
 

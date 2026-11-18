@@ -12,7 +12,7 @@ use omni_core::js::encode_uri_component;
 use serde::Deserialize;
 
 use super::html::{extract_domain, extract_title_from_html};
-use super::{ArticleRetriever, RetrieverContext};
+use super::{ArticleRetriever, RetrievedPage, RetrieverContext};
 use crate::error::PressPodsError;
 use crate::formatting::clean_text;
 use crate::public_http::{
@@ -104,6 +104,14 @@ impl ArticleRetriever for WaybackRetriever {
         url: &'a str,
         user_agent: &'a str,
     ) -> BoxFuture<'a, Result<Article, PressPodsError>> {
+        Box::pin(async move { self.retrieve_page(url, user_agent).await?.article })
+    }
+
+    fn retrieve_page<'a>(
+        &'a self,
+        url: &'a str,
+        user_agent: &'a str,
+    ) -> BoxFuture<'a, Result<RetrievedPage, PressPodsError>> {
         Box::pin(async move {
             let availability_url = format!(
                 "{WAYBACK_AVAILABILITY_API}?url={}",
@@ -140,14 +148,19 @@ impl ArticleRetriever for WaybackRetriever {
                 },
             )
             .await?;
-            Ok(Article {
+            let article = clean_text(&html).map(|text| Article {
                 title: extract_title_from_html(&html),
-                text: clean_text(&html)?,
+                text,
                 author: None,
                 domain: extract_domain(url),
                 published_at: parse_wayback_timestamp(&snapshot.timestamp, &self.0.tz),
                 lead_image_url: None,
                 url: url.to_owned(),
+            });
+            Ok(RetrievedPage {
+                html: Some(html),
+                url: snapshot.url,
+                article,
             })
         })
     }

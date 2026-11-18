@@ -554,6 +554,7 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
     let mut paths = app_paths(&config, web_dist.clone());
     // Stylist evidence and archives stay in the throwaway directory too.
     paths.stylist_private = dir.join("stylist-private");
+    paths.recipes_dir = dir.join("recipes");
     let ctx = context_over(&foundation, store, paths);
     let mut subsystems = crate::wiring::wire(&ctx, clock.now_ms()).await?.subsystems;
     let trace = BootTrace::default();

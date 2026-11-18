@@ -35,6 +35,7 @@ omni-core.workspace = true
 omni-device-link.workspace = true
 omni-email.workspace = true
 omni-http.workspace = true
+omni-image.workspace = true
 omni-imap.workspace = true
 omni-ios-controls.workspace = true
 omni-live.workspace = true

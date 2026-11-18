@@ -1,0 +1,87 @@
+name: Verify Recipes LAN boundary
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin_ipv4:
+        description: Current public IPv4 of Boris's existing HTTPS ingress
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  external-denial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Refuse the recipes host from outside, including forged LAN headers
+        env:
+          ORIGIN_IPV4: ${{ inputs.origin_ipv4 }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ipaddress, os, socket
+          address = ipaddress.IPv4Address(os.environ['ORIGIN_IPV4'])
+          assert address.is_global, 'Expected a public IPv4 address'
+          # The name has its own DNS-only record; the proxied wildcard must not answer for it.
+          answers = {info[4][0] for info in socket.getaddrinfo('recipes.syas.ca', 443)}
+          print('recipes.syas.ca resolves to', sorted(answers))
+          assert all(ipaddress.ip_address(a).is_private for a in answers), 'Expected only private addresses'
+          PY
+          # No credentials, no response bodies, no redirects, and TLS errors are never bypassed.
+          # Refused means 403, 404, or no HTTP answer at all (timeout, reset, TLS failure).
+          edge=$(getent ahostsv4 gateway.syas.ca | awk 'NR==1 {print $1}')
+          failed=0
+          for target in "origin:${ORIGIN_IPV4}" "edge:${edge}"; do
+            via=${target%%:*}
+            address=${target#*:}
+            for mode in plain forged; do
+              headers=()
+              if [[ "$mode" == forged ]]; then
+                headers=(-H 'X-Real-IP: 10.10.1.50' -H 'X-Forwarded-For: 10.10.1.50' -H 'CF-Connecting-IP: 10.10.1.50')
+              fi
+              for path in / /sw.js /manifest.webmanifest /api/sync /api/events /img/x/thumb.jpg; do
+                result=0
+                status=$(curl --silent --show-error --max-time 20 \
+                  --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
+                  --resolve "recipes.syas.ca:443:${address}" \
+                  "${headers[@]}" --output /dev/null --write-out '%{http_code}' \
+                  "https://recipes.syas.ca${path}?omni_probe=github_${GITHUB_RUN_ID}_${mode}") || result=$?
+                echo "$via $mode $path: HTTP $status; curl exit $result"
+                case "$result:$status" in
+                  0:403 | 0:404) ;;
+                  0:*) failed=1 ;;
+                  *:000) ;;
+                  *) failed=1 ;;
+                esac
+              done
+            done
+          done
+          exit "$failed"
+      - name: Keep Fond off the public gateway host
+        if: always()
+        shell: bash
+        run: |
+          failed=0
+          for mode in plain forged; do
+            headers=()
+            if [[ "$mode" == forged ]]; then
+              headers=(-H 'X-Real-IP: 10.10.1.50' -H 'X-Forwarded-For: 10.10.1.50' -H 'X-Forwarded-Host: recipes.syas.ca')
+            fi
+            for path in / /sw.js /manifest.webmanifest /api/sync /img/x/thumb.jpg; do
+              result=0
+              status=$(curl --silent --show-error --max-time 20 \
+                --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
+                "${headers[@]}" --output /dev/null --write-out '%{http_code}' \
+                "https://gateway.syas.ca${path}") || result=$?
+              echo "gateway $mode $path: HTTP $status; curl exit $result"
+              case "$result:$status" in
+                0:403 | 0:404) ;;
+                0:*) failed=1 ;;
+                *:000) ;;
+                *) failed=1 ;;
+              esac
+            done
+          done
+          exit "$failed"

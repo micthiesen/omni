@@ -1,0 +1,255 @@
+{
+  "title": "Chicken Piccata",
+  "summary": "Pan-seared cutlets in a lemon, caper and butter pan sauce.",
+  "yield": {
+    "qty": 4,
+    "unit": "servings"
+  },
+  "source": {
+    "kind": "original",
+    "name": "House recipe"
+  },
+  "components": [
+    {
+      "id": "piccata",
+      "ingredients": [
+        {
+          "id": "chicken",
+          "qty": 500,
+          "unit": "g",
+          "name": "boneless, skinless chicken breasts",
+          "prep": "halved horizontally into cutlets"
+        },
+        {
+          "id": "salt",
+          "name": "kosher salt",
+          "toTaste": true
+        },
+        {
+          "id": "pepper",
+          "name": "black pepper",
+          "toTaste": true
+        },
+        {
+          "id": "flour",
+          "qty": 60,
+          "unit": "g",
+          "name": "all-purpose flour",
+          "note": "for dredging",
+          "alt": {
+            "qty": 0.5,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "oil",
+          "qty": 2,
+          "unit": "tbsp",
+          "name": "olive oil"
+        },
+        {
+          "id": "butter",
+          "qty": 4,
+          "unit": "tbsp",
+          "name": "unsalted butter",
+          "prep": "cold"
+        },
+        {
+          "id": "wine",
+          "qty": 120,
+          "unit": "ml",
+          "name": "dry white wine",
+          "alt": {
+            "qty": 0.5,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "stock",
+          "qty": 180,
+          "unit": "ml",
+          "name": "chicken stock",
+          "alt": {
+            "qty": 0.75,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "lemon",
+          "qty": 2,
+          "name": "lemons"
+        },
+        {
+          "id": "capers",
+          "qty": 2,
+          "unit": "tbsp",
+          "name": "capers",
+          "prep": "drained",
+          "optional": true
+        },
+        {
+          "id": "parsley",
+          "qty": 2,
+          "unit": "tbsp",
+          "name": "flat-leaf parsley",
+          "prep": "chopped"
+        }
+      ],
+      "steps": [
+        {
+          "id": "dredge",
+          "action": "season, dredge",
+          "output": "dredged cutlets",
+          "inputs": [
+            {
+              "ref": "chicken"
+            },
+            {
+              "ref": "salt"
+            },
+            {
+              "ref": "pepper"
+            },
+            {
+              "ref": "flour"
+            }
+          ],
+          "time": {
+            "min": 5,
+            "attention": "active"
+          },
+          "text": "Season {chicken} on both sides with {salt} and {pepper}. Dredge in {flour} and shake off the excess."
+        },
+        {
+          "id": "sear",
+          "action": "sear",
+          "output": "seared cutlets",
+          "byproducts": [
+            {
+              "id": "fond",
+              "name": "pan drippings"
+            }
+          ],
+          "inputs": [
+            {
+              "ref": "dredge"
+            },
+            {
+              "ref": "oil"
+            },
+            {
+              "ref": "butter",
+              "qty": 2,
+              "unit": "tbsp"
+            }
+          ],
+          "time": {
+            "min": 6,
+            "max": 8,
+            "attention": "active"
+          },
+          "until": "golden",
+          "equipment": [
+            "12-inch skillet"
+          ],
+          "text": "Heat {oil} and {butter} in a large skillet over medium-high heat until the butter foams. Cook {dredge} until golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat."
+        },
+        {
+          "id": "deglaze",
+          "action": "deglaze",
+          "output": "wine reduction",
+          "inputs": [
+            {
+              "ref": "fond"
+            },
+            {
+              "ref": "wine"
+            }
+          ],
+          "time": {
+            "min": 2,
+            "attention": "active"
+          },
+          "until": "reduced by half",
+          "text": "Pour {wine} into {fond|the hot pan} and scrape up the browned bits. Boil until reduced by half, about {time}."
+        },
+        {
+          "id": "simmer",
+          "action": "simmer",
+          "output": "sauce base",
+          "inputs": [
+            {
+              "ref": "deglaze"
+            },
+            {
+              "ref": "stock"
+            },
+            {
+              "ref": "lemon",
+              "qty": 1,
+              "part": "juice"
+            },
+            {
+              "ref": "capers"
+            }
+          ],
+          "time": {
+            "min": 4,
+            "max": 5,
+            "attention": "active"
+          },
+          "until": "reduced by half",
+          "text": "Add {stock}, {lemon} and {capers} to {deglaze}. Simmer until reduced by about half, {time}."
+        },
+        {
+          "id": "mount",
+          "action": "swirl in",
+          "output": "lemon butter sauce",
+          "inputs": [
+            {
+              "ref": "simmer"
+            },
+            {
+              "ref": "butter",
+              "rest": true
+            },
+            {
+              "ref": "salt"
+            }
+          ],
+          "time": {
+            "min": 1,
+            "attention": "active"
+          },
+          "text": "Take {simmer} off the heat and swirl in {butter} a piece at a time. Taste and adjust with {salt}."
+        },
+        {
+          "id": "serve",
+          "action": "sauce, garnish",
+          "output": "chicken piccata",
+          "inputs": [
+            {
+              "ref": "sear"
+            },
+            {
+              "ref": "mount"
+            },
+            {
+              "ref": "parsley"
+            },
+            {
+              "ref": "lemon",
+              "qty": 1,
+              "prep": "cut into wedges"
+            }
+          ],
+          "time": {
+            "min": 2,
+            "attention": "active"
+          },
+          "text": "Return {sear} to the pan and spoon {mount} over them to warm through, about 1 minute. Scatter with {parsley} and serve with {lemon}."
+        }
+      ]
+    }
+  ]
+}

@@ -179,7 +179,8 @@ pub struct ServeOptions {
     pub web_dist: PathBuf,
 }
 
-/// The fully assembled router (ops routes, every subsystem, SPA fallback).
+/// The fully assembled router (ops routes, every subsystem, SPA fallback),
+/// with every subsystem's host apps dispatched in front of it.
 pub fn app_router(
     ctx: &AppContext,
     subsystems: &mut [Subsystem],
@@ -192,8 +193,10 @@ pub fn app_router(
     let data = DataManager::new(ctx.store.clone(), order_managed(managed));
     let ops = OpsState::new(ctx.clone(), data);
     let mut parts = vec![ops_router(ops.clone())];
+    let mut host_apps = Vec::new();
     for subsystem in subsystems.iter_mut() {
         parts.push(std::mem::take(&mut subsystem.router));
+        host_apps.append(&mut subsystem.host_apps);
     }
     let dist = web_dist
         .join("index.html")
@@ -223,6 +226,9 @@ pub fn app_router(
             omni_server_kit::public_host::only_allowed_paths,
         ));
     }
+    // Outermost: a host app's host reaches that app's own router and nothing
+    // of Omni, and no other host reaches the app.
+    let router = omni_server_kit::host_app::dispatch(router, host_apps);
     (router, ops)
 }
 

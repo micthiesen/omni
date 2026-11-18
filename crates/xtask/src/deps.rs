@@ -30,6 +30,8 @@ struct Dependency {
 const FOUNDATION: &[(&str, &[&str])] = &[
     ("omni-core", &[]),
     ("omni-api", &[]),
+    ("omni-image", &[]),
+    ("omni-recipe-format", &[]),
     ("omni-config", &["omni-core"]),
     ("omni-store", &["omni-core", "omni-config"]),
     ("omni-http", &["omni-core", "omni-config"]),

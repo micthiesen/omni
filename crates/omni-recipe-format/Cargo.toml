@@ -1,0 +1,26 @@
+[package]
+name = "omni-recipe-format"
+description = "Fond's recipe document format: types, validator, list and chart renderers, scaling, edit operations, timeline and search tokeniser. Pure; builds for native and wasm."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# JSON Schema derives for the MCP tool contracts. Off by default so the wasm
+# bundle does not carry schemars.
+schema = ["dep:schemars"]
+
+[dependencies]
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# proptest's default features do not build for wasm32-unknown-unknown.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+proptest.workspace = true
