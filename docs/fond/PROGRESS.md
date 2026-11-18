@@ -14,47 +14,70 @@ Michael's changes to the spec:
 A push to `main` deploys and restarts Omni, which ends the building session. Resume by reading this
 file.
 
-## Status
+## Status: finished
 
-Production runs build 227ddfd (third push: acceptance fixes, parakeet build fix, Michael's three
-feedback items). Livestream intelligence loads its models on that build. Confirmed on production
-with the tools: unscaled amounts are exact (scones show 326 g), no test cook session is open.
+Fond is built, deployed and tested end to end. Production runs build 9d26992 at
+`https://recipes.syas.ca`. Nothing is in progress. A later docs-only push (this file) redeploys the
+same code.
 
-Production browser run on 227ddfd (WebKit, iPhone viewport, through the SOCKS tunnel, cook
-recipe = the throwaway): 19 passed, 1 failed, 1 skipped as a consequence. The failure was a real
-app bug: on a first visit WebKit reports a controller while the first service worker is still
-installing, so the app announced "A new version of Fond is ready", and that notice covered the
-buttons of an open sheet. Fixed in this (fourth) push: first installs are not announced, and
-notices move to the top while a sheet is open; new e2e test for the first visit.
+## Final report (2026-11-18)
 
-Chart screenshots from production (every recipe, recipe view and cook mode, iPhone width) were
-reviewed: horizontal text, full width; piccata, cookies and the lasagne ragù scroll sideways.
+**What shipped**
 
-Known leftover: Chicken Piccata shows one cook dated 2026-11-18 whose log carries the text
-"Adjusted by e2e ...": the session an early test run left open was finished from the app before
-the discard action existed. A finished cook cannot be undone through the tools.
+- `omni-recipe-format`: the recipe document model, validator, list and chart renderers, scaling,
+  edit operations, timeline, search tokeniser (native and wasm).
+- `omni-recipes`: revisions, tags, change log and undo, 30-day trash, images, inbox (pages, text,
+  photos), cook sessions and timers, 21 `recipes_*` tools, the app's HTTP API as a host app,
+  `RecipesBackup` and `RecipesPurge`, `omni recipes-verify` / `recipes-restore`, two MCP events.
+- `omni-recipes-web`: the Fond PWA (library, recipe with Steps and Chart, cook mode, inbox,
+  offline with outbox, service worker).
+- Foundations: host apps in `omni-server-kit`, `omni-image`, the `PageFetcher` port over the
+  PressPods retrievers.
+- Boris: NPM host 51 behind access list 3 with the real-IP override, DNS-only A record,
+  `RECIPES_APP_URL` in compose, `deploy/recipes/route.mjs`, `verify-recipes-boundary.yml`.
+- Michael's feedback after first use: horizontal full-width charts, cancel a cook from the X,
+  change an ingredient's amount from the app (a real revision, tool `app`).
 
-Throwaway `rcp_nnk6nt18` (ZZ Test Flatbread) is ACTIVE right now for the browser run; trash it
-when the run is done.
+**Tests run against production**
 
-## Next (after this deploy restarts the session)
+- Playwright WebKit, iPhone 14 viewport, build 9d26992: 22 of 22 passed (shell, manifest, icons,
+  service worker, first visit, CSP, library with images, scroll restore, search, tag filter, steps
+  and merged-cell chart, wide chart and landscape, every recipe's chart in the recipe view and in
+  cook mode, scaling, notes, original, archive and delete with undo, cook mode cross-off in all
+  three tabs with adjust, timer, reload and finish, discard a cook, amount change in the recipe
+  view, on a scaled page, from cook mode and offline, inbox upload, offline load/read/cook/sync).
+- Agent flows through the MCP tools (first deploy): create from URL, from pasted text, from the
+  four spec documents (text and chart equal to the prototype's goldens), edit with ops, dry runs,
+  stale-revision conflict, replace, revert, history diff, undo and undo conflict, organize, tags,
+  trash and restore, merge, search, scaled get, cook start/update/finish, `resolves`, inbox.
+- Outside probe (run 44309507641): every request for the recipes host from a GitHub runner was
+  refused 403, plain, with forged LAN headers and on the gateway's connection; Fond's paths on
+  `gateway.syas.ca` are 404.
+- Local: `cargo xtask gate` (3,786 tests), `cargo deny`, e2e 29/29 on the mock and the full suite
+  on `omni --preview`.
 
-1. Confirm: `gh run list --limit 2` green, `/api/sync` on `https://recipes.syas.ca` reports the
-   new build.
-2. Full browser suite on production: `ssh -f -N -D 127.0.0.1:18080 boris` (if not running), then
-   `cd crates/omni-recipes-web/e2e && FOND_PROXY=socks5://127.0.0.1:18080
-   FOND_BASE_URL=https://recipes.syas.ca FOND_RECIPE_CHART="Lasagne alla Bolognese"
-   FOND_RECIPE_COOK="ZZ Test Flatbread" FOND_RECIPE_SOURCE="Dad's Mustard Vinaigrette"
-   FOND_RECIPE_AMOUNT="ZZ Test Flatbread" FOND_AMOUNT_INGREDIENT=salt FOND_SHOTS=<dir>
-   npx playwright test fond.spec.js`. All 22 should pass.
-3. Clean up: `recipes_cook_get` (abandon any open test session on the throwaway),
-   `recipes_inbox_list` (discard the uploaded test photo item), trash `rcp_nnk6nt18`
-   (`recipes_organize state trashed`), confirm the seven seeded recipes are active and unchanged
-   (revisions: all 1 except the vinaigrette at 2; Michael may have changed things himself since,
-   which is fine and not to be touched).
-4. Final report in this file and to Michael: what shipped, URL, Home Screen steps, production
-   tests, deviations, the parakeet upstream change (new export not adopted), the Piccata leftover,
-   the SOCKS tunnel, and what only he can check on the phone.
+**Library left in production**: Chicken Piccata `rcp_3ps0548z`, Chocolate Chip Cookies
+`rcp_8ayqek0q`, Lasagne alla Bolognese `rcp_3e2bvg6e`, Chicken Enchiladas `rcp_xr3r1m5h`, Simple
+Scones `rcp_r8kc2s9k`, Classic Homemade Chili `rcp_tw452req`, Dad's Mustard Vinaigrette
+`rcp_vwz7357v`. Trash (purged after 30 days): ZZ Test Flatbread `rcp_nnk6nt18` and its merged
+duplicate. No open cook sessions, empty inbox.
+
+**Known leftovers and things to know**
+
+- Chicken Piccata shows one cook on 2026-11-18 whose log carries "Adjusted by e2e ...": a test
+  session that was finished from the app before discard existed. A finished cook cannot be removed
+  through the tools.
+- The upstream sherpa-onnx parakeet archive was replaced with a re-exported model. The image now
+  copies the model production already runs from `ghcr.io/micthiesen/omni@sha256:f8e2e957...`
+  (per-file SHA-256). Adopting the new export is a separate decision that needs a transcription
+  test.
+- Browser tests from the Mac must go through `ssh -D` (`FOND_PROXY`): Playwright's processes cannot
+  reach the LAN directly.
+- Not verifiable without the phone: Home Screen install and icon, Screen Wake Lock, camera
+  capture in the Inbox, timer sound and the phone alert when a timer ends with the app closed,
+  feel of the charts and sheets on the real device.
+- Not built: Crouton import (by decision). `lettre` was bumped to 0.11.24 and a `deny.toml` ignore
+  added for the `chrono` unmaintained advisory so CI passes.
 
 ## Michael's feedback after using it on the iPhone (2026-11-18 08:49 PT), decided, to build
 
