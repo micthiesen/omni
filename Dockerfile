@@ -2,7 +2,7 @@
 
 # Stage graph (BuildKit builds independent stages in parallel):
 #   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, obscura, silero,
-#              speaker, segmentation, parakeet
+#              speaker, segmentation; parakeet from the previous image
 #   rust:      chef -> planner -> server-build (cook, then workspace build),
 #              or server-prebuilt from CI (SERVER_SOURCE)
 #                             \-> web (cook, then trunk twice: Omni and Fond) -> web-dist
@@ -93,14 +93,25 @@ RUN fetch-verified.sh \
     sherpa-onnx-pyannote-segmentation-3-0/LICENSE \
   && rm /tmp/segmentation.tar.bz2
 
+# The parakeet release asset was replaced upstream (files dated 2026-11-06) with a
+# re-exported model (different encoder, decoder and joiner), so the archive no
+# longer matches the SHA-256 pinned here until then. The model production runs
+# is copied from the last image built from the original archive, pinned by
+# digest (its commit tag keeps it in the registry), and each file is checked.
+# Moving to the new export is a separate change that needs a transcription test.
+FROM ghcr.io/micthiesen/omni@sha256:f8e2e957ed62b2f12f35a33eb3c6b38dce4cb3eeb990b790edf0790e6e70eba5 AS parakeet-source
+
 FROM fetch AS parakeet
-RUN fetch-verified.sh \
-    https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 \
-    5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf \
-    /tmp/parakeet.tar.bz2 \
-  && mkdir -p /models \
-  && tar -xjf /tmp/parakeet.tar.bz2 -C /models \
-  && rm /tmp/parakeet.tar.bz2
+COPY --from=parakeet-source \
+  /app/assets/livestream-intelligence/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
+  /models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+RUN cd /models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
+  && printf '%s  %s\n' \
+    179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e decoder.int8.onnx \
+    acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247 encoder.int8.onnx \
+    3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3 joiner.int8.onnx \
+    d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d tokens.txt \
+    | sha256sum -c -
 
 # --- Rust toolchain with cargo-chef (dependency layers cached separately) ---
 FROM rust:1.97.1-bookworm AS chef
