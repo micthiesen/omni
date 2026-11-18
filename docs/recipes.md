@@ -88,7 +88,7 @@ public URL the caller supplies.
 | `recipes_inbox_resolve` | Mark items discarded or duplicate |
 | `recipes_cook_start` | Start a cook session at a scale |
 | `recipes_cook_get` | Active sessions, one session's state, or a recipe's cook log |
-| `recipes_cook_update` | Append events: check, adjust, note, timer, rebase, finish, dismiss |
+| `recipes_cook_update` | Append events: check, adjust, note, timer, rebase, finish, abandon, dismiss |
 
 Behaviour every tool keeps:
 
@@ -100,6 +100,24 @@ Behaviour every tool keeps:
 - A document that breaks the format is refused with **every** problem at once
   (`[invalid_recipe]`, the text of `Report::refusal_text`); with `dryRun` the
   same list is a normal result (`saved: false`, `problems`).
+- A dry run reports everything the real call would refuse, in that one list:
+  beside the document's problems, each tag the registry lacks (`unknown_tag`
+  at `tags.<name>`, nearest names in the hint) and a source or document that
+  already exists (`duplicate_source` at `source`), unless `createTags` or
+  `allowDuplicate` waives them. `recipes_organize` with `dryRun` previews the
+  change and lists the unknown tags in `problems`.
+- Amounts read exactly as stored at scale 1 (`326 g`, metric decimals to one
+  place). Rounding to something a cook can weigh applies only to scaled
+  amounts, and never to an ingredient with `scales: false`.
+- Results say what changed: an edit or replace echoes the adjustments it
+  closed (`resolved`), an edit's `changes` shows a rename as
+  `~ rename oil → olive_oil`, `recipes_undo` returns the recipes it wrote
+  (`ids`) and, for a content change, the new `revision` and the rendered
+  `text`, `recipes_history` library entries carry up to 20 `recipeIds`, and
+  `recipes_inbox_list` gives the `url` of a page item.
+- Two warnings ask for what a recipe is usually missing: `missing_time` (a
+  step without a time) and `missing_source_url` (a `web` source without its
+  address). Warnings never block a save.
 - Every content write returns the rendered recipe (`text`), so the caller can
   compare it with the source without a second call.
 - Bulk work takes explicit ids. There is no "everything matching".
@@ -151,10 +169,21 @@ the stored source. Inbox kinds are `url`, `text` and `photo`.
   port is `[fetch_failed]`. From the candidates it takes the first schema.org
   `Recipe` JSON-LD object any HTML copy holds (`jsonld.rs`: `@graph`, arrays,
   `HowToStep` and `HowToSection` flattening, ISO 8601 durations, every image
-  shape) and the longest readable text (HTML is converted when no source
-  extracted text). `render: "browser"` prefers the `obscura` copy. The page's
-  lead image is fetched through `ctx.public_http` with a 15 MB cap; its failure
-  never fails the import.
+  shape), looking at the page itself and its browser render before the
+  Wayback copy, and for `text` the longest main-content extraction
+  (readability, postlight) before whole-page text, with leading navigation
+  lines removed (HTML is converted when no source extracted text).
+  `render: "browser"` prefers the `obscura` copy. A candidate that is a bot
+  challenge (titles such as "Just a moment...", "Attention Required" or
+  "Access denied", or challenge and captcha markers in the page) is skipped;
+  when every candidate is a challenge, or none has Recipe data or 500
+  characters of text, the import fails with `[fetch_failed]` and stores no
+  inbox item. Addresses taken from a Wayback copy are unwrapped
+  (`https://web.archive.org/web/<stamp>/<original>` becomes the original) in
+  `structured.images`, the source URL and the lead-image fetch, which falls
+  back to the archived address. The lead image is fetched through
+  `ctx.public_http` with a 15 MB cap; its failure never fails the import, and
+  the result says `imageStored: false` with an `imageReason`.
 - **Text.** The agent passes the original as `sourceText`; it is stored as a
   `text` item already linked to the new recipe.
 - **Photos.** The app uploads one or more photos as one item (`POST
@@ -211,6 +240,12 @@ and notes.
 - A session idle for 18 hours closes itself. It counts as a cook
   (`finished`) when at least half its steps were done, otherwise it is
   `abandoned` with no cook log and no adjustments.
+- `abandon` discards a session: it closes as `abandoned` at once, with no
+  cook counted, no adjustments, no `recipes.cook_finished` and its running
+  timers dropped without an alert. Later events are answered as on any closed
+  session.
+- `recipes_cook_get` with a `recipeId` lists each cook with the notes taken
+  during it (`notes`) as well as the finish note.
 - `rebase` moves a session to a newer revision; state carries over by id.
 - A finished session refuses an agent's events with `[session_closed]`. The
   app's late events are dropped instead, because its outbox cannot send them

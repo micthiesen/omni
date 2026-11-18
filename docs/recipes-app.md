@@ -101,6 +101,18 @@ photo is uploaded under its stored blob name as the upload id, so a retry
 stores it once.
 Timers are end times in the log; the app rings (Web Audio and vibration)
 while it is in front, and Omni's own alert covers the rest.
+The Finish sheet also offers "Discard this cook", which asks once more and
+then appends an `abandon` event: the session leaves "Cooking now", nothing is
+logged and the recipe's cook count is unchanged.
+
+**Chart labels.** A step cell spanning three or more rows sets its label
+vertically, as whole-word columns (`logic::label_columns`): one column when
+the cell is tall enough, up to three otherwise, each a `nowrap` box so no
+text can be cut, and a label needing more reads horizontally. On a wide
+viewport (landscape, or at least 700 px) a chart block lies flat, with every
+label horizontal, unless that makes the block wider than the space it has.
+On a short landscape screen Cook moves into the top bar so it never covers
+the chart.
 
 **Images.** `/img/*` and `/src/*` are immutable and cached by the service
 worker, cache-first, in `fond-img-v1`. After each sync the page asks the
@@ -173,8 +185,10 @@ memory, seeded with the four golden recipes of `omni-recipe-format`, and has
 
 The browser tests run in WebKit at iPhone size and cover the library, search,
 the tag filter, both recipe views (asserting `rowspan`/`colspan` and that
-every chart table is tiled), scaling, notes, archive and delete with undo,
-cook mode in all three tabs with adjust, timer, reload and finish, the inbox
+every chart table is tiled, and
+that no step label is cut, upright or in landscape), scaling, notes, archive
+and delete with undo, cook mode in all three tabs with adjust, timer, reload
+and finish, discarding a cook, the inbox
 upload, the manifest and icons, and the app offline with writes sent on
 reconnect. `mock-only.spec.js` adds what needs the mock (it runs when
 `FOND_DIST` names the served dist directory): the update flow, a recipe revised

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::format::{fmt_amount, fmt_factor, fmt_time, inflect};
+use crate::format::{fmt_amount, fmt_amount_at, fmt_factor, fmt_time, inflect};
 use crate::index::{Index, Kind};
 use crate::model::{Component, Id, Ingredient, RecipeDoc};
 use crate::text::{Segment, render_step_segments};
@@ -18,6 +18,10 @@ pub struct ListView {
     pub summary: Option<String>,
     /// "Makes 6 servings".
     pub makes: String,
+    /// "Make ahead: keeps 1 week in the fridge", for a recipe of one
+    /// component; with several, each group carries its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub make_ahead: Option<String>,
     /// The scale as shown, "1.5", when it is not 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scaled: Option<String>,
@@ -109,13 +113,35 @@ pub fn ingredient_line(ix: &Index<'_>, ingredient: &Ingredient, factor: f64) -> 
     let factor = if ingredient.scales { factor } else { 1.0 };
     let unit = ingredient.unit.as_deref();
     let qty = ingredient.qty.map(|qty| qty * factor);
-    let mut line = format!("{} ", fmt_amount(qty, unit));
-    if let Some(alt) = &ingredient.alt {
-        let amount = fmt_amount(Some(alt.qty * factor), Some(&alt.unit));
-        line.push_str(&format!("({amount}) "));
-    }
-    line.push_str(&inflect(&ingredient.name, qty, unit, ingredient));
-    let mut line = line.trim().to_owned();
+    // An amount as stored reads exactly; only a scaled one is rounded.
+    #[allow(clippy::float_cmp)]
+    let exact = factor == 1.0;
+    let name = inflect(&ingredient.name, qty, unit, ingredient);
+    let alt = ingredient.alt.as_ref().map(|alt| {
+        format!(
+            "({})",
+            fmt_amount_at(Some(alt.qty * factor), Some(&alt.unit), exact)
+        )
+    });
+    let amount = fmt_amount_at(qty, unit, exact);
+    // A measure reads "60 g (½ cup) flour"; a plain count reads
+    // "1 yellow onion (290 g)".
+    let parts: Vec<String> = if unit.is_some_and(|unit| !unit.is_empty()) {
+        [Some(amount), alt, Some(name)]
+            .into_iter()
+            .flatten()
+            .collect()
+    } else {
+        [Some(amount), Some(name), alt]
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let mut line = parts
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     if let Some(prep) = ingredient.prep.as_deref().filter(|prep| !prep.is_empty()) {
         line.push_str(&format!(", {prep}"));
     }
@@ -199,6 +225,10 @@ pub fn list_view(doc: &RecipeDoc, factor: f64) -> ListView {
     ListView {
         title: doc.title.clone(),
         summary: doc.summary.clone().filter(|summary| !summary.is_empty()),
+        make_ahead: match doc.components.as_slice() {
+            [only] => make_ahead_note(only).map(|note| crate::py::capitalize(&note)),
+            _ => None,
+        },
         makes: format!("Makes {made} {}", doc.r#yield.unit),
         #[allow(clippy::float_cmp)]
         scaled: (factor != 1.0).then(|| fmt_factor(factor)),
@@ -221,12 +251,9 @@ pub fn render_list(doc: &RecipeDoc, factor: f64) -> String {
     if let Some(summary) = &view.summary {
         out.extend([summary.clone(), String::new()]);
     }
-    out.extend([
-        view.meta(),
-        String::new(),
-        "## Ingredients".to_owned(),
-        String::new(),
-    ]);
+    out.push(view.meta());
+    out.extend(view.make_ahead.clone());
+    out.extend([String::new(), "## Ingredients".to_owned(), String::new()]);
     for group in &view.groups {
         if let Some(heading) = &group.heading {
             let note = match &group.make_ahead {

@@ -392,6 +392,7 @@ pub fn CookPage(id: String) -> impl IntoView {
     let target = RwSignal::new(None::<Target>);
     let adjusting = RwSignal::new(false);
     let finishing = RwSignal::new(false);
+    let discarding = RwSignal::new(false);
     let showing_original = RwSignal::new(None::<String>);
     let adjust_area = NodeRef::<html::Textarea>::new();
     let finish_note = NodeRef::<html::Input>::new();
@@ -465,6 +466,14 @@ pub fn CookPage(id: String) -> impl IntoView {
             replace(store, after);
             store.show_toast("Cook logged", None);
         });
+    };
+    let discard = move |_| {
+        let after = recipe_route();
+        send(CookEventKind::Abandon {});
+        discarding.set(false);
+        finishing.set(false);
+        replace(store, after);
+        store.show_toast("Cook discarded", None);
     };
 
     view! {
@@ -635,6 +644,22 @@ pub fn CookPage(id: String) -> impl IntoView {
                 <button class="btn primary" data-testid="finish-confirm" disabled=move || busy.get() on:click=finish>
                     "Finish"
                 </button>
+            </div>
+            <div class="discard">
+                <Show
+                    when=move || discarding.get()
+                    fallback=move || view! {
+                        <button class="btn ghost small" data-testid="discard" on:click=move |_| discarding.set(true)>
+                            "Discard this cook"
+                        </button>
+                    }
+                >
+                    <p class="muted">"Nothing from this cook is kept, and it does not count as cooked."</p>
+                    <div class="sheet-actions">
+                        <button class="btn" on:click=move |_| discarding.set(false)>"Keep cooking"</button>
+                        <button class="btn danger" data-testid="discard-confirm" on:click=discard>"Discard"</button>
+                    </div>
+                </Show>
             </div>
         </Sheet>
     }

@@ -532,6 +532,10 @@ class State:
                 if kind == "finish":
                     self.finish(session, event["at"])
                     library = True
+                elif kind == "abandon":
+                    # Discarded: closed at once, no cook, no adjustments.
+                    session["state"] = "abandoned"
+                    session["finishedAt"] = event["at"]
                 elif kind == "dismissAdjustment":
                     library = self.dismiss(session, event.get("id")) or library
                 elif kind == "rebase" and is_int(event.get("revision")):

@@ -91,7 +91,7 @@ async fn unknown_tags_are_refused_with_the_nearest_names() {
     assert_eq!(italian["count"], 1);
     assert_eq!(guide["library"]["active"], 1);
     assert_eq!(guide["library"]["neverCooked"], 1);
-    assert_eq!(guide["version"], "1");
+    assert_eq!(guide["version"], "2");
 
     let organize = h
         .err(

@@ -69,8 +69,24 @@ fn present(unit: Option<&str>) -> Option<&str> {
 }
 
 /// A quantity for display: plain rounding for metric units (`270`), vulgar
-/// fractions for spoons, cups and counts (`1⅛`).
+/// fractions for spoons, cups and counts (`1⅛`). This is the form for a
+/// scaled amount; an amount as stored reads through [`fmt_number_exact`].
 pub fn fmt_number(x: f64, unit: Option<&str>) -> String {
+    fmt_number_at(x, unit, false)
+}
+
+/// A stored quantity for display, never rounded away from what was written:
+/// a metric amount keeps its integer (`326`) and at most one decimal place.
+pub fn fmt_number_exact(x: f64, unit: Option<&str>) -> String {
+    fmt_number_at(x, unit, true)
+}
+
+/// [`fmt_number_exact`] when `exact` (the amount is as stored: scale 1, or an
+/// ingredient that does not scale), otherwise [`fmt_number`].
+pub fn fmt_number_at(x: f64, unit: Option<&str>, exact: bool) -> String {
+    if unit.is_some_and(is_metric) && exact {
+        return py::fmt_g(py::round1(x));
+    }
     if unit.is_some_and(is_metric) {
         let rounded = if x >= 100.0 {
             (x / 5.0).round_ties_even() * 5.0
@@ -126,12 +142,25 @@ pub fn fmt_unit(qty: f64, unit: Option<&str>) -> String {
     }
 }
 
-/// `2 tbsp`, `1½ cups`, `3`, or nothing for an unmeasured amount.
+/// `2 tbsp`, `1½ cups`, `3`, or nothing for an unmeasured amount. Rounded as
+/// a scaled amount is; see [`fmt_amount_at`].
 pub fn fmt_amount(qty: Option<f64>, unit: Option<&str>) -> String {
+    fmt_amount_at(qty, unit, false)
+}
+
+/// An amount as stored, never rounded away from what was written.
+pub fn fmt_amount_exact(qty: Option<f64>, unit: Option<&str>) -> String {
+    fmt_amount_at(qty, unit, true)
+}
+
+/// An amount for display. `exact` says the amount is as stored (scale 1, or
+/// an ingredient that does not scale) and must read exactly so; a scaled
+/// metric amount is rounded to a number a cook can weigh.
+pub fn fmt_amount_at(qty: Option<f64>, unit: Option<&str>, exact: bool) -> String {
     let Some(qty) = qty else {
         return String::new();
     };
-    let number = fmt_number(qty, unit);
+    let number = fmt_number_at(qty, unit, exact);
     let unit = fmt_unit(qty, unit);
     if unit.is_empty() {
         number

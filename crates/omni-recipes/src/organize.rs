@@ -151,6 +151,7 @@ fn organize_tx(
             changed,
             unchanged: u32::try_from(ids.len()).unwrap_or(u32::MAX) - changed,
             results,
+            problems: None,
         },
     ))
 }
@@ -373,7 +374,15 @@ fn overlaps(a: &Value, b: &Value) -> bool {
     })
 }
 
-fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(String, u64, u32)> {
+struct Undone {
+    undo: String,
+    seq: u64,
+    restored: u32,
+    ids: Vec<String>,
+    content: Option<(u32, String)>,
+}
+
+fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<Undone> {
     let change = rusqlite::OptionalExtension::optional(conn.query_row(
         &format!("SELECT {CHANGE_COLUMNS} FROM recipes_change WHERE id = ?1"),
         params![change_id],
@@ -420,6 +429,8 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
     }
     let seq = next_seq(conn)?;
     let summary = format!("Undo: {}", change.summary);
+    let mut wrote: Vec<String> = Vec::new();
+    let mut content: Option<(u32, String)> = None;
     let (kind, touched, before, mut after, restored) = match change.kind.as_str() {
         "create" => {
             let id = change
@@ -433,6 +444,7 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
             crate::organize::set_state(conn, &id, "trashed", now)?;
             db::touch(conn, &id, seq, now)?;
             let after = json!({ "recipes": meta::recipes_facets(conn, &ids, &[STATE])? });
+            wrote.push(id.clone());
             ("meta", json!({ id: [STATE] }), before, after, 1)
         }
         "content" => {
@@ -497,6 +509,11 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
                 )
                 .map_err(sql)?;
             }
+            wrote.push(id.clone());
+            content = Some((
+                revision,
+                omni_recipe_format::render_list(&doc_at(conn, &id, revision)?, 1.0),
+            ));
             (
                 "content",
                 json!({ id.clone(): ["content"] }),
@@ -520,6 +537,7 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
             let restored = written
                 .len()
                 .max(usize::from(change.before.get(REGISTRY).is_some()));
+            wrote = written;
             (
                 "meta",
                 change.touched.clone(),
@@ -558,12 +576,29 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
         )
         .map_err(sql)?;
     }
-    Ok((undo, seq, restored))
+    Ok(Undone {
+        undo,
+        seq,
+        restored,
+        ids: wrote,
+        content,
+    })
 }
 
 impl Recipes {
     pub async fn organize(&self, input: OrganizeInput, actor: Actor) -> R<OrganizeOutput> {
         let dry = input.dry_run.unwrap_or(false);
+        // A dry run reports the tags the real call would refuse as problems,
+        // and previews the rest as if they were registered.
+        let mut input = input;
+        let mut problems = Vec::new();
+        if dry && !input.create_tags.unwrap_or(false) {
+            let add = tags::names(input.add_tags.as_deref().unwrap_or_default())?;
+            problems = self.query(move |conn| tags::problems(conn, &add)).await?;
+            if !problems.is_empty() {
+                input.create_tags = Some(true);
+            }
+        }
         let (change, seq, mut output) = self
             .transact(dry, move |conn, now| organize_tx(conn, now, &input, &actor))
             .await?;
@@ -571,6 +606,7 @@ impl Recipes {
             output.change_id = change;
             self.hub.library(seq);
         }
+        output.problems = (!problems.is_empty()).then_some(problems);
         Ok(output)
     }
 
@@ -589,19 +625,24 @@ impl Recipes {
     pub async fn undo(&self, input: UndoInput, actor: Actor) -> R<UndoOutput> {
         let dry = input.dry_run.unwrap_or(false);
         let change_id = input.change_id.clone();
-        let (undo, seq, restored) = self
+        let done = self
             .transact(dry, move |conn, now| {
                 undo_tx(conn, now, &input.change_id, &actor)
             })
             .await?;
         if !dry {
-            self.hub.library(seq);
+            self.hub.library(done.seq);
         }
+        let (revision, text) = done.content.unzip();
         Ok(UndoOutput {
             undone: !dry,
             change_id,
-            restored,
-            undo_change_id: (!dry).then_some(undo),
+            restored: done.restored,
+            undo_change_id: (!dry).then_some(done.undo),
+            ids: done.ids,
+            // A dry run wrote no revision to report.
+            revision: revision.filter(|_| !dry),
+            text,
         })
     }
 }

@@ -542,6 +542,27 @@ fn order_change(label: &str, old: &[String], new: &[String], out: &mut Vec<Strin
     }
 }
 
+/// [`diff_summary`] for an edit whose operations are known: an id the edit
+/// renamed shows as one `~ rename old → new` line instead of a removal and an
+/// addition, and the fields of the renamed thing are compared across the
+/// rename.
+pub fn diff_summary_with_ops(old: &RecipeDoc, new: &RecipeDoc, ops: &[Op]) -> Vec<String> {
+    let mut renamed = old.clone();
+    let mut lines = Vec::new();
+    for op in ops {
+        if let Op::Rename { target, to } = op {
+            // Only a rename of something the old revision had; an id added
+            // and renamed within one edit is simply an addition.
+            if let Ok(next) = apply_ops(&renamed, std::slice::from_ref(op)) {
+                renamed = next;
+                lines.push(format!("~ rename {target} → {to}"));
+            }
+        }
+    }
+    lines.extend(diff_summary(&renamed, new));
+    lines
+}
+
 /// The change list between two revisions, addressed by id: `title: … → …`
 /// for the header, `− kind id` and `+ kind id` for removed and added nodes,
 /// `~ id.field: old → new` for changed fields, `~ id: moved from a to b` for

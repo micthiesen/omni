@@ -293,6 +293,28 @@ img {
   background: none;
 }
 
+.btn.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.discard {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding-top: 4px;
+}
+
+.discard .sheet-actions {
+  width: 100%;
+}
+
+.make-ahead {
+  color: var(--muted);
+  font-size: 15px;
+}
+
 .btn.big {
   width: 100%;
   min-height: 54px;
@@ -1261,14 +1283,42 @@ body:has(.cta) .stack {
 
 .chart td.vertical {
   min-width: 0;
+  max-width: none;
   padding: 8px 5px;
 }
 
-.chart td.vertical span {
-  display: inline-block;
-  max-inline-size: calc(var(--rows) * 2.2rem);
+/* One nowrap box per column of whole words: the cell is sized by boxes it can
+   measure, so a label can never be cut. */
+.chart td.vertical .cols {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.chart td.vertical .cols span {
   writing-mode: vertical-rl;
+  white-space: nowrap;
   transform: rotate(180deg);
+}
+
+/* A block with room to spare reads flat: every label horizontal. */
+.chart-block.flat .chart td.step {
+  max-width: 11rem;
+}
+
+.chart-block.flat .chart td.vertical {
+  min-width: 4.4rem;
+  padding: 7px 8px;
+}
+
+.chart-block.flat .chart td.vertical .cols {
+  display: inline;
+}
+
+.chart-block.flat .chart td.vertical .cols span {
+  writing-mode: horizontal-tb;
+  white-space: normal;
+  transform: none;
 }
 
 .chart td.setup {
@@ -1665,16 +1715,27 @@ body:has(.cta) .stack {
     height: 62dvh;
   }
 
-  /* A short screen keeps its height for the chart: Cook floats in a corner. */
+  /* A short screen keeps its height for the chart: Cook sits in the middle of
+     the top bar, where it covers nothing. */
   .cta {
-    left: auto;
-    padding-top: 0;
+    top: var(--safe-t);
+    bottom: auto;
+    z-index: 21;
+    padding-top: 4px;
+    padding-bottom: 4px;
     background: none;
+    pointer-events: none;
   }
 
   .cta .btn.big {
-    width: auto;
-    min-height: 46px;
-    padding: 0 34px;
+    width: max-content;
+    min-height: 44px;
+    padding: 0 28px;
+    box-shadow: none;
+    pointer-events: auto;
+  }
+
+  .recipe .body {
+    padding-bottom: 32px;
   }
 }

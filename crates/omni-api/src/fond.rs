@@ -364,6 +364,9 @@ pub enum CookEventKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
+    /// Discards the session: it closes as abandoned at once, counts as no
+    /// cook, leaves no adjustments and drops its timers.
+    Abandon {},
     /// Closes an open adjustment record; valid on a finished session too.
     DismissAdjustment {
         id: String,

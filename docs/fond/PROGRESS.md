@@ -16,45 +16,57 @@ file.
 
 ## Status
 
-Everything is built, reviewed and passing locally. The first push (this commit) deploys it.
-Production has not been verified yet.
+Deployed and verified in production at build 8f521e6 (first deploy). A second push (this commit)
+carries the fixes from the production acceptance run.
 
-| Piece | State |
-|---|---|
-| `omni-recipe-format` | done; goldens byte-identical to the prototype, property tests |
-| Host dispatch, `RECIPES_APP_URL`, `omni-image`, `PageFetcher` port | done |
-| `omni-recipes`: 14 tables + FTS5, 21 tools, cook sessions, HTTP API, events, tasks, CLI | done |
-| `omni-recipes-web` PWA, second trunk bundle in the Dockerfile and CI | done; the Docker web stage is first built by CI on this push (no Docker on the Mac) |
-| Review (data integrity, security, spec conformance) and fixes | done |
-| Local verification | `cargo xtask gate` ok (3,768 tests), `cargo deny --locked check` ok, Playwright WebKit iPhone suite 15/15 against `omni --preview` (real server), 22/22 against the mock |
-| Boris: NPM host 51 `recipes.syas.ca` (access list 3, real-IP override), DNS-only A record, `RECIPES_APP_URL` in compose (applies at this deploy) | done |
-| Production: deploy check, seed recipes, browser tests, outside boundary probe | NEXT |
+Done against production (first deploy):
 
-## Next (after the deploy restarts the session)
+- `https://recipes.syas.ca` serves Fond; other Omni paths there are 404; Fond's paths are 404 on
+  `omni.syas.ca` and `gateway.syas.ca`; a foreign-Origin POST is 403.
+- Outside probe `verify-recipes-boundary.yml` run 44309507641: every request for the recipes host
+  from a GitHub runner was refused 403 (plain, forged LAN headers, and on the gateway's
+  connection); Fond's paths on the gateway host are 404.
+- Seeded through the MCP tools by a fresh agent: Chicken Piccata `rcp_3ps0548z`, Chocolate Chip
+  Cookies `rcp_8ayqek0q`, Lasagne alla Bolognese `rcp_3e2bvg6e`, Chicken Enchiladas `rcp_xr3r1m5h`
+  (the four spec recipes, text and chart equal to the goldens), Simple Scones `rcp_r8kc2s9k` and
+  Classic Homemade Chili `rcp_tw452req` (URL imports), Dad's Mustard Vinaigrette `rcp_vwz7357v`
+  (pasted text). Six have cover photos. 22 tags. Throwaways in the trash: ZZ Test Flatbread
+  `rcp_nnk6nt18` (and its merged duplicate `rcp_47v2svf8`).
+- Agent flows on production: dry-run create with all problems at once, edit with ops, dry-run
+  edit, stale revision conflict, replace, revert, history diff, undo and undo conflict, organize,
+  unknown-tag refusal, archive, trash, restore, search filters and sorts, scaled get, merge with
+  redirect and `[merged]`, cook start/update/finish, `resolves`, inbox resolve.
+- Playwright WebKit, iPhone viewport, against production: 13 passed (shell/manifest/service
+  worker, CSP, library with images, scroll restore, search, tag filter, steps and merged-cell
+  chart, wide chart and landscape, scaling, notes, original, archive/delete with undo, offline).
+  Cook mode ran through cross-off, adjust and timer but stopped before Finish; inbox upload not
+  run. Playwright's processes cannot reach the LAN from the Mac, so the run goes through
+  `ssh -f -N -D 127.0.0.1:18080 boris` with `FOND_PROXY=socks5://127.0.0.1:18080`.
 
-1. Confirm the deploy: `gh run list --limit 3` (CI green; if the Docker web stage failed, fix and push
-   again), build sha at `http://omni.boris/api/snapshot`, `ssh boris docker logs --tail 100 omni`
-   (no recipes errors; `/data/recipes` created), `tasks_list` shows `RecipesBackup` and
-   `RecipesPurge`.
-2. Check the host: `https://recipes.syas.ca/` serves Fond (not the Omni UI), `/api/sync` answers,
-   `/gateway/mcp` there is 404; `https://omni.syas.ca/api/sync` is 404; gateway host paths 404.
-3. Seed through the MCP tools from a fresh client (`claude -p`, since this session's tool list is
-   stale after a deploy): read `recipes_guide`, create the tags, then the four spec recipes
-   (`crates/omni-recipe-format/tests/golden/*.json`: chicken piccata, chocolate chip cookies,
-   lasagne alla bolognese, chicken enchiladas) with `recipes_create`, add a cover image to at least
-   two with `recipes_images_edit`, and import one real recipe from a URL with `recipes_import_url`
-   + `recipes_create({fromInbox})`. Also exercise against production: an edit with ops, a dry run, a
-   stale-revision conflict, undo, trash and restore (on a throwaway recipe, left trashed or
-   restored and then trashed again). Leave the seeded recipes in place.
-4. Browser tests against production (WebKit, iPhone viewport):
-   `cd crates/omni-recipes-web/e2e && npm ci && FOND_BASE_URL=https://recipes.syas.ca
-   FOND_E2E_SKIP_FINISH=1 FOND_E2E_SKIP_INBOX=1 FOND_RECIPE_CHART="Lasagne alla Bolognese"
-   FOND_RECIPE_COOK="Chicken Piccata" npx playwright test fond.spec.js`. Decide per test whether
-   finish and inbox can run against production with cleanup (a finished cook stays in history; an
-   uploaded photo can be discarded with `recipes_inbox_resolve`).
-5. Outside probe: `gh workflow run verify-recipes-boundary.yml -f origin_ipv4=<Boris public IPv4>`
-   and confirm every probe is refused or 404.
-6. Write the final report here and reply to Michael (what shipped, URL, Home Screen steps, tests
+Second push contents: exact amounts at scale 1 (326 g no longer shows as 325 g), bot-challenge
+pages refused on import, `makeAhead` shown for single-component recipes, dry runs report unknown
+tags and duplicate sources, Wayback URLs unwrapped and `imageReason`, better import text and tag
+suggestions, richer undo/edit/history results, a discard action for cook sessions (`abandon`),
+chart label and landscape fixes, guide version 2. Local: gate ok (3,779 tests), deny ok, e2e 16/16
+against `omni --preview`, 23/23 against the mock.
+
+## Next (after the second deploy restarts the session)
+
+1. Confirm: `gh run list --limit 2` green, `/api/sync` on `https://recipes.syas.ca` reports the new
+   build, logs clean.
+2. Check the fixes on production with the tools: `recipes_get rcp_r8kc2s9k view text` shows 326 g
+   and 113 g; `recipes_guide` reports version 2.
+3. Discard the test cook session left open on Chicken Piccata (`recipes_cook_get` with no
+   arguments lists active sessions; `recipes_cook_update` with `{type: "abandon"}` on each).
+4. Full browser suite on production, including cook finish, discard and inbox upload, on the
+   throwaway: restore it (`recipes_organize ids [rcp_nnk6nt18] state active`), open the tunnel, then
+   `cd crates/omni-recipes-web/e2e && FOND_PROXY=socks5://127.0.0.1:18080
+   FOND_BASE_URL=https://recipes.syas.ca FOND_RECIPE_CHART="Lasagne alla Bolognese"
+   FOND_RECIPE_COOK="ZZ Test Flatbread" FOND_RECIPE_SOURCE="Dad's Mustard Vinaigrette"
+   FOND_SHOTS=<dir> npx playwright test fond.spec.js`. Afterwards: discard the uploaded inbox
+   item (`recipes_inbox_list`, `recipes_inbox_resolve`), abandon any open session, trash the
+   throwaway again, and confirm the seven seeded recipes are active with cook count 0.
+5. Write the final report here and reply to Michael (what shipped, URL, Home Screen steps, tests
    run against production, deviations, what only he can check on the phone).
 
 ## Decisions and deviations
@@ -88,6 +100,10 @@ Production has not been verified yet.
 - App: the Archived switch adds archived recipes (badged) to the grid; bold in step text covers
   the whole ingredient reference; the "meanwhile" strip reads "While «label» runs:" with step
   chips; "Dismiss" on a "Last time" callout is an addition.
+- Cook sessions can be discarded (`abandon` event, "Discard this cook" in the app): the spec had
+  only finish and the 18-hour idle close.
+- Unscaled amounts render exactly as stored; the prototype's metric rounding applies only to
+  scaled amounts.
 - Unrelated upkeep needed for CI: `lettre` 0.11.23 to 0.11.24 (six new SMTP advisories) and a
   documented `deny.toml` ignore for the `chrono` unmaintained advisory.
 

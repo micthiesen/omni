@@ -419,3 +419,32 @@ fn a_source_url_must_be_a_web_address() {
         }
     }
 }
+
+#[test]
+fn a_step_without_a_time_and_a_web_source_without_a_url_warn() {
+    let mut doc = piccata();
+    assert_eq!(validate(&doc).warnings, []);
+    step_mut(&mut doc, "mount").time = None;
+    doc.source.kind = omni_recipe_format::SourceKind::Web;
+    let report = validate(&doc);
+    assert!(report.is_valid(), "warnings never block a save");
+    assert_eq!(
+        line(&report, Code::MissingTime),
+        "steps.mount.time: [missing_time] step \"mount\" has no time Hint: give every step a time and an attention (active or passive); the totals and the timeline leave it out"
+    );
+    assert_eq!(
+        line(&report, Code::MissingSourceUrl),
+        "source.url: [missing_source_url] a web source has no url Hint: set source.url to the page's address, so the original stays one tap away and duplicates are found"
+    );
+    doc.source.url = Some("https://example.com/piccata".to_owned());
+    assert_eq!(validate(&doc).warnings.len(), 1);
+    // The sample recipes time every step.
+    for sample in [
+        include_str!("golden/chocolate-chip-cookies.json"),
+        include_str!("golden/lasagne-bolognese.json"),
+        include_str!("golden/enchiladas.json"),
+    ] {
+        let doc: RecipeDoc = serde_json::from_str(sample).unwrap();
+        assert_eq!(validate(&doc).warnings, []);
+    }
+}

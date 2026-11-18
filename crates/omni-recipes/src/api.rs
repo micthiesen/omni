@@ -444,6 +444,8 @@ pub struct ChangeInfo {
     pub summary: String,
     /// How many recipes it touched.
     pub recipes: u32,
+    /// Their ids, the first 20.
+    pub recipe_ids: Vec<String>,
     pub undone: bool,
 }
 
@@ -588,6 +590,9 @@ pub struct WriteOutput {
     pub problems: Option<Vec<Problem>>,
     /// One line per change, addressed by id.
     pub changes: Vec<String>,
+    /// The adjustments this write closed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved: Vec<String>,
     pub warnings: Vec<Problem>,
     /// Only from recipes_replace.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -663,6 +668,9 @@ pub struct OrganizeOutput {
     pub changed: u32,
     pub unchanged: u32,
     pub results: Vec<OrganizeResult>,
+    /// Only on a dry run that would be refused: tags the registry lacks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problems: Option<Vec<Problem>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -768,6 +776,14 @@ pub struct UndoOutput {
     /// The change that records this undo; undo it to redo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub undo_change_id: Option<String>,
+    /// The recipes the undo wrote.
+    pub ids: Vec<String>,
+    /// For an undone edit, replace or revert: the recipe's newest revision
+    /// and the recipe as it reads now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -917,6 +933,9 @@ pub struct ImportUrlOutput {
     pub next_offset: Option<u32>,
     /// Whether the page's lead image was stored; recipes_create adopts it.
     pub image_stored: bool,
+    /// Why the lead image was not stored, when it was not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_reason: Option<String>,
     /// Recipes that already have this source URL.
     pub duplicate_of: Vec<RecipeRef>,
 }
@@ -984,6 +1003,9 @@ pub struct InboxItemInfo {
     pub state: InboxState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recipe_id: Option<String>,
+    /// Where a `url` item was read from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -1174,8 +1196,12 @@ pub struct CookLogEntry {
     pub session_id: String,
     pub on: String,
     pub scale: f64,
+    /// The note given when finishing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Notes taken during the cook, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     pub adjustments: Vec<SessionAdjustment>,
 }
 
@@ -1243,6 +1269,8 @@ pub enum CookEventInput {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
+    /// Discards the session: no cook is counted and no adjustments are kept.
+    Abandon {},
     /// Closes an open adjustment record; valid on a finished session too.
     DismissAdjustment {
         id: String,

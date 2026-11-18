@@ -3,7 +3,7 @@
 //! filters. The agent's query never reaches FTS as written: it is cut into
 //! folded words, so no input can produce FTS syntax.
 
-use omni_recipe_format::format::fmt_amount;
+use omni_recipe_format::format::fmt_amount_exact;
 use omni_recipe_format::tokens;
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, params_from_iter};
@@ -239,7 +239,7 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
             state: state_of(&row),
             r#yield: format!(
                 "{} {}",
-                fmt_amount(Some(doc.r#yield.qty), None),
+                fmt_amount_exact(Some(doc.r#yield.qty), None),
                 doc.r#yield.unit
             ),
             active_min: row.active_min,

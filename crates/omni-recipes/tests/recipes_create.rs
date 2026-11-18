@@ -269,7 +269,10 @@ async fn the_browser_render_is_preferred_when_asked_for() {
     h.pages.serve(vec![FetchedPage {
         source: "fetch".to_owned(),
         url: PAGE_URL.to_owned(),
-        html: Some("<html><body><h1>Toast</h1><p>Toast the <b>bread</b>.</p><script>var x = 1;</script></body></html>".to_owned()),
+        html: Some(format!(
+            "<html><body><h1>Toast</h1><p>Toast the <b>bread</b>.</p><p>{}</p><script>var x = 1;</script></body></html>",
+            "Butter it while it is hot and eat it at once. ".repeat(15)
+        )),
         ..FetchedPage::default()
     }]);
     let plain = h.ok("recipes_import_url", json!({ "url": PAGE_URL })).await;

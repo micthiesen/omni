@@ -450,6 +450,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         <h1>{recipe.title.clone()}</h1>
                         {header.summary.clone().map(|summary| view! { <p class="summary">{summary}</p> })}
                         <p class="meta">{header.time.clone()}</p>
+                        {header.make_ahead.clone().map(|note| view! { <p class="make-ahead" data-testid="make-ahead">{note}</p> })}
                         {archived.then(|| view! { <p class="badge inline">"Archived"</p> })}
                         <p class="tags">
                             {rec.tags.iter().map(|tag| view! { <span class="tag">{tag.clone()}</span> }).collect_view()}

@@ -149,6 +149,7 @@ impl Item {
             files,
             state: self.state(),
             recipe_id: self.recipe_id.clone(),
+            url: self.url(),
         }
     }
 }
@@ -363,87 +364,235 @@ struct Chosen {
     title: Option<String>,
     structured: Option<Structured>,
     text: String,
-    image_url: Option<String>,
+    /// Image URLs to try in order: the original first, then an archived copy.
+    image_urls: Vec<String>,
 }
 
-/// Picks what to keep from the page candidates: the first Recipe object any
-/// HTML copy holds and the longest readable text. `Render::Browser` puts the
-/// browser-rendered copy first for both.
-fn choose(url: &str, mut pages: Vec<FetchedPage>, render: Render) -> Chosen {
-    if render == Render::Browser {
-        pages.sort_by_key(|page| page.source != "obscura");
-    }
-    let mut structured = None;
-    let mut structured_from = None;
-    for page in &pages {
-        if let Some(html) = &page.html
-            && let Some(found) = jsonld::recipe(html)
-        {
-            structured = Some(found);
-            structured_from = Some(page);
-            break;
+/// Why no candidate could be kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NoPage {
+    /// The host answered with a bot challenge instead of the page.
+    Challenge,
+    /// Nothing held recipe data or enough text to draft from.
+    Empty,
+}
+
+/// Text a candidate must hold, without recipe data, to be worth keeping.
+const MIN_TEXT: usize = 500;
+
+const CHALLENGE_TITLES: [&str; 7] = [
+    "just a moment",
+    "attention required",
+    "access denied",
+    "are you a robot",
+    "verify you are human",
+    "security check",
+    "pardon our interruption",
+];
+
+const CHALLENGE_MARKERS: [&str; 7] = [
+    "captcha-delivery",
+    "cf-chl",
+    "cf_chl_opt",
+    "/cdn-cgi/challenge-platform/h/",
+    "px-captcha",
+    "challenge-form",
+    "enable javascript and cookies to continue",
+];
+
+/// The original address inside a Wayback Machine URL
+/// (`https://web.archive.org/web/<timestamp>[flags]/<original>`).
+pub(crate) fn unwrap_archive(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("https://web.archive.org/web/")
+        .or_else(|| url.strip_prefix("http://web.archive.org/web/"))?;
+    let (stamp, original) = rest.split_once('/')?;
+    let digits = stamp.chars().take_while(char::is_ascii_digit).count();
+    let flags_ok = stamp[digits..]
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c == '_');
+    (digits >= 4
+        && flags_ok
+        && (original.starts_with("http://") || original.starts_with("https://")))
+    .then(|| original.to_owned())
+}
+
+/// One candidate, read once.
+struct Candidate<'a> {
+    page: &'a FetchedPage,
+    structured: Option<Structured>,
+    /// Readable text: the source's own, or the HTML converted.
+    text: String,
+    challenge: bool,
+}
+
+impl<'a> Candidate<'a> {
+    fn read(page: &'a FetchedPage) -> Self {
+        let structured = page.html.as_deref().and_then(jsonld::recipe);
+        let text = match page.text.as_deref().map(str::trim) {
+            Some(text) if !text.is_empty() => text.to_owned(),
+            _ => page
+                .html
+                .as_deref()
+                .map(|html| html_text(html).trim().to_owned())
+                .unwrap_or_default(),
+        };
+        let title = page.title.as_deref().unwrap_or_default().to_lowercase();
+        let lead: String = text.chars().take(300).collect::<String>().to_lowercase();
+        let titled = CHALLENGE_TITLES
+            .iter()
+            .any(|known| title.contains(known) || lead.contains(known));
+        let body = page.html.as_deref().unwrap_or_default().to_lowercase();
+        // Real pages carry Cloudflare scripts too: a marker counts only on a
+        // page with next to nothing else on it.
+        let marked = CHALLENGE_MARKERS
+            .iter()
+            .any(|marker| body.contains(marker) || lead.contains(marker))
+            && text.chars().count() < 2000;
+        Self {
+            challenge: structured.is_none() && (titled || marked),
+            page,
+            structured,
+            text,
         }
     }
-    let readable = |page: &&FetchedPage| page.text.as_deref().is_some_and(|t| !t.trim().is_empty());
-    let browser_text = (render == Render::Browser)
-        .then(|| {
-            pages
-                .iter()
-                .find(|page| page.source == "obscura" && readable(page))
-        })
-        .flatten();
-    let longest = pages
-        .iter()
-        .filter(readable)
-        .max_by_key(|page| page.text.as_deref().map_or(0, str::len));
-    let mut text = browser_text
-        .or(longest)
-        .and_then(|page| page.text.clone())
-        .unwrap_or_default();
-    if text.trim().is_empty()
-        && let Some(html) = structured_from
-            .and_then(|page| page.html.as_deref())
-            .or_else(|| pages.iter().find_map(|page| page.html.as_deref()))
-    {
-        text = html_text(html);
+
+    fn usable(&self) -> bool {
+        !self.challenge && (self.structured.is_some() || self.text.chars().count() >= MIN_TEXT)
     }
-    let text: String = text.trim().chars().take(MAX_STORED_TEXT).collect();
-    // The page itself, or where the browser ended up; an archive's URL is
-    // not where the recipe lives.
-    let direct = pages
-        .iter()
-        .find(|page| {
-            page.source
-                == if render == Render::Browser {
-                    "obscura"
-                } else {
-                    "fetch"
-                }
-        })
-        .or_else(|| {
-            pages
-                .iter()
-                .find(|page| matches!(page.source.as_str(), "fetch" | "obscura"))
+
+    fn is(&self, source: &str) -> bool {
+        self.page.source == source
+    }
+}
+
+/// Drops what precedes the content in extracted text: everything before the
+/// line that carries the title, or else a leading run of bare links.
+fn strip_navigation(text: &str, title: Option<&str>) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    if let Some(title) = title
+        .map(str::trim)
+        .filter(|title| title.chars().count() >= 4)
+    {
+        let wanted = title.to_lowercase();
+        let at = lines.iter().take(80).position(|line| {
+            let line = line.trim().trim_start_matches(['#', ' ']).to_lowercase();
+            line == wanted || (line.starts_with(&wanted) && line.len() <= wanted.len() + 40)
         });
-    let final_url = direct.map_or_else(|| url.to_owned(), |page| page.url.clone());
+        if let Some(at) = at {
+            return lines[at..].join("\n");
+        }
+    }
+    let is_link = |line: &str| {
+        let line = line.trim().trim_start_matches(['*', '-', '+', ' ']);
+        line.is_empty()
+            || (line.starts_with('[') && line.ends_with(')') && line.contains("]("))
+            || line.eq_ignore_ascii_case("skip to content")
+            || line.eq_ignore_ascii_case("menu")
+    };
+    let first = lines.iter().position(|line| !is_link(line)).unwrap_or(0);
+    lines[first..].join("\n")
+}
+
+/// Picks what to keep from the page candidates. A bot challenge or an empty
+/// page is never kept: the other candidates (an archived copy, a browser
+/// render) are used instead. Recipe data and image links come from the page
+/// itself or its browser render before an archived copy; text comes from a
+/// main-content extraction before a whole page. `Render::Browser` puts the
+/// browser-rendered copy first.
+fn choose(url: &str, pages: &[FetchedPage], render: Render) -> Result<Chosen, NoPage> {
+    let all: Vec<Candidate<'_>> = pages.iter().map(Candidate::read).collect();
+    // One candidate must be worth keeping; then every copy that is not a
+    // challenge may contribute (a short extraction beside the full page).
+    let mut usable: Vec<&Candidate<'_>> = all.iter().filter(|c| !c.challenge).collect();
+    if !usable.iter().any(|c| c.usable()) {
+        return Err(if all.iter().any(|c| c.challenge) {
+            NoPage::Challenge
+        } else {
+            NoPage::Empty
+        });
+    }
+    let (first, second) = if render == Render::Browser {
+        ("obscura", "fetch")
+    } else {
+        ("fetch", "obscura")
+    };
+    usable.sort_by_key(|c| {
+        if c.is(first) {
+            0
+        } else if c.is(second) {
+            1
+        } else if c.is("wayback") {
+            3
+        } else {
+            2
+        }
+    });
+    let with_data = usable.iter().find(|c| c.structured.is_some());
+    let mut structured = with_data.and_then(|c| c.structured.clone());
+    let archived = with_data.is_some_and(|c| c.is("wayback"));
     let title = structured
         .as_ref()
         .map(|found| found.name.clone())
         .filter(|name| !name.is_empty())
-        .or_else(|| pages.iter().find_map(|page| page.title.clone()))
+        .or_else(|| usable.iter().find_map(|c| c.page.title.clone()))
         .map(|title| title.trim().chars().take(200).collect::<String>())
         .filter(|title| !title.is_empty());
-    let image_url = structured
+
+    // Images: the original address first; an archived address is unwrapped
+    // and kept as the fallback.
+    let mut image_urls: Vec<String> = Vec::new();
+    let named = structured
         .as_ref()
         .and_then(|found| found.images.first().cloned())
-        .or_else(|| pages.iter().find_map(|page| page.lead_image_url.clone()));
-    Chosen {
+        .or_else(|| usable.iter().find_map(|c| c.page.lead_image_url.clone()));
+    if let Some(named) = named {
+        if let Some(original) = unwrap_archive(&named) {
+            image_urls.push(original);
+        }
+        image_urls.push(named);
+    }
+    if archived && let Some(found) = &mut structured {
+        for image in &mut found.images {
+            if let Some(original) = unwrap_archive(image) {
+                *image = original;
+            }
+        }
+    }
+
+    // Text: a main-content extraction reads better than a whole page.
+    let extractors = ["readability", "postlight", "extractus"];
+    let longest = |wanted: &dyn Fn(&Candidate<'_>) -> bool| {
+        usable
+            .iter()
+            .filter(|c| wanted(c) && !c.text.is_empty())
+            .max_by_key(|c| c.text.len())
+            .map(|c| c.text.clone())
+    };
+    let browser = (render == Render::Browser)
+        .then(|| longest(&|c| c.is("obscura") && c.page.text.is_some()))
+        .flatten();
+    let text = browser
+        .or_else(|| longest(&|c| extractors.contains(&c.page.source.as_str())))
+        .or_else(|| longest(&|c| c.page.text.is_some()))
+        .or_else(|| longest(&|_| true))
+        .unwrap_or_default();
+    let text = strip_navigation(&text, title.as_deref());
+    let text: String = text.trim().chars().take(MAX_STORED_TEXT).collect();
+
+    // Where the recipe lives: the page itself or where the browser ended up,
+    // never an archive's address.
+    let final_url = usable
+        .iter()
+        .find(|c| c.is(first) || c.is(second))
+        .map_or_else(|| url.to_owned(), |c| c.page.url.clone());
+    Ok(Chosen {
         final_url,
         title,
         structured,
         text,
-        image_url,
-    }
+        image_urls,
+    })
 }
 
 fn duplicates_of(conn: &Connection, urls: &[&str]) -> R<Vec<RecipeRef>> {
@@ -549,18 +698,32 @@ impl Recipes {
             .await
             .map_err(|error| reject("fetch_failed", error.to_string()))?;
         let render = input.render.unwrap_or_default();
-        let chosen = choose(url.as_str(), pages, render);
-        if chosen.structured.is_none() && chosen.text.trim().is_empty() {
-            return Err(reject(
+        let chosen = choose(url.as_str(), &pages, render).map_err(|why| match why {
+            NoPage::Challenge => reject(
                 "fetch_failed",
-                "the page was fetched but returned no recipe data and no readable text; try render \"browser\"",
-            ));
-        }
+                "the host served a bot challenge instead of the page, and no other copy of it was readable; try render \"browser\", or paste the recipe text and pass it as sourceText to recipes_create",
+            ),
+            NoPage::Empty => reject(
+                "fetch_failed",
+                "the page was fetched but returned no recipe data and no readable text; try render \"browser\", or paste the recipe text and pass it as sourceText to recipes_create",
+            ),
+        })?;
         // The image is a convenience: its failure never fails the import.
-        let lead: Option<LeadImage> = match &chosen.image_url {
-            Some(image) => self.fetch_image(image).await.ok().map(LeadImage::from),
-            None => None,
-        };
+        let mut lead: Option<LeadImage> = None;
+        let mut image_reason = chosen
+            .image_urls
+            .is_empty()
+            .then(|| "the page names no image".to_owned());
+        for image in &chosen.image_urls {
+            match self.fetch_image(image).await {
+                Ok(stored) => {
+                    lead = Some(LeadImage::from(stored));
+                    image_reason = None;
+                    break;
+                }
+                Err(error) => image_reason = Some(error.tool_text()),
+            }
+        }
         let payload = json!({
             "url": url.as_str(),
             "finalUrl": chosen.final_url,
@@ -602,6 +765,7 @@ impl Recipes {
             truncated,
             next_offset,
             image_stored: lead.is_some(),
+            image_reason,
             duplicate_of,
         })
     }

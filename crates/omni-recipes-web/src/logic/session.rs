@@ -51,6 +51,10 @@ pub fn project(session: &CookSession) -> Projection {
             }
             CookEventKind::Rebase { revision } => state.revision = *revision,
             CookEventKind::Finish { .. } => state.finished = true,
+            CookEventKind::Abandon {} => {
+                state.finished = true;
+                state.timers.clear();
+            }
             CookEventKind::DismissAdjustment { .. } => {}
         }
     }

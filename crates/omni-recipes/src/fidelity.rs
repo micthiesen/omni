@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use omni_recipe_format::format::{fmt_amount, is_known_unit};
+use omni_recipe_format::format::{fmt_amount_exact, is_known_unit};
 use omni_recipe_format::{Ingredient, RecipeDoc, tokens};
 use regex::Regex;
 
@@ -367,7 +367,7 @@ fn doc_amounts(ingredient: &Ingredient) -> Vec<Amount> {
 }
 
 fn describe(ingredient: &Ingredient) -> String {
-    let amount = fmt_amount(ingredient.qty, ingredient.unit.as_deref());
+    let amount = fmt_amount_exact(ingredient.qty, ingredient.unit.as_deref());
     if amount.is_empty() {
         ingredient.name.clone()
     } else {

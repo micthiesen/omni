@@ -535,7 +535,8 @@ any recipe.
 
 Cooking never edits a recipe. A session is an append-only event log, each
 `clientEventId` applied once; finishing turns overrides into adjustment records
-that only a revision with `resolves` or a dismissal closes. A timer alert is
+that only a revision with `resolves` or a dismissal closes; an `abandon`
+event discards the session at once with no cook, adjustments or timer alerts. A timer alert is
 reserved in `recipes_timer_alert` before it is sent and is never resent; with
 an app client connected it waits 30 seconds for the app to answer the timer.
 

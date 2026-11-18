@@ -10,7 +10,10 @@ write the graph. Read this once per session, then use the tools.
 2. Draft the whole document and call `recipes_create`. Pass `fromInbox` for an inbox item or
    `sourceText` for pasted text, so the source is kept as the recipe's Original.
 3. A refused write lists every problem at once, each with a path, a code and a hint. Fix them all
-   and send it again. `dryRun: true` runs the same checks and saves nothing.
+   and send it again. `dryRun: true` runs the same checks and saves nothing; it also reports tags
+   the registry lacks (`unknown_tag`) and a source that already exists (`duplicate_source`) as
+   problems. Warnings never block a save, but read them: `missing_time` is a step without a time,
+   `missing_source_url` a web source without its address.
 4. **Verify.** Every create and replace returns the recipe as a person reads it (`text`), a
    deterministic comparison with the source (`fidelity.issues`) and a model review
    (`fidelity.review.issues`). Compare `text` with the source line by line, and explain or fix every

@@ -3,8 +3,13 @@
 
 use std::sync::Arc;
 
+use leptos::ev;
+use leptos::html;
 use leptos::prelude::*;
 use omni_recipe_format::{Cell, CellKind, RecipeDoc, chart_blocks};
+
+use crate::logic::label_columns;
+use crate::platform::window;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellMark {
@@ -13,9 +18,15 @@ pub enum CellMark {
     Ready,
 }
 
-/// Step cells spanning at least this many rows set their text vertically, as
-/// the original notation does, which keeps wide charts narrow.
-const VERTICAL_ROWS: usize = 3;
+/// A viewport with room for charts to read horizontally: a phone on its side,
+/// or anything at least 700px wide.
+fn viewport_is_wide() -> bool {
+    let size = |value: Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue>| {
+        value.ok().and_then(|value| value.as_f64()).unwrap_or(0.0)
+    };
+    let (width, height) = (size(window().inner_width()), size(window().inner_height()));
+    width > height || width >= 700.0
+}
 
 fn span(count: usize) -> Option<String> {
     (count > 1).then(|| count.to_string())
@@ -35,6 +46,10 @@ fn cell_view(
     // first column plus an empty stretch, so the label stays put while the
     // table scrolls sideways.
     let split = !is_step && cell.c0 == 0 && cols > 1;
+    // Tall step cells set their text vertically, as the original notation
+    // does, which keeps wide charts narrow.
+    let columns = is_step.then(|| label_columns(&cell.label, rows)).flatten();
+    let vertical = columns.is_some();
     let td = |lead: bool, filler: bool| {
         let class = format!(
             "{}{}{}{}{}",
@@ -42,11 +57,7 @@ fn cell_view(
             if cell.optional { " optional" } else { "" },
             if lead { " lead" } else { "" },
             if filler { " fill" } else { "" },
-            if is_step && rows >= VERTICAL_ROWS {
-                " vertical"
-            } else {
-                ""
-            },
+            if vertical { " vertical" } else { "" },
         );
         let (marked, tapped) = (cell.clone(), cell.clone());
         let state = move || mark.map_or(CellMark::None, |mark| mark.run(marked.clone()));
@@ -74,7 +85,24 @@ fn cell_view(
                     }
                 }
             >
-                {(!filler).then(|| view! { <span>{cell.label.clone()}</span> })}
+                {(!filler).then(|| match &columns {
+                    // The spaces between columns keep the cell's text equal to
+                    // its label, and separate the words when it lies flat.
+                    Some(columns) => view! {
+                        <span class="cols">
+                            {columns
+                                .iter()
+                                .enumerate()
+                                .map(|(n, column)| {
+                                    let gap = if n + 1 < columns.len() { " " } else { "" };
+                                    view! { <span>{format!("{column}{gap}")}</span> }
+                                })
+                                .collect_view()}
+                        </span>
+                    }
+                    .into_any(),
+                    None => view! { <span>{cell.label.clone()}</span> }.into_any(),
+                })}
             </td>
         }
         .into_any()
@@ -99,9 +127,28 @@ pub fn Chart(
     #[prop(optional)]
     leaf_taps: bool,
 ) -> impl IntoView {
+    let wide = RwSignal::new(viewport_is_wide());
+    let resized = window_event_listener(ev::resize, move |_| wide.set(viewport_is_wide()));
+    on_cleanup(move || resized.remove());
     chart_blocks(&doc, factor)
         .into_iter()
         .map(|block| {
+            // On a wide viewport a block lies flat (every label horizontal)
+            // unless that makes it wider than the space it has.
+            let flat = RwSignal::new(false);
+            let scroller = NodeRef::<html::Div>::new();
+            Effect::new(move |_| {
+                flat.set(wide.get());
+                if wide.get() {
+                    request_animation_frame(move || {
+                        if let Some(node) = scroller.get_untracked()
+                            && node.scroll_width() > node.client_width() + 1
+                        {
+                            flat.set(false);
+                        }
+                    });
+                }
+            });
             let rows = (0..block.rows)
                 .map(|row| {
                     let mut cells: Vec<&Cell> =
@@ -115,14 +162,14 @@ pub fn Chart(
                 })
                 .collect_view();
             view! {
-                <figure class="chart-block">
-                    {block.title.clone().map(|title| view! {
+                <figure class="chart-block" class:flat=move || flat.get()>
+                    {(block.title.is_some() || block.note.is_some()).then(|| view! {
                         <figcaption>
-                            {title}
+                            {block.title.clone()}
                             {block.note.clone().map(|note| view! { <small>{note}</small> })}
                         </figcaption>
                     })}
-                    <div class="chart-scroll">
+                    <div class="chart-scroll" node_ref=scroller>
                         <table class="chart"><tbody>{rows}</tbody></table>
                     </div>
                 </figure>

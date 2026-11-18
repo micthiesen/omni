@@ -165,6 +165,35 @@ pub fn gallery(record: &RecipeRecord) -> Vec<&omni_api::fond::ImageInfo> {
         .collect()
 }
 
+/// The whole-word columns of a chart step label set vertically in a cell
+/// spanning `rows` rows: one column when the cell is tall enough, more when
+/// not, and `None` when it would take more than three (the label then reads
+/// horizontally). A column never splits a word, so no text can be cut; a word
+/// longer than the cell makes the cell taller.
+pub fn label_columns(label: &str, rows: usize) -> Option<Vec<String>> {
+    // A row is at least one line of 14px text with its padding; a glyph of the
+    // 600-weight label is about 8px along the column.
+    const ROW_PX: usize = 32;
+    const CELL_PADDING_PX: usize = 16;
+    const GLYPH_PX: usize = 8;
+    const MAX_COLUMNS: usize = 3;
+    if rows < 3 {
+        return None;
+    }
+    let room = (rows * ROW_PX).saturating_sub(CELL_PADDING_PX) / GLYPH_PX;
+    let mut columns: Vec<String> = Vec::new();
+    for word in label.split_whitespace() {
+        match columns.last_mut() {
+            Some(column) if column.chars().count() + 1 + word.chars().count() <= room => {
+                column.push(' ');
+                column.push_str(word);
+            }
+            _ => columns.push(word.to_owned()),
+        }
+    }
+    (!columns.is_empty() && columns.len() <= MAX_COLUMNS).then_some(columns)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +295,29 @@ mod tests {
         assert_eq!(countdown(900), "0:01");
         assert_eq!(countdown(0), "0:00");
         assert_eq!(countdown(-5), "0:00");
+    }
+
+    #[test]
+    fn a_vertical_label_keeps_every_word() {
+        // Tall enough: one column.
+        assert_eq!(
+            label_columns("season, dredge 5 min", 8),
+            Some(vec!["season, dredge 5 min".to_owned()])
+        );
+        // Three rows: whole words, in order, nothing dropped.
+        let columns = label_columns("season, dredge 5 min", 3).unwrap();
+        assert_eq!(columns, ["season,", "dredge 5", "min"]);
+        assert_eq!(columns.join(" "), "season, dredge 5 min");
+        // A long word is never split; it gets a column of its own.
+        assert_eq!(
+            label_columns("caramelise 40 min", 3),
+            Some(vec!["caramelise".to_owned(), "40 min".to_owned()])
+        );
+        // Too short a cell, or too many columns, reads horizontally.
+        assert_eq!(label_columns("rest 5 min", 2), None);
+        assert_eq!(
+            label_columns("whisk, fold, pour, scrape and level 2 min", 3),
+            None
+        );
     }
 }

@@ -231,7 +231,10 @@ async fn duplicates_are_found_by_either_url_and_follow_an_edited_source() {
     h.pages.serve(vec![FetchedPage {
         source: "fetch".to_owned(),
         url: page.to_owned(),
-        text: Some("Chicken Piccata".to_owned()),
+        text: Some(format!(
+            "Chicken Piccata\n{}",
+            "Season, dredge and sear the cutlets. ".repeat(20)
+        )),
         ..FetchedPage::default()
     }]);
     let item = h.ok("recipes_import_url", json!({ "url": page })).await["inboxItemId"].clone();
@@ -438,7 +441,7 @@ async fn the_open_app_surface_is_bounded() {
     h.pages.serve(vec![FetchedPage {
         source: "fetch".to_owned(),
         url: "https://example.com/x".to_owned(),
-        text: Some("Recipe".to_owned()),
+        text: Some("A recipe with enough text to keep. ".repeat(20)),
         ..FetchedPage::default()
     }]);
     let import = h

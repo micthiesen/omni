@@ -14,6 +14,8 @@ const RECIPES = {
   chart: process.env.FOND_RECIPE_CHART || 'Lasagne alla Bolognese',
   // A recipe to scale and cook; any recipe with at least three steps.
   cook: process.env.FOND_RECIPE_COOK || 'Chicken Piccata',
+  // A recipe with a stored source snapshot, for the Original section.
+  source: process.env.FOND_RECIPE_SOURCE || process.env.FOND_RECIPE_COOK || 'Chicken Piccata',
 };
 
 const fs = require('fs');
@@ -50,6 +52,43 @@ async function openRecipe(page, title) {
 
 // Omni refuses writes that do not come from the app's own origin.
 const sameOrigin = (page) => ({ origin: new URL(page.url()).origin });
+
+// Every step cell of every chart shows its whole label: nothing overflows the
+// cell, and each piece of text lies inside it. Returns the labels that fail.
+const clippedLabels = (page) =>
+  page.locator('[data-testid=chart] td.step').evaluateAll((cells) =>
+    cells
+      .filter((cell) => {
+        const box = cell.getBoundingClientRect();
+        const pieces = [...cell.querySelectorAll('span')].filter((span) => !span.children.length);
+        const inside = pieces.every((piece) => {
+          const rect = piece.getBoundingClientRect();
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= box.left - 0.5 &&
+            rect.right <= box.right + 0.5 &&
+            rect.top >= box.top - 0.5 &&
+            rect.bottom <= box.bottom + 0.5
+          );
+        });
+        const shown = cell.innerText.replace(/\s+/g, ' ').trim();
+        const label = cell.textContent.replace(/\s+/g, ' ').trim();
+        return (
+          !label ||
+          shown !== label ||
+          !inside ||
+          cell.scrollWidth > cell.clientWidth ||
+          cell.scrollHeight > cell.clientHeight
+        );
+      })
+      .map((cell) => cell.textContent),
+  );
+
+const cookCount = async (page, title) => {
+  const sync = await (await page.request.get('/api/sync')).json();
+  return sync.recipes.find((recipe) => recipe.doc.title === title).cookCount;
+};
 
 // Everything queued has reached the server.
 async function flushed(page) {
@@ -223,9 +262,11 @@ test('a recipe reads as steps and as a chart with merged cells', async ({ page }
     }),
   );
   expect(tiled).toBe(true);
-  // Tall step cells are set vertically; the ingredient column is sticky.
-  const vertical = chart.locator('td.step.vertical span').first();
+  // Tall step cells are set vertically, in whole-word columns that are never
+  // cut; the ingredient column is sticky.
+  const vertical = chart.locator('td.step.vertical .cols span').first();
   expect(await vertical.evaluate((span) => getComputedStyle(span).writingMode)).toBe('vertical-rl');
+  expect(await clippedLabels(page)).toEqual([]);
   expect(await chart.locator('td.lead').first().evaluate((cell) => getComputedStyle(cell).position)).toBe('sticky');
   await chart.locator('table.chart').first().scrollIntoViewIfNeeded();
   await shot(page, 'recipe-chart');
@@ -261,7 +302,51 @@ test('a wide chart scrolls sideways under a pinned ingredient column, and turns 
   await scrollers.first().scrollIntoViewIfNeeded();
   await expect(page.locator('[data-testid=chart] td.step').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // On its side a chart reads flat: step labels are horizontal unless the
+  // block would then be wider than the screen.
+  await expect(page.locator('[data-testid=chart] .chart-block.flat').first()).toBeVisible();
+  const layout = await page.locator('[data-testid=chart] .chart-block').evaluateAll((blocks) =>
+    blocks.map((block) => {
+      const scroller = block.querySelector('.chart-scroll');
+      const modes = [...block.querySelectorAll('td.step span')]
+        .filter((span) => !span.children.length)
+        .map((span) => getComputedStyle(span).writingMode);
+      return {
+        flat: block.classList.contains('flat'),
+        fits: scroller.scrollWidth <= scroller.clientWidth + 1,
+        horizontal: modes.every((mode) => mode === 'horizontal-tb'),
+      };
+    }),
+  );
+  for (const block of layout) {
+    expect(block.horizontal).toBe(block.flat);
+    if (block.flat) expect(block.fits).toBe(true);
+  }
+  expect(await clippedLabels(page)).toEqual([]);
+  // Cook never covers a chart cell, wherever the page is scrolled.
+  const cook = page.locator('[data-testid=cook]');
+  await expect(cook).toBeVisible();
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  for (let y = 0; y < height; y += 150) {
+    await page.evaluate((top) => window.scrollTo(0, top), y);
+    const covered = await page.evaluate(() => {
+      const button = document.querySelector('[data-testid=cook]').getBoundingClientRect();
+      const bar = document.querySelector('main.recipe .bar').getBoundingClientRect();
+      return [...document.querySelectorAll('[data-testid=chart] td')].some((cell) => {
+        const box = cell.getBoundingClientRect();
+        // Cells under the opaque top bar are scrolled away, not covered.
+        const top = Math.max(box.top, bar.bottom);
+        return top < box.bottom && top < button.bottom && box.bottom > button.top && box.left < button.right && box.right > button.left;
+      });
+    });
+    expect(covered, `scrolled to ${y}`).toBe(false);
+  }
+  await scrollers.first().scrollIntoViewIfNeeded();
   await shot(page, 'recipe-chart-landscape');
+  // Upright again, tall cells go back to vertical labels.
+  await page.setViewportSize({ width: 390, height: 664 });
+  await expect(page.locator('[data-testid=chart] .chart-block.flat')).toHaveCount(0);
+  expect(await clippedLabels(page)).toEqual([]);
 });
 
 test('scaling changes every amount in both views and is remembered', async ({ page }) => {
@@ -316,7 +401,7 @@ test('notes save as you type and survive a reload', async ({ page }) => {
 });
 
 test('the original is one tap away', async ({ page }) => {
-  await openRecipe(page, RECIPES.cook);
+  await openRecipe(page, RECIPES.source);
   const original = page.locator('.original');
   test.skip((await original.count()) === 0, 'this recipe has no stored original');
   await original.getByRole('button').first().click();
@@ -509,6 +594,29 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   await flushed(page);
   await page.goto('/');
   await expect(page.locator('.cooking-card').filter({ hasText: RECIPES.cook })).toHaveCount(0);
+});
+
+test('a cook started by mistake can be discarded', async ({ page }) => {
+  await openRecipe(page, RECIPES.cook);
+  const before = await cookCount(page, RECIPES.cook);
+  await page.locator('[data-testid=cook]').click();
+  await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+  await page.locator('[data-testid=done]').click();
+  await page.locator('[data-testid=finish]').click();
+  const sheet = page.locator('.sheet.open');
+  // Discarding asks once more before it throws the cook away.
+  await sheet.locator('[data-testid=discard]').click();
+  await expect(sheet).toContainText('does not count as cooked');
+  await shot(page, 'cook-discard');
+  await sheet.locator('[data-testid=discard-confirm]').click();
+  await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.cook);
+  await expect(page.locator('[data-testid=cook]')).toHaveText('Cook');
+  await flushed(page);
+  // Nothing is cooking, and nothing was cooked.
+  await page.goto('/');
+  await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
+  await expect(page.locator('.cooking-card').filter({ hasText: RECIPES.cook })).toHaveCount(0);
+  expect(await cookCount(page, RECIPES.cook)).toBe(before);
 });
 
 test('the inbox uploads photos as one item', async ({ page }) => {

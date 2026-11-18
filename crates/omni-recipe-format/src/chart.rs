@@ -462,7 +462,11 @@ pub fn chart_ascii(block: &Block, marks: &Marks) -> String {
             };
             format!("{}{note}\n{body}", title.to_uppercase())
         }
-        _ => body,
+        // A recipe of one component has no title to hang the note on.
+        _ => match &block.note {
+            Some(note) if !note.is_empty() => format!("({note})\n{body}"),
+            _ => body,
+        },
     }
 }
 
@@ -476,6 +480,8 @@ pub fn chart_html(block: &Block) -> String {
             None => String::new(),
         };
         out.push(format!("<h4>{}{note}</h4>", py::html_escape(title)));
+    } else if let Some(note) = block.note.as_deref().filter(|note| !note.is_empty()) {
+        out.push(format!("<h4><small>{}</small></h4>", py::html_escape(note)));
     }
     out.push("<table class=\"chart\">".to_owned());
     for row in 0..block.rows {

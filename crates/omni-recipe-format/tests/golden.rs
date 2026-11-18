@@ -311,3 +311,147 @@ fn rename_unset_move_and_add_component_match_the_prototype() {
         section("more ops: rename, unset, move, addComponent, unknown unit")
     );
 }
+
+fn ingredient_mut<'a>(doc: &'a mut RecipeDoc, id: &str) -> &'a mut omni_recipe_format::Ingredient {
+    doc.components
+        .iter_mut()
+        .flat_map(|component| &mut component.ingredients)
+        .find(|ingredient| ingredient.id == id)
+        .unwrap()
+}
+
+#[test]
+fn a_stored_amount_reads_exactly_and_only_a_scaled_one_is_rounded() {
+    let mut doc = piccata();
+    ingredient_mut(&mut doc, "chicken").qty = Some(326.0);
+    ingredient_mut(&mut doc, "stock").qty = Some(113.0);
+    ingredient_mut(&mut doc, "wine").qty = Some(439.5);
+    // A split whose rest is computed: 113 g in all, 40 g first.
+    let butter = ingredient_mut(&mut doc, "butter");
+    butter.qty = Some(113.0);
+    butter.unit = Some("g".to_owned());
+    step_mut(&mut doc, "sear").inputs[2] = sized("butter", 40.0, "g");
+    assert_eq!(validate(&doc).errors, []);
+
+    let list = render_list(&doc, 1.0);
+    assert!(
+        list.contains("- 326 g boneless, skinless chicken breasts"),
+        "{list}"
+    );
+    assert!(list.contains("- 113 ml (¾ cup) chicken stock"), "{list}");
+    assert!(list.contains("- 439.5 ml (½ cup) dry white wine"), "{list}");
+    assert!(
+        list.contains("- 113 g unsalted butter, cold, divided"),
+        "{list}"
+    );
+    assert!(list.contains("Season 326 g boneless"), "{list}");
+    assert!(
+        list.contains("Heat 2 tbsp olive oil and 40 g unsalted butter"),
+        "{list}"
+    );
+    assert!(
+        list.contains("swirl in the remaining 73 g unsalted butter"),
+        "{list}"
+    );
+    let chart = chart_ascii(&chart_blocks(&doc, 1.0)[0], &Marks::new());
+    assert!(chart.contains("326 g boneless, skinless"), "{chart}");
+    assert!(
+        chart.contains("73 g unsalted butter, cold (the rest)"),
+        "{chart}"
+    );
+    assert!(
+        !chart.contains("325 g") && !chart.contains("75 g"),
+        "{chart}"
+    );
+
+    // Scaled, a metric amount is rounded to something a cook can weigh.
+    let scaled = render_list(&doc, 1.5);
+    assert!(
+        scaled.contains("- 490 g boneless, skinless chicken breasts"),
+        "{scaled}"
+    );
+    assert!(
+        scaled.contains("- 170 ml (1⅛ cups) chicken stock"),
+        "{scaled}"
+    );
+    assert!(
+        scaled.contains("the remaining 110 g unsalted butter"),
+        "{scaled}"
+    );
+
+    // An amount that does not scale stays exact at any scale.
+    ingredient_mut(&mut doc, "chicken").scales = false;
+    let fixed = render_list(&doc, 1.5);
+    assert!(
+        fixed.contains("- 326 g boneless, skinless chicken breasts"),
+        "{fixed}"
+    );
+    assert!(fixed.contains("Season 326 g boneless"), "{fixed}");
+}
+
+#[test]
+fn a_count_with_another_measure_puts_it_after_the_name() {
+    let mut doc = piccata();
+    let lemon = ingredient_mut(&mut doc, "lemon");
+    lemon.alt = Some(omni_recipe_format::Amount {
+        qty: 290.0,
+        unit: "g".to_owned(),
+    });
+    let list = render_list(&doc, 1.0);
+    assert!(list.contains("- 2 lemons (290 g), divided"), "{list}");
+    // A measure keeps the other measure beside it.
+    assert!(
+        list.contains("- 60 g (½ cup) all-purpose flour (for dredging)"),
+        "{list}"
+    );
+}
+
+#[test]
+fn a_single_component_shows_its_make_ahead_note() {
+    let mut doc = piccata();
+    doc.components[0].make_ahead = Some(omni_recipe_format::MakeAhead {
+        keeps: "1 week".to_owned(),
+        r#where: "fridge".to_owned(),
+    });
+    let view = omni_recipe_format::list_view(&doc, 1.0);
+    assert_eq!(
+        view.make_ahead.as_deref(),
+        Some("Make ahead: keeps 1 week in the fridge")
+    );
+    let list = render_list(&doc, 1.0);
+    assert!(
+        list.contains("Makes 4 servings · 25 min hands-on, 25 min start to finish\nMake ahead: keeps 1 week in the fridge\n\n## Ingredients"),
+        "{list}"
+    );
+    let chart = chart_ascii(&chart_blocks(&doc, 1.0)[0], &Marks::new());
+    assert!(
+        chart.starts_with("(make ahead: keeps 1 week in the fridge)\n┌"),
+        "{chart}"
+    );
+    assert!(chart_html(&chart_blocks(&doc, 1.0)[0]).starts_with("<h4><small>make ahead"));
+    // With several components each group carries its own; the header has none.
+    let lasagne: RecipeDoc = serde_json::from_str(SAMPLES[2].json).unwrap();
+    assert_eq!(
+        omni_recipe_format::list_view(&lasagne, 1.0).make_ahead,
+        None
+    );
+}
+
+#[test]
+fn a_rename_reads_as_one_line_when_the_operations_are_known() {
+    let old = piccata();
+    let ops: Vec<Op> = serde_json::from_value(json!([
+        { "op": "rename", "target": "oil", "to": "olive_oil" },
+        { "op": "set", "target": "olive_oil", "fields": { "qty": 3 } }
+    ]))
+    .unwrap();
+    let new = apply_ops(&old, &ops).unwrap();
+    assert_eq!(
+        omni_recipe_format::diff_summary_with_ops(&old, &new, &ops),
+        ["~ rename oil → olive_oil", "~ olive_oil.qty: 2 → 3"]
+    );
+    // Without the operations it is still a removal and an addition.
+    let plain = diff_summary(&old, &new);
+    assert!(plain.contains(&"− ingredient oil".to_owned()));
+    assert!(plain.contains(&"+ ingredient olive_oil".to_owned()));
+}

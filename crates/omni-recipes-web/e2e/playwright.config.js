@@ -4,6 +4,9 @@
 //   FOND_BASE_URL   the app's origin (default: the mock server on :8787)
 //   FOND_SHOTS      a directory to write light and dark screenshots into
 //   FOND_CHROMIUM   also run in Chromium at phone size
+//   FOND_PROXY      a proxy for the browser and the tests' own requests, for
+//                   example socks5://127.0.0.1:18080 from `ssh -D` when this
+//                   machine's test browsers cannot reach the LAN directly
 //   see fond.spec.js for the switches that skip tests which leave data behind
 const { defineConfig, devices } = require('@playwright/test');
 
@@ -21,6 +24,7 @@ module.exports = defineConfig({
     ...devices['iPhone 14'],
     serviceWorkers: 'allow',
     ignoreHTTPSErrors: false,
+    ...(process.env.FOND_PROXY ? { proxy: { server: process.env.FOND_PROXY } } : {}),
     trace: 'off',
   },
   projects: [

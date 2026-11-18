@@ -84,20 +84,45 @@ fn distance(a: &str, b: &str) -> usize {
     row[b.len()]
 }
 
-/// Up to five registered names closest to `name`.
+/// Up to five registered names close to `name`: a small edit distance for
+/// the length (a third of the longer name at most), or one name starting or
+/// containing the other.
 pub(crate) fn nearest(conn: &Connection, name: &str) -> R<Vec<String>> {
+    let length = |text: &str| text.chars().count();
     let mut scored: Vec<(usize, String)> = meta::registry_rows(conn)?
         .into_iter()
         .filter_map(|row| {
             let d = distance(name, &row.name);
-            let near = d <= 2.max(name.chars().count() / 3)
-                || row.name.contains(name)
-                || name.contains(row.name.as_str());
-            near.then_some((d, row.name))
+            let longer = length(name).max(length(&row.name)).max(1);
+            #[allow(clippy::cast_precision_loss)]
+            let close = d as f64 / longer as f64 <= 0.34;
+            let shares = length(name).min(length(&row.name)) >= 3
+                && (row.name.contains(name) || name.contains(row.name.as_str()));
+            (close || shares).then_some((d, row.name))
         })
         .collect();
     scored.sort();
     Ok(scored.into_iter().take(5).map(|(_, name)| name).collect())
+}
+
+/// One problem per name the registry lacks, as a dry run reports them.
+pub(crate) fn problems(conn: &Connection, names: &[String]) -> R<Vec<omni_recipe_format::Problem>> {
+    let mut found = Vec::new();
+    for name in names {
+        if !exists(conn, name)? {
+            found.push(omni_recipe_format::Problem {
+                code: omni_recipe_format::Code::UnknownTag,
+                path: format!("tags.{name}"),
+                message: format!("tag {name:?} is not in the registry"),
+                hint: Some(format!(
+                    "{}; use an existing tag, or pass createTags",
+                    nearest_text(conn, name)?
+                )),
+                level: omni_recipe_format::Level::Error,
+            });
+        }
+    }
+    Ok(found)
 }
 
 /// "nearest: ..." for one unregistered name.

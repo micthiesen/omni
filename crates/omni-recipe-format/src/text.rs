@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::format::{
-    fmt_amount, fmt_number, fmt_temp, fmt_time, fmt_time_prose, inflect, parse_fraction,
+    fmt_amount_at, fmt_number, fmt_temp, fmt_time, fmt_time_prose, inflect, parse_fraction,
 };
 use crate::index::{Index, Kind, Node};
 use crate::model::{Attention, Id, Input, Step};
@@ -55,6 +55,9 @@ pub struct UseQty<'a> {
     pub unit: Option<&'a str>,
     /// The use takes whatever the other uses leave.
     pub rest: bool,
+    /// The amount is as stored (scale 1, or an ingredient that does not
+    /// scale): it reads exactly, never rounded.
+    pub exact: bool,
 }
 
 /// The sum of explicitly sized uses in `unit`. Uses naming different parts of
@@ -94,15 +97,19 @@ pub fn use_qty<'a>(ix: &'a Index<'_>, input: &'a Input, factor: f64) -> UseQty<'
             qty: None,
             unit: None,
             rest: input.rest,
+            exact: true,
         };
     };
     let factor = if ingredient.scales { factor } else { 1.0 };
+    #[allow(clippy::float_cmp)]
+    let exact = factor == 1.0;
     let unit = ingredient.unit.as_deref();
     if let Some(qty) = input.qty {
         return UseQty {
             qty: Some(qty * factor),
             unit: input.unit.as_deref().or(unit),
             rest: false,
+            exact,
         };
     }
     let Some(total) = ingredient.qty else {
@@ -110,6 +117,7 @@ pub fn use_qty<'a>(ix: &'a Index<'_>, input: &'a Input, factor: f64) -> UseQty<'
             qty: None,
             unit,
             rest: input.rest,
+            exact,
         };
     };
     let share = |input: &Input| input.fraction.as_deref().map(|f| fraction_value(f) * total);
@@ -118,6 +126,7 @@ pub fn use_qty<'a>(ix: &'a Index<'_>, input: &'a Input, factor: f64) -> UseQty<'
             qty: Some(share * factor),
             unit,
             rest: false,
+            exact,
         };
     }
     if input.rest {
@@ -132,12 +141,14 @@ pub fn use_qty<'a>(ix: &'a Index<'_>, input: &'a Input, factor: f64) -> UseQty<'
             qty: Some((total - used) * factor),
             unit,
             rest: true,
+            exact,
         };
     }
     UseQty {
         qty: Some(total * factor),
         unit,
         rest: false,
+        exact,
     }
 }
 
@@ -153,7 +164,7 @@ pub fn use_label(ix: &Index<'_>, input: &Input, factor: f64, prose: bool) -> Str
         Some(Node::Ingredient(ingredient)) => {
             let used = use_qty(ix, input, factor);
             let name = inflect(&ingredient.name, used.qty, used.unit, ingredient);
-            let amount = fmt_amount(used.qty, used.unit);
+            let amount = fmt_amount_at(used.qty, used.unit, used.exact);
             if let Some(part) = &input.part {
                 let core = format!("{part} of {amount} {name}").replace("  ", " ");
                 return if prose { format!("the {core}") } else { core };

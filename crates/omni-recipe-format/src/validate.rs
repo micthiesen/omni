@@ -7,7 +7,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::format::{fmt_amount, is_known_unit, nearest_unit, parse_fraction};
+use crate::format::{fmt_amount_exact, is_known_unit, nearest_unit, parse_fraction};
 use crate::index::{Index, Kind};
 use crate::model::{
     ACTION_MAX, ACTION_WARN, Attention, COMPONENTS_MAX, Component, INGREDIENTS_MAX, Ingredient,
@@ -53,6 +53,13 @@ pub enum Code {
     LongAction,
     TimeMismatch,
     UnknownUnit,
+    MissingTime,
+    MissingSourceUrl,
+    // The last two are reported by the library on a dry run, not by
+    // `validate`. Plain comments: a documented variant would turn the
+    // schema's `enum` into a `oneOf`.
+    UnknownTag,
+    DuplicateSource,
 }
 
 impl Code {
@@ -87,6 +94,10 @@ impl Code {
             Self::LongAction => "long_action",
             Self::TimeMismatch => "time_mismatch",
             Self::UnknownUnit => "unknown_unit",
+            Self::MissingTime => "missing_time",
+            Self::MissingSourceUrl => "missing_source_url",
+            Self::UnknownTag => "unknown_tag",
+            Self::DuplicateSource => "duplicate_source",
         }
     }
 }
@@ -261,6 +272,26 @@ pub fn validate(doc: &RecipeDoc) -> Report {
         }
     }
 
+    for (_, step) in ix.steps() {
+        if step.time.is_none() {
+            report.warn(
+                Code::MissingTime,
+                format!("steps.{}.time", step.id),
+                format!("step \"{}\" has no time", step.id),
+                "give every step a time and an attention (active or passive); the totals and the timeline leave it out",
+            );
+        }
+    }
+    if doc.source.kind == crate::model::SourceKind::Web
+        && doc.source.url.as_deref().is_none_or(str::is_empty)
+    {
+        report.warn(
+            Code::MissingSourceUrl,
+            "source.url",
+            "a web source has no url",
+            "set source.url to the page's address, so the original stays one tap away and duplicates are found",
+        );
+    }
     let active: u64 = ix
         .steps()
         .filter_map(|(_, step)| step.time)
@@ -676,7 +707,7 @@ fn check_allocation(ix: &Index<'_>, ingredient: &Ingredient, report: &mut Report
         .sum();
     let used = explicit_total(uses.iter().copied(), unit) + shares;
     let has_rest = uses.iter().any(|u| u.rest);
-    let amount = |qty: f64| fmt_amount(Some(qty), unit);
+    let amount = |qty: f64| fmt_amount_exact(Some(qty), unit);
     if has_rest && used >= total - 1e-9 {
         report.error(
             Code::OverAllocated,

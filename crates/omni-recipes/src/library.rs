@@ -2,8 +2,8 @@
 //! recipe, and history.
 
 use omni_recipe_format::{
-    Marks, Op, RecipeDoc, Report, apply_ops, chart_ascii, chart_blocks, diff_summary, render_list,
-    validate,
+    Code, Level, Marks, Op, Problem, RecipeDoc, Report, apply_ops, chart_ascii, chart_blocks,
+    diff_summary, diff_summary_with_ops, render_list, validate,
 };
 use omni_store::{DocOps as _, StoreError};
 use rusqlite::{Connection, params};
@@ -134,27 +134,70 @@ impl Recipes {
         let doc = input.document;
         let report = validate(&doc);
         let time = time_info(&doc);
-        if !report.is_valid() {
-            if !dry {
-                return Err(invalid_recipe(&report));
-            }
-            return Ok(CreateOutput {
-                saved: false,
-                id: None,
-                revision: None,
-                change_id: None,
-                problems: Some(report.errors),
-                time,
-                warnings: report.warnings,
-                fidelity: fidelity::unchecked("the document is not valid"),
-                text: String::new(),
-            });
+        if !report.is_valid() && !dry {
+            return Err(invalid_recipe(&report));
         }
         if input.from_inbox.is_some() && input.source_text.is_some() {
             return Err(invalid("pass fromInbox or sourceText, not both"));
         }
-        let text = render_list(&doc, 1.0);
         let tag_names = tags::names(input.tags.as_deref().unwrap_or_default())?;
+        if dry {
+            // A dry run reports everything the real call would refuse, at
+            // once: the document's problems, tags the registry lacks, and a
+            // source or document that already exists.
+            let (document, names, from_inbox) =
+                (doc.clone(), tag_names.clone(), input.from_inbox.clone());
+            let (create_tags, allow_duplicate) = (
+                input.create_tags.unwrap_or(false),
+                input.allow_duplicate.unwrap_or(false),
+            );
+            let mut problems = report.errors.clone();
+            problems.extend(
+                self.query(move |conn| {
+                    let mut found = Vec::new();
+                    if !create_tags {
+                        found.extend(tags::problems(conn, &names)?);
+                    }
+                    if !allow_duplicate {
+                        let item = source_item(conn, from_inbox.as_deref())?;
+                        let (_, digest) = encode_doc(&document)?;
+                        if let (_, Some(duplicate)) =
+                            source_checks(conn, &document, item.as_ref(), &digest)?
+                        {
+                            found.push(Problem {
+                                code: Code::DuplicateSource,
+                                path: "source".to_owned(),
+                                message: duplicate.to_string(),
+                                hint: Some(
+                                    "edit the existing recipe, or pass allowDuplicate".to_owned(),
+                                ),
+                                level: Level::Error,
+                            });
+                        }
+                    }
+                    Ok(found)
+                })
+                .await?,
+            );
+            if !problems.is_empty() {
+                return Ok(CreateOutput {
+                    saved: false,
+                    id: None,
+                    revision: None,
+                    change_id: None,
+                    problems: Some(problems),
+                    time,
+                    warnings: report.warnings.clone(),
+                    fidelity: fidelity::unchecked("the write would be refused"),
+                    text: if report.is_valid() {
+                        render_list(&doc, 1.0)
+                    } else {
+                        String::new()
+                    },
+                });
+            }
+        }
+        let text = render_list(&doc, 1.0);
         let snapshot = match (&input.from_inbox, &input.source_text) {
             (Some(item), _) => {
                 let item = item.clone();
@@ -377,7 +420,9 @@ impl Recipes {
                             at: iso(row.get(1)?),
                             tool: row.get(2)?,
                             summary: row.get(3)?,
-                            recipes: touched_recipes(&touched),
+                            recipes: u32::try_from(touched_recipes(&touched).len())
+                                .unwrap_or(u32::MAX),
+                            recipe_ids: touched_recipes(&touched).into_iter().take(20).collect(),
                             undone: undone.is_some(),
                         })
                     })
@@ -429,18 +474,19 @@ impl Recipes {
     }
 }
 
-/// How many recipes a change's `touched` map names.
-fn touched_recipes(touched: &str) -> u32 {
+/// The recipes a change's `touched` map names.
+fn touched_recipes(touched: &str) -> Vec<String> {
     serde_json::from_str::<serde_json::Value>(touched)
         .ok()
         .and_then(|value| {
             value.as_object().map(|map| {
                 map.keys()
                     .filter(|key| key.starts_with(ids::RECIPE))
-                    .count()
+                    .cloned()
+                    .collect()
             })
         })
-        .map_or(0, |count| u32::try_from(count).unwrap_or(u32::MAX))
+        .unwrap_or_default()
 }
 
 struct Create {
@@ -463,52 +509,43 @@ fn duplicate(id: &str, title: &str, why: &str) -> RecipesError {
     )
 }
 
-fn create_tx(
-    conn: &Connection,
-    now: i64,
-    create: Create,
-    actor: &Actor,
-) -> R<(String, u64, String)> {
-    let Create {
-        doc,
-        tags: tag_names,
-        create_tags,
-        notes,
-        from_inbox,
-        source_text,
-        derived_from,
-        allow_duplicate,
-    } = create;
-    let created_tags = tags::require(conn, &tag_names, create_tags, now)?;
-    let derived_from = match derived_from {
-        Some(id) => Some(recipe_for_read(conn, &id)?.0.id),
-        None => None,
-    };
-    let item = match &from_inbox {
-        Some(item_id) => {
-            let item = inbox::item(conn, item_id)?
+/// The inbox item a create names, when it is one agents can see.
+fn source_item(conn: &Connection, from_inbox: Option<&str>) -> R<Option<inbox::Item>> {
+    match from_inbox {
+        Some(item_id) => Ok(Some(
+            inbox::item(conn, item_id)?
                 .filter(|item| item.state != "uploading")
-                .ok_or_else(|| not_found(format!("no inbox item has id {item_id:?}")))?;
-            if !allow_duplicate
-                && let Some(existing) = &item.recipe_id
-                && let Some(row) = db::recipe(conn, existing)?
-                && row.state != "trashed"
-            {
-                return Err(duplicate(&row.id, &row.title, "this inbox item"));
-            }
-            Some(item)
-        }
+                .ok_or_else(|| not_found(format!("no inbox item has id {item_id:?}")))?,
+        )),
+        None => Ok(None),
+    }
+}
+
+/// The source URL a new recipe is filed under, and the refusal a duplicate
+/// earns (which `allowDuplicate` waives): the inbox item already became a
+/// recipe, a recipe has the same source URL, or the exact document exists.
+fn source_checks(
+    conn: &Connection,
+    doc: &RecipeDoc,
+    item: Option<&inbox::Item>,
+    digest: &str,
+) -> R<(Option<String>, Option<RecipesError>)> {
+    let first = match item.and_then(|item| item.recipe_id.as_deref()) {
+        Some(existing) => db::recipe(conn, existing)?
+            .filter(|row| row.state != "trashed")
+            .map(|row| duplicate(&row.id, &row.title, "this inbox item")),
         None => None,
     };
     // Both the URL the document names and the one the page was read from.
     let doc_url = doc.source.url.as_deref().and_then(normal_url);
     let item_url = item
-        .as_ref()
         .and_then(|item| item.url())
         .and_then(|url| normal_url(&url));
     let source_url = doc_url.clone().or_else(|| item_url.clone());
-    let (stored, digest) = encode_doc(&doc)?;
-    if !allow_duplicate {
+    if first.is_some() {
+        return Ok((source_url, first));
+    }
+    {
         let wanted: Vec<&String> = doc_url.iter().chain(&item_url).collect();
         if !wanted.is_empty() {
             let mut statement = conn
@@ -546,7 +583,10 @@ fn create_tx(
                     .iter()
                     .any(|url| Some(*url) == stored_url.as_ref() || Some(*url) == page.as_ref())
                 {
-                    return Err(duplicate(&id, &title, "a recipe from this source URL"));
+                    return Ok((
+                        source_url,
+                        Some(duplicate(&id, &title, "a recipe from this source URL")),
+                    ));
                 }
             }
         }
@@ -560,8 +600,42 @@ fn create_tx(
             ))
             .map_err(sql)?;
         if let Some((id, title)) = found {
-            return Err(duplicate(&id, &title, "this exact document"));
+            return Ok((
+                source_url,
+                Some(duplicate(&id, &title, "this exact document")),
+            ));
         }
+    }
+
+    Ok((source_url, first))
+}
+
+fn create_tx(
+    conn: &Connection,
+    now: i64,
+    create: Create,
+    actor: &Actor,
+) -> R<(String, u64, String)> {
+    let Create {
+        doc,
+        tags: tag_names,
+        create_tags,
+        notes,
+        from_inbox,
+        source_text,
+        derived_from,
+        allow_duplicate,
+    } = create;
+    let created_tags = tags::require(conn, &tag_names, create_tags, now)?;
+    let derived_from = match derived_from {
+        Some(id) => Some(recipe_for_read(conn, &id)?.0.id),
+        None => None,
+    };
+    let item = source_item(conn, from_inbox.as_deref())?;
+    let (stored, digest) = encode_doc(&doc)?;
+    let (source_url, duplicate) = source_checks(conn, &doc, item.as_ref(), &digest)?;
+    if !allow_duplicate && let Some(found) = duplicate {
+        return Err(found);
     }
 
     let id = ids::new_id(ids::RECIPE);
@@ -700,6 +774,7 @@ struct ContentResult {
     text: String,
     seq: Option<u64>,
     change_id: Option<String>,
+    resolved: Vec<String>,
     doc: Option<RecipeDoc>,
     source_item: Option<String>,
 }
@@ -713,6 +788,7 @@ impl ContentResult {
             change_id: self.change_id,
             problems: self.problems,
             changes: self.changes,
+            resolved: self.resolved,
             warnings: self.warnings,
             fidelity,
             text: self.text,
@@ -848,6 +924,7 @@ fn content_tx(
         text: String::new(),
         seq: None,
         change_id: None,
+        resolved: Vec::new(),
         doc: None,
         source_item: row.source_item.clone(),
     };
@@ -858,7 +935,11 @@ fn content_tx(
         result.problems = Some(report.errors);
         return Ok(result);
     }
-    result.changes = diff_summary(&old, &new);
+    result.changes = match &write.kind {
+        // The operations say which ids were renamed, so a rename reads as one.
+        ContentKind::Edit(ops) => diff_summary_with_ops(&old, &new, ops),
+        _ => diff_summary(&old, &new),
+    };
     result.text = render_list(&new, 1.0);
     for adjustment in &write.resolves {
         let open: Option<String> = rusqlite::OptionalExtension::optional(conn.query_row(
@@ -914,6 +995,7 @@ fn content_tx(
         },
     )?);
     result.saved = true;
+    result.resolved.clone_from(&write.resolves);
     result.revision = revision;
     result.seq = Some(seq);
     result.doc = Some(new);

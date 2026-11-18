@@ -33,7 +33,7 @@ pub use model::{
     Source, SourceKind, Step, StepTime, Temp, TimeOverride, UpgradeError, Yield, is_valid_id,
     is_web_url, upgrade,
 };
-pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, scaled};
+pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, diff_summary_with_ops, scaled};
 pub use search::{fold, matches, search_text, tokens};
 pub use text::{
     Placeholder, Segment, UseQty, chart_label, placeholders, render_step_segments, render_text,

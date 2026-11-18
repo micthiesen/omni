@@ -121,6 +121,7 @@ fn kind_name(kind: &CookEventKind) -> &'static str {
         CookEventKind::CancelTimer { .. } => "cancelTimer",
         CookEventKind::Rebase { .. } => "rebase",
         CookEventKind::Finish { .. } => "finish",
+        CookEventKind::Abandon {} => "abandon",
         CookEventKind::DismissAdjustment { .. } => "dismissAdjustment",
     }
 }
@@ -261,6 +262,8 @@ pub fn project(events: &[CookEvent]) -> Projection {
             }
             CookEventKind::CancelTimer { step } => out.timers.retain(|(known, _)| known != step),
             CookEventKind::Finish { note } => out.notes.extend(note.clone()),
+            // A discarded cook has nothing left to ring.
+            CookEventKind::Abandon {} => out.timers.clear(),
             CookEventKind::Rebase { .. } | CookEventKind::DismissAdjustment { .. } => {}
         }
     }
@@ -427,7 +430,7 @@ fn check_event(doc: &RecipeDoc, kind: &CookEventKind) -> R<()> {
         CookEventKind::Unadjust { .. } | CookEventKind::DismissAdjustment { .. } => Ok(()),
         CookEventKind::Note { text } => text_ok(text),
         CookEventKind::Timer { step, .. } | CookEventKind::CancelTimer { step } => step_ok(step),
-        CookEventKind::Rebase { .. } => Ok(()),
+        CookEventKind::Rebase { .. } | CookEventKind::Abandon {} => Ok(()),
         CookEventKind::Finish { note } => note.as_deref().map_or(Ok(()), text_ok),
     }
 }
@@ -649,6 +652,13 @@ pub fn append_tx(
             )
             .map_err(sql)?;
             row.last_event_at = now;
+        }
+        if matches!(event.kind, CookEventKind::Abandon {}) {
+            // Discarded: closed at once, no cook, no adjustments.
+            let (seq, _) = finish_tx(conn, now, &row, None, false, actor)?;
+            library_seq = Some(seq);
+            row.state = "abandoned".to_owned();
+            row.finished_at = Some(now);
         }
         if let CookEventKind::Finish { note } = &event.kind {
             let (seq, done) = finish_tx(conn, now, &row, note.as_deref(), true, actor)?;
@@ -959,11 +969,19 @@ impl Recipes {
                         .into_iter()
                         .rev()
                 {
-                    let projection = project(&session_events(conn, &row.id)?);
+                    let events = session_events(conn, &row.id)?;
+                    let projection = project(&events);
                     cooks.push(CookLogEntry {
                         on: db::local_date(row.finished_at.unwrap_or(row.started_at), &tz),
                         scale: row.scale,
                         note: row.note.clone(),
+                        notes: events
+                            .iter()
+                            .filter_map(|event| match &event.kind {
+                                CookEventKind::Note { text } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect(),
                         adjustments: projection
                             .adjustments
                             .into_iter()
@@ -1027,6 +1045,7 @@ impl Recipes {
                     CookEventInput::CancelTimer { step } => CookEventKind::CancelTimer { step },
                     CookEventInput::Rebase { revision } => CookEventKind::Rebase { revision },
                     CookEventInput::Finish { note } => CookEventKind::Finish { note },
+                    CookEventInput::Abandon {} => CookEventKind::Abandon {},
                     CookEventInput::DismissAdjustment { id } => {
                         CookEventKind::DismissAdjustment { id }
                     }

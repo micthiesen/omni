@@ -418,7 +418,10 @@ async fn a_source_shared_by_two_recipes_outlives_either() {
     h.pages.serve(vec![FetchedPage {
         source: "fetch".to_owned(),
         url: url.to_owned(),
-        text: Some("Chicken Piccata\n4 tbsp butter".to_owned()),
+        text: Some(format!(
+            "Chicken Piccata\n4 tbsp butter\n{}",
+            "Season, dredge and sear the cutlets. ".repeat(20)
+        )),
         ..FetchedPage::default()
     }]);
     let item = h.ok("recipes_import_url", json!({ "url": url })).await["inboxItemId"]
