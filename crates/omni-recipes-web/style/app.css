@@ -854,11 +854,10 @@ body:has(.cta) .stack {
   display: none;
 }
 
+/* 4:3 of the strip's width, which is the screen's up to the page's 760px. */
 .slide {
-  flex: none;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  max-height: 62dvh;
+  flex: 0 0 100%;
+  height: min(75vw, 570px, 62dvh);
   scroll-snap-align: start;
 }
 
@@ -1663,7 +1662,7 @@ body:has(.cta) .stack {
 
 @media (orientation: landscape) and (max-height: 500px) {
   .slide {
-    aspect-ratio: 16 / 7;
+    height: 62dvh;
   }
 
   /* A short screen keeps its height for the chart: Cook floats in a corner. */

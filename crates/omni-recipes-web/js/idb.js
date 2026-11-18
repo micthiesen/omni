@@ -63,5 +63,8 @@ export function idbWrite(store, puts, deletes, clear) {
     if (clear) target.clear();
     for (const key of deletes) target.delete(key);
     for (const [key, value] of puts) target.put(value, key);
+    // Commit now instead of when the requests report back: a write must
+    // not be lost to a reload or to the app being closed just after a tap.
+    tx.commit?.();
   });
 }

@@ -195,8 +195,23 @@ impl Store {
                     ))
                 })
                 .collect();
-            self.next_key
-                .set_value(entries.last().map_or(1, |entry| entry.key + 1));
+            let mut entries = entries;
+            let mut next_key = entries.last().map_or(1, |entry| entry.key + 1);
+            for session in &sessions {
+                for event in outbox::unqueued_events(&entries, session) {
+                    let entry = Entry {
+                        key: next_key,
+                        job: Job::CookEvent {
+                            session: session.id.clone(),
+                            event,
+                        },
+                    };
+                    idb::put(idb::OUTBOX, entry.key as f64, &entry);
+                    entries.push(entry);
+                    next_key += 1;
+                }
+            }
+            self.next_key.set_value(next_key);
             self.recipes.set(
                 records
                     .into_iter()
@@ -674,10 +689,36 @@ impl Store {
                     vec![*key]
                 }
             };
+            let refused = match &batch {
+                Batch::Events {
+                    session, events, ..
+                } => Some((
+                    session.clone(),
+                    events
+                        .iter()
+                        .map(|e| e.client_event_id.clone())
+                        .collect::<Vec<_>>(),
+                )),
+                _ => None,
+            };
             self.in_flight.set_value(keys.clone());
             let status = self.send(batch).await;
             self.in_flight.set_value(Vec::new());
-            match outbox::classify(status) {
+            let outcome = outbox::classify(status);
+            // Events the server will never take leave the session too, or
+            // the screen would keep showing what was not recorded.
+            if outcome == Outcome::Drop
+                && let Some((session_id, ids)) = refused
+                && let Some(mut session) = self
+                    .sessions
+                    .with_untracked(|s| s.get(&session_id).cloned())
+            {
+                session
+                    .events
+                    .retain(|event| !ids.contains(&event.client_event_id));
+                self.put_session(session);
+            }
+            match outcome {
                 Outcome::Sent | Outcome::Drop => {
                     self.done(&keys);
                     self.failures.set_value(0);
@@ -745,7 +786,22 @@ impl Store {
                 let result = net::post_json::<_, CookSession>(paths::COOK, &request).await;
                 match &result {
                     Ok(session) => self.merge_session(session.clone()),
-                    Err(NetError::Status(400..=499)) => self.drop_session(&request.id),
+                    Err(NetError::Status(status @ 400..=499))
+                        if outbox::classify(Some(*status)) == Outcome::Drop =>
+                    {
+                        // Its events would be answered 425 for ever.
+                        let mut gone = Vec::new();
+                        self.outbox.update(|entries| {
+                            gone = outbox::drop_session(entries, &request.id);
+                        });
+                        for entry in gone {
+                            idb::delete(idb::OUTBOX, entry.key as f64);
+                            if let Job::CookPhoto { blob, .. } = entry.job {
+                                idb::delete(idb::BLOBS, blob);
+                            }
+                        }
+                        self.drop_session(&request.id);
+                    }
                     Err(_) => {}
                 }
                 status(&result)

@@ -347,9 +347,17 @@ RECIPES_APP_URL=http://fond.localhost:8099 cargo run -p omni -- --preview --port
 ```
 
 Open `http://fond.localhost:8099/`. The preview uses a throwaway database and
-recipes directory and seeds the four sample recipes; `http://localhost:8099/`
-is still the Omni preview. Fetching is offline in a preview, so URL import
-answers `[fetch_failed]`.
+recipes directory and seeds the four sample recipes and ten tags. The first
+(Chicken Piccata) also has notes, a stored source text, and one finished cook
+with a drawn placeholder photo and an open adjustment, and one photo waits in
+the inbox, so every screen of the app has something to show
+(`crates/omni/src/preview_recipes.rs`). `http://localhost:8099/` is still the
+Omni preview. Of the background services the preview starts only
+`recipes-timers`, so idle sessions close and ended timers are recorded
+(`recipes_timer_alert`, state `unrouted`: nothing is sent in a preview).
+Fetching is offline in a preview, so URL import answers `[fetch_failed]`.
+The app's browser tests run against it with
+`FOND_BASE_URL=http://fond.localhost:8099` (`docs/recipes-app.md`).
 
 ## Events
 

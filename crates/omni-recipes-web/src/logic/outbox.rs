@@ -4,7 +4,8 @@
 use std::collections::BTreeSet;
 
 use omni_api::fond::{
-    ClientOp, ClientOpKind, CookEvent, OpsRequest, RecipeRecord, RecipeState, StartCookRequest,
+    ClientOp, ClientOpKind, CookEvent, CookSession, OpsRequest, RecipeRecord, RecipeState,
+    StartCookRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -282,6 +283,19 @@ pub fn pending_event_ids(entries: &[Entry]) -> BTreeSet<String> {
         .collect()
 }
 
+/// Local events of `session` that were never sent and are not queued: the
+/// app stopped between storing the session and storing the outbox entry.
+/// They are queued again at launch, so a tap is never silently undone.
+pub fn unqueued_events(entries: &[Entry], session: &CookSession) -> Vec<CookEvent> {
+    let pending = pending_event_ids(entries);
+    session
+        .events
+        .iter()
+        .filter(|event| event.seq == 0 && !pending.contains(&event.client_event_id))
+        .cloned()
+        .collect()
+}
+
 /// Whether anything queued still belongs to `session`, which keeps a session
 /// the server does not list (not started there yet) alive locally.
 pub fn session_pending(entries: &[Entry], session: &str) -> bool {
@@ -292,6 +306,18 @@ pub fn session_pending(entries: &[Entry], session: &str) -> bool {
         }
         _ => false,
     })
+}
+
+/// Removes everything queued for `session` and returns what was removed.
+/// The server answers events of a session it has never seen with 425 (they
+/// may simply be ahead of their start), so once a start is refused for good
+/// its events would otherwise be retried forever and block the queue.
+pub fn drop_session(entries: &mut Vec<Entry>, session: &str) -> Vec<Entry> {
+    let (gone, kept) = std::mem::take(entries)
+        .into_iter()
+        .partition(|entry| session_pending(std::slice::from_ref(entry), session));
+    *entries = kept;
+    gone
 }
 
 /// Photos of inbox `item` still to upload.
@@ -575,6 +601,62 @@ mod tests {
         assert!(session_pending(&queue, "cook_b"));
         assert!(!session_pending(&queue, "cook_c"));
         assert_eq!(pending_event_ids(&queue), BTreeSet::from(["e9".to_owned()]));
+    }
+
+    #[test]
+    fn a_refused_session_takes_its_queued_jobs_with_it() {
+        let mut queue = vec![
+            start(1, "cook_a"),
+            event(2, "cook_a", "e1"),
+            op(3, notes("a", "r1", "x", 0)),
+            event(4, "cook_b", "e2"),
+            Entry {
+                key: 5,
+                job: Job::CookPhoto {
+                    session: "cook_a".into(),
+                    blob: "b1".into(),
+                },
+            },
+        ];
+        let gone = drop_session(&mut queue, "cook_a");
+        assert_eq!(gone.iter().map(|e| e.key).collect::<Vec<_>>(), [1, 2, 5]);
+        assert_eq!(queue.iter().map(|e| e.key).collect::<Vec<_>>(), [3, 4]);
+    }
+
+    #[test]
+    fn stored_events_without_an_outbox_entry_are_found() {
+        let mut sent = app_event("e0".into(), 1, CookEventKind::Check { target: "a".into() });
+        sent.seq = 4;
+        let session = CookSession {
+            id: "cook_a".into(),
+            recipe_id: "r1".into(),
+            revision: 1,
+            scale: 1.0,
+            state: omni_api::fond::CookState::Active,
+            started_at: 0,
+            finished_at: None,
+            last_event_at: 0,
+            events: vec![
+                sent,
+                app_event(
+                    "e1".into(),
+                    1,
+                    CookEventKind::Check {
+                        target: "sear".into(),
+                    },
+                ),
+                app_event("e2".into(), 1, CookEventKind::Check { target: "b".into() }),
+            ],
+            doc: None,
+        };
+        let queue = vec![event(1, "cook_a", "e1")];
+        let lost = unqueued_events(&queue, &session);
+        assert_eq!(
+            lost.iter()
+                .map(|e| e.client_event_id.as_str())
+                .collect::<Vec<_>>(),
+            ["e2"]
+        );
     }
 
     #[test]

@@ -74,6 +74,13 @@ once, so a resend after a lost answer is safe. A sync always drains the
 outbox first, and unsent edits are laid over synced records, so a sync never
 undoes what is on screen.
 
+IndexedDB transactions are committed as soon as their writes are issued, and
+at launch any session event stored without its outbox entry (the app stopped
+between the two writes) is queued again, so a tap is not silently undone.
+Events for a session the server has not seen are answered 425 and stay
+queued behind their start; when a start is refused for good, everything
+queued for that session is dropped with it.
+
 **Notes** are in the outbox on every keystroke (the unsent edit is replaced
 in place) and sent after 800 ms without typing or when the field loses focus,
 with the `baseRev` of the first unsent edit. When the server answers with the
@@ -177,6 +184,14 @@ a real Omni:
 FOND_BASE_URL=https://recipes.syas.ca FOND_E2E_SKIP_FINISH=1 FOND_E2E_SKIP_INBOX=1 \
   FOND_RECIPE_CHART="…" FOND_RECIPE_COOK="…" npx playwright test
 ```
+
+Against the real server locally, use its preview (`docs/recipes.md`, "Running
+it locally") with `FOND_BASE_URL=http://fond.localhost:8099`; nothing needs
+skipping there. `FOND_CHROMIUM=1` adds a Chromium project at phone size
+(`--project chromium`, after `npx playwright install chromium`), which is how
+the content security policy is checked in both engines. Requests the tests
+make themselves carry an `Origin` header, because Omni refuses writes from
+another origin.
 
 Tests that change data put it back. Two cannot (a finished cook stays in the
 cook history; an uploaded photo waits for an agent) and are skipped with the

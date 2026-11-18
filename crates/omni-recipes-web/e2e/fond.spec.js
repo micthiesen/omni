@@ -48,6 +48,9 @@ async function openRecipe(page, title) {
   await expect(page.locator('main.recipe h1')).toHaveText(title);
 }
 
+// Omni refuses writes that do not come from the app's own origin.
+const sameOrigin = (page) => ({ origin: new URL(page.url()).origin });
+
 // Everything queued has reached the server.
 async function flushed(page) {
   await expect(page.locator('[data-testid=connection]')).toHaveCount(0, { timeout: 20_000 });
@@ -86,6 +89,30 @@ test('the shell is installable: manifest, icons and service worker', async ({ pa
   expect(registered).toBe(true);
 });
 
+test('nothing the app does is refused by the content security policy', async ({ page }) => {
+  const refused = [];
+  page.on('console', (message) => {
+    if (/content security policy|refused to/i.test(message.text())) refused.push(message.text());
+  });
+  page.on('pageerror', (error) => refused.push(String(error)));
+  await page.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (event) => {
+      window.__csp.push(`${event.violatedDirective} ${event.blockedURI}`);
+    });
+  });
+  const violations = async () => refused.concat(await page.evaluate(() => window.__csp));
+  await openRecipe(page, RECIPES.cook);
+  await page.getByRole('tab', { name: 'Chart' }).click();
+  await page.locator('[data-testid=chart] td.step').first().click();
+  await expect(page.locator('.sheet.open .step-text')).not.toBeEmpty();
+  expect(await violations()).toEqual([]);
+  await page.goto('/inbox');
+  await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible();
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  expect(await violations()).toEqual([]);
+});
+
 test('the library shows photo cards and typographic tiles', async ({ page }) => {
   await openLibrary(page);
   const cards = page.locator('[data-testid=grid] a.card');
@@ -109,11 +136,11 @@ test('the library shows photo cards and typographic tiles', async ({ page }) => 
 
 test('the library scroll position is restored on the way back', async ({ page }) => {
   // A short screen, so even a small library scrolls.
-  await page.setViewportSize({ width: 390, height: 420 });
+  await page.setViewportSize({ width: 390, height: 320 });
   await openLibrary(page);
   const room = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
-  test.skip(room < 120, 'the library is too short to scroll');
-  await page.evaluate(() => window.scrollTo(0, 120));
+  test.skip(room < 60, 'the library is too short to scroll');
+  await page.evaluate(() => window.scrollTo(0, 60));
   const target = page.locator('[data-testid=grid] a.card').nth(1);
   // Clicking scrolls the card into view first; what counts is where that leaves the page.
   await target.scrollIntoViewIfNeeded();
@@ -251,6 +278,7 @@ test('scaling changes every amount in both views and is remembered', async ({ pa
   await expect(page.locator('.scale-note')).toContainText('do not scale');
   const doubled = await ingredients.first().innerText();
   expect(doubled).not.toBe(before);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot(page, 'recipe-scaled');
 
   await page.getByRole('tab', { name: 'Chart' }).click();
@@ -324,9 +352,9 @@ test('archive and delete each offer an undo', async ({ page }) => {
   const recipeId = url.split('/').pop();
   const stamp = Date.now();
   const op = (state) => ({ id: `op_e2e${state.slice(0, 3)}${String(stamp).slice(-6)}`, at: Date.now(), type: 'state', recipeId, state });
-  expect((await page.request.post('/api/ops', { data: { ops: [op('active')] } })).ok()).toBe(true);
+  expect((await page.request.post('/api/ops', { headers: sameOrigin(page), data: { ops: [op('active')] } })).ok()).toBe(true);
   await expect(card(page, RECIPES.chart)).toBeVisible();
-  expect((await page.request.post('/api/ops', { data: { ops: [op('archived')] } })).ok()).toBe(true);
+  expect((await page.request.post('/api/ops', { headers: sameOrigin(page), data: { ops: [op('archived')] } })).ok()).toBe(true);
   await expect(card(page, RECIPES.chart)).toHaveCount(0);
   await page.getByRole('button', { name: 'Filter' }).click();
   await page.getByRole('switch').check();
@@ -394,6 +422,7 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   // event stream and rings here when it runs out.
   const sessionId = cookUrl.split('/').pop();
   const pushed = await page.request.post(`/api/cook/${sessionId}/events`, {
+    headers: sameOrigin(page),
     data: {
       events: [
         { seq: 0, clientEventId: `ev_e2e${Date.now()}`, at: Date.now(), actor: 'app', type: 'timer', step: firstStep, endsAt: Date.now() + 2500 },
@@ -463,6 +492,13 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   await page.locator('[data-testid=finish-confirm]').click();
   await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.cook);
   await flushed(page);
+  // The photo of the result joined the recipe's gallery and is served from /img.
+  const photos = page.locator('[data-testid=gallery] img');
+  await expect.poll(() => photos.count()).toBeGreaterThan(0);
+  expect((await photos.first().boundingBox()).height).toBeGreaterThan(200);
+  await expect.poll(() => photos.last().getAttribute('src')).toMatch(/^\/img\/[0-9a-f]{64}\/full\.jpg$/);
+  const lastPhoto = await photos.last().getAttribute('src');
+  expect((await page.request.get(lastPhoto)).headers()['content-type']).toBe('image/jpeg');
   // The adjustment is now a "Last time" callout on its step; dismiss it again.
   const callout = page.locator('.last-time').filter({ hasText: adjusted });
   await expect(callout).toBeVisible();

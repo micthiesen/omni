@@ -11,6 +11,11 @@ ignore = [
   # no runtime code. The pinned leptos 0.8.20 still requires it; remove this
   # entry once a leptos upgrade drops paste.
   { id = "RUSTSEC-2024-0436", reason = "unmaintained proc macro reached only through leptos 0.8.20" },
+  # chrono is flagged as unmaintained; the advisory names no vulnerability.
+  # It reaches the server only through rmcp 3.9.0 and
+  # aws-cognito-srp 0.2.5, whose pinned versions still require it; remove this
+  # entry once both have releases without chrono.
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained, required by the pinned rmcp and aws-cognito-srp" },
 ]
 
 [licenses]

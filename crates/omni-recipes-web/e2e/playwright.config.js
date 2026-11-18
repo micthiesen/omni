@@ -3,6 +3,7 @@
 //
 //   FOND_BASE_URL   the app's origin (default: the mock server on :8787)
 //   FOND_SHOTS      a directory to write light and dark screenshots into
+//   FOND_CHROMIUM   also run in Chromium at phone size
 //   see fond.spec.js for the switches that skip tests which leave data behind
 const { defineConfig, devices } = require('@playwright/test');
 
@@ -22,5 +23,10 @@ module.exports = defineConfig({
     ignoreHTTPSErrors: false,
     trace: 'off',
   },
-  projects: [{ name: 'iphone', use: { ...devices['iPhone 14'] } }],
+  projects: [
+    { name: 'iphone', use: { ...devices['iPhone 14'] } },
+    // Chromium reports content-security-policy violations differently from
+    // WebKit; FOND_CHROMIUM=1 adds it (npx playwright install chromium).
+    ...(process.env.FOND_CHROMIUM ? [{ name: 'chromium', use: { ...devices['Pixel 7'] } }] : []),
+  ],
 });

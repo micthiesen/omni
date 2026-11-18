@@ -603,6 +603,18 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
         "dashboard-hub",
         ops.dashboard.clone().listen(),
     );
+    if ctx.config.recipes_app_url.is_some() {
+        // The preview starts no background services except the recipe app's
+        // timer service: without it cook sessions never close and ended timers
+        // are never recorded (nothing is sent in preview). It only touches the
+        // recipe tables.
+        let timers = subsystems
+            .iter_mut()
+            .flat_map(|subsystem| std::mem::take(&mut subsystem.services))
+            .filter(|service| service.name == "recipes-timers")
+            .collect();
+        crate::services::start_all(&ctx, timers);
+    }
     Scheduler::start(ctx.tasks.clone(), ctx.shutdown.clone(), &ctx.tracker);
     tracing::info!(target: LOG, "Preview server ready on http://127.0.0.1:{port}/");
     let _ = tokio::signal::ctrl_c().await;
