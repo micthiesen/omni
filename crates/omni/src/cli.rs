@@ -8,6 +8,7 @@
 //! omni doctor [--image]
 //! omni compat-audit --db COPY
 //! omni stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
+//! omni recipes-verify|recipes-restore <archive> ... (see recipes_cli)
 //! ```
 //!
 //! `OMNI_SIDE_EFFECTS=record` selects record mode for shadow runs like the
@@ -40,6 +41,7 @@ pub enum Command {
     },
     CompatAudit(AuditArgs),
     Stylist(crate::stylist_cli::StylistArgs),
+    Recipes(crate::recipes_cli::RecipesArgs),
     Help,
 }
 
@@ -72,6 +74,8 @@ pub const USAGE: &str = "usage:
   omni stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
   omni stylist-verify --archive FILE [--private DIR]
   omni stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
+  omni recipes-verify ARCHIVE [--dir DIR]
+  omni recipes-restore ARCHIVE [--db PATH] [--dir DIR]
 ";
 
 fn side_effects(value: &str) -> Result<SideEffectMode, CliError> {
@@ -133,6 +137,9 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
         }
         Some(command @ ("stylist-export" | "stylist-verify" | "stylist-restore")) => {
             return crate::stylist_cli::parse(command, &args[1..]).map(Command::Stylist);
+        }
+        Some(command @ ("recipes-verify" | "recipes-restore")) => {
+            return crate::recipes_cli::parse(command, &args[1..]).map(Command::Recipes);
         }
         _ => {}
     }

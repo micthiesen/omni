@@ -53,6 +53,16 @@ pub async fn main(command: Command) -> u8 {
                 EXIT_FAILURE
             }
         },
+        Command::Recipes(args) => match crate::recipes_cli::run(&args).await {
+            Ok(report) => {
+                stdout_text(&report);
+                0
+            }
+            Err(error) => {
+                stderr_line(&format!("recipes command failed: {error:#}"));
+                EXIT_FAILURE
+            }
+        },
         Command::RunTaskUsage => {
             stderr_line("Usage: --run-task <TaskName>");
             EXIT_FAILURE

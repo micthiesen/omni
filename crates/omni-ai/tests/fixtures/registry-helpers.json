@@ -82,5 +82,12 @@
     "defaultModel": "openai:gpt-6-sol",
     "feature": "press-pods",
     "operation": "clean-narration"
+  },
+  {
+    "helper": "getRecipeReviewModel",
+    "envKey": null,
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "recipes",
+    "operation": "review-extraction"
   }
 ]

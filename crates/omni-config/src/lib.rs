@@ -47,6 +47,8 @@ pub enum ModelRole {
     PressPodsCleaning,
     ObserverRepair,
     ArrRecovery,
+    /// Compares a recipe draft with its stored source (`omni-recipes`).
+    RecipeReview,
 }
 
 impl ModelRole {
@@ -64,7 +66,8 @@ impl ModelRole {
             | ModelRole::LivestreamIntelligence
             | ModelRole::PressPodsMetadata
             | ModelRole::ObserverRepair
-            | ModelRole::ArrRecovery => "openai:gpt-6-luna",
+            | ModelRole::ArrRecovery
+            | ModelRole::RecipeReview => "openai:gpt-6-luna",
         }
     }
 
@@ -81,7 +84,7 @@ impl ModelRole {
             ModelRole::LivestreamIntelligence => Some("LIVESTREAM_INTELLIGENCE_MODEL"),
             ModelRole::PressPodsMetadata => Some("PRESSPODS_METADATA_MODEL"),
             ModelRole::PressPodsCleaning => Some("PRESSPODS_CLEANING_MODEL"),
-            ModelRole::ObserverRepair | ModelRole::ArrRecovery => None,
+            ModelRole::ObserverRepair | ModelRole::ArrRecovery | ModelRole::RecipeReview => None,
         }
     }
 }
@@ -476,8 +479,13 @@ config_struct! {
     omni_gateway_public_url: Option<String> = "OMNI_GATEWAY_PUBLIC_URL",
     /// The recipe app's `https://` origin (no path). Requests for its host
     /// reach only that app; unset (or empty) serves no app. Its host must
-    /// differ from the gateway's and PressPods' public hosts.
+    /// differ from the gateway's and PressPods' public hosts. Outside the
+    /// container `http://localhost` and `http://<name>.localhost` (any port)
+    /// are accepted too, for local runs.
     recipes_app_url: Option<String> = "RECIPES_APP_URL",
+    /// The built recipe app (`/app/recipes-web` in the container,
+    /// `crates/omni-recipes-web/dist` otherwise).
+    omni_recipes_web_dist: Option<String> = "OMNI_RECIPES_WEB_DIST",
     /// HTTP(S) without credentials, query or fragment; trailing slashes trimmed.
     hister_url: String = "HISTER_URL",
     hister_access_token: Option<String> = "HISTER_ACCESS_TOKEN",
@@ -571,6 +579,7 @@ const PUBLIC_TEXT_KEYS: &[&str] = &[
     "SMTP_HOST",
     "OMNI_GATEWAY_PUBLIC_URL",
     "RECIPES_APP_URL",
+    "OMNI_RECIPES_WEB_DIST",
     "HISTER_URL",
     "PRINTER_IPP_URL",
     "PRESSPODS_PUBLIC_URL",
@@ -903,8 +912,9 @@ impl Config {
             },
             recipes_app_url: match env.get("RECIPES_APP_URL").map(str::trim) {
                 None | Some("") => None,
-                Some(raw) => Some(public_origin("RECIPES_APP_URL", raw)?),
+                Some(raw) => Some(recipes_app_origin(raw, env.boolean("DOCKERIZED", false)?)?),
             },
+            omni_recipes_web_dist: env.opt("OMNI_RECIPES_WEB_DIST"),
             hister_url: {
                 let key = "HISTER_URL";
                 let url = env.trimmed_url(key, "https://hister.syas.ca")?;
@@ -1095,7 +1105,7 @@ impl Config {
             ModelRole::LivestreamIntelligence => self.livestream_intelligence_model.as_deref(),
             ModelRole::PressPodsMetadata => self.presspods_metadata_model.as_deref(),
             ModelRole::PressPodsCleaning => self.presspods_cleaning_model.as_deref(),
-            ModelRole::ObserverRepair | ModelRole::ArrRecovery => None,
+            ModelRole::ObserverRepair | ModelRole::ArrRecovery | ModelRole::RecipeReview => None,
         };
         configured.unwrap_or(role.default_model())
     }
@@ -1241,6 +1251,27 @@ fn public_origin(key: &'static str, raw: &str) -> Result<String, ConfigError> {
         ));
     }
     Ok(url.origin().ascii_serialization())
+}
+
+/// `RECIPES_APP_URL`: a public origin, or outside the container a plain
+/// `http://localhost[:port]` or `http://<name>.localhost[:port]` origin.
+fn recipes_app_origin(raw: &str, dockerized: bool) -> Result<String, ConfigError> {
+    const KEY: &str = "RECIPES_APP_URL";
+    if !dockerized
+        && let Ok(url) = url::Url::parse(raw.trim())
+        && url.scheme() == "http"
+        && url
+            .host_str()
+            .is_some_and(|host| host == "localhost" || host.ends_with(".localhost"))
+        && url.username().is_empty()
+        && url.password().is_none()
+        && matches!(url.path(), "" | "/")
+        && url.query().is_none()
+        && url.fragment().is_none()
+    {
+        return Ok(url.origin().ascii_serialization());
+    }
+    public_origin(KEY, raw)
 }
 
 /// `new URL(value)` (WHATWG parsing).
@@ -1477,8 +1508,27 @@ mod tests {
         for bad in [
             "http://recipes.example.com",
             "https://recipes.example.com/app",
+            "http://localhost/app",
+            "http://localhost.example.com",
         ] {
             assert!(load(&[("RECIPES_APP_URL", bad)]).is_err(), "{bad}");
+        }
+        // Local runs may use plain HTTP on localhost; the container may not.
+        for (local, origin) in [
+            ("http://localhost:8099", "http://localhost:8099"),
+            ("http://Fond.localhost:8099/", "http://fond.localhost:8099"),
+        ] {
+            assert_eq!(
+                load(&[("RECIPES_APP_URL", local)])
+                    .unwrap()
+                    .recipes_app_url
+                    .as_deref(),
+                Some(origin)
+            );
+            assert!(
+                load(&[("RECIPES_APP_URL", local), ("DOCKERIZED", "true")]).is_err(),
+                "{local}"
+            );
         }
         for clash in [
             (

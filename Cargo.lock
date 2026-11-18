@@ -3148,6 +3148,7 @@ dependencies = [
  "omni-personal",
  "omni-podcasts",
  "omni-presspods",
+ "omni-recipes",
  "omni-reminders",
  "omni-runtime",
  "omni-server-kit",
@@ -3611,6 +3612,7 @@ dependencies = [
  "omni-personal",
  "omni-podcasts",
  "omni-presspods",
+ "omni-recipes",
  "omni-reminders",
  "omni-runtime",
  "omni-server-kit",
@@ -3857,6 +3859,68 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omni-recipes"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "flate2",
+ "futures",
+ "hex",
+ "htmd",
+ "image",
+ "jiff",
+ "omni-ai",
+ "omni-alerts",
+ "omni-api",
+ "omni-config",
+ "omni-core",
+ "omni-http",
+ "omni-image",
+ "omni-mcp-kit",
+ "omni-recipe-format",
+ "omni-runtime",
+ "omni-server-kit",
+ "omni-store",
+ "omni-tasks",
+ "omni-testkit",
+ "regex",
+ "rusqlite",
+ "schemars 1.2.2",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "omni-recipes-web"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "leptos",
+ "omni-api",
+ "omni-recipe-format",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

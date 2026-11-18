@@ -74,6 +74,8 @@ pub struct AppPaths {
     pub stylist_private: PathBuf,
     /// Recipe images and archives.
     pub recipes_dir: PathBuf,
+    /// The built recipe app (`OMNI_RECIPES_WEB_DIST`); may not exist.
+    pub recipes_web_dist: PathBuf,
 }
 
 /// What one subsystem contributes to the app.

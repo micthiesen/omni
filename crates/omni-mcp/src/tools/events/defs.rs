@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 pub static EVENTS_STATUS: ToolDef<EventsStatusInput, EventsStatusOutput> = ToolDef::new(ToolInfo {
     name: "events_status",
     title: "Check MCP Event Delivery",
-    description: "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes; plus Claude Code session notify targets (names only) and each finished turn's delivery outcome. Contains no secrets, tokens, callback paths, or message content.",
+    description: "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting, recipes.inbox_added, recipes.cook_finished): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes; plus Claude Code session notify targets (names only) and each finished turn's delivery outcome. Contains no secrets, tokens, callback paths, or message content.",
     annotations: Annotations {
         read_only_hint: true,
         destructive_hint: false,

@@ -1,0 +1,47 @@
+{
+  "title": "Chicken Enchiladas",
+  "summary": "A split intermediate: two thirds of the sauce goes into the filling, the rest over the top.",
+  "yield": { "qty": 4, "unit": "servings" },
+  "source": { "kind": "original", "name": "Test case modelled on the recipe_grid tutorial" },
+  "components": [
+    {
+      "id": "enchiladas",
+      "ingredients": [
+        { "id": "tomatoes", "qty": 400, "unit": "g", "name": "chopped tomatoes" },
+        { "id": "spices", "qty": 1, "unit": "tbsp", "name": "chili powder" },
+        { "id": "chicken", "qty": 200, "unit": "g", "name": "chicken thigh", "prep": "diced" },
+        { "id": "onion", "qty": 1, "name": "onion", "prep": "sliced" },
+        { "id": "tortillas", "qty": 4, "name": "flour tortillas" },
+        { "id": "cheese", "qty": 100, "unit": "g", "name": "cheddar", "prep": "grated" }
+      ],
+      "steps": [
+        { "id": "sauce", "action": "boil down", "output": "tomato sauce",
+          "inputs": [ { "ref": "tomatoes" }, { "ref": "spices" } ],
+          "time": { "min": 15, "attention": "passive" },
+          "text": "Simmer {tomatoes} with {spices} until thick, about {time}." },
+        { "id": "fry", "action": "fry", "output": "fried chicken and onion",
+          "inputs": [ { "ref": "chicken" }, { "ref": "onion" } ],
+          "time": { "min": 8, "attention": "active" },
+          "text": "Fry {chicken} and {onion} until the chicken is cooked through, about {time}." },
+        { "id": "filling", "action": "simmer", "output": "filling",
+          "inputs": [ { "ref": "fry" }, { "ref": "sauce", "fraction": "2/3" } ],
+          "time": { "min": 5, "attention": "active" },
+          "text": "Stir {sauce} into {fry} and simmer for {time}." },
+        { "id": "fill", "action": "fill, roll", "output": "rolled tortillas",
+          "inputs": [ { "ref": "filling" }, { "ref": "tortillas" } ],
+          "time": { "min": 5, "attention": "active" },
+          "text": "Divide {filling} between {tortillas}, roll them up and lay them seam side down in a baking dish." },
+        { "id": "cover", "action": "pour over", "output": "covered enchiladas",
+          "inputs": [ { "ref": "fill" }, { "ref": "sauce", "rest": true }, { "ref": "cheese" } ],
+          "time": { "min": 1, "attention": "active" },
+          "text": "Pour {sauce} over {fill} and scatter with {cheese}." },
+        { "id": "bake", "action": "bake", "output": "enchiladas",
+          "inputs": [ { "ref": "cover" } ],
+          "temp": { "value": 400, "unit": "F" },
+          "time": { "min": 20, "attention": "passive" },
+          "until": "golden",
+          "text": "Bake {cover} at {temp} until golden, about {time}." }
+      ]
+    }
+  ]
+}

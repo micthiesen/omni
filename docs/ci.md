@@ -9,10 +9,10 @@ file together. The caching scheme comes from the wt repository's CI.
 
 | Job | What it does |
 |---|---|
-| `lint` | `cargo fmt --check`, clippy (native and wasm32), `deps-check`, `cargo deny` |
+| `lint` | `cargo fmt --check`, clippy (native, and wasm32 for the web crates, `omni-recipes-web` and `omni-recipe-format`), `deps-check`, `cargo deny` |
 | `test` | `cargo nextest run --workspace --profile ci`, after installing `tzdata-legacy` (Ubuntu 26.04 runners lack the backward-compatible zone names that the Debian runtime image has) |
 | `server` | Release build of `omni`, `omni-voice-enroll` and `omni-intel-doctor` in `rust:1.97.1-bookworm`, uploaded as the `server` artifact |
-| `image` | Docker build with `SERVER_SOURCE=prebuilt`, packaging the `server` artifact; layers go to the GitHub Actions cache |
+| `image` | Docker build with `SERVER_SOURCE=prebuilt`, packaging the `server` artifact; its web stage runs both release trunk builds (`omni-web` and Fond's `omni-recipes-web`); layers go to the GitHub Actions cache |
 | `publish` | `main` only, after `lint`, `test` and `image`: the same build (fully cached) pushed to GHCR, which Boris deploys |
 | `prune` | `main` only: deletes superseded Cargo cache entries |
 | `notify` | Pushover on a failed `main` run |

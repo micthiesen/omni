@@ -317,28 +317,8 @@ async fn the_public_pods_host_reaches_only_the_feed_audio_and_artwork() {
 const RECIPES_ORIGIN: &str = "https://recipes.example.com";
 const RECIPES_HOST: &str = "recipes.example.com";
 
-/// The subsystem that serves an app on the recipes host. A stand-in with the
-/// shape of the recipe app's router (page, service worker, API, guarded
-/// mutation); swap the body for the real subsystem's host app when it exists.
-fn recipes_app() -> omni_runtime::Subsystem {
-    use axum::routing::{get as get_route, post};
-    use omni_server_kit::host_app::{HostApp, MutationGuard, guard_mutations};
-
-    let router = axum::Router::new()
-        .route("/", get_route(|| async { "fond page" }))
-        .route("/sw.js", get_route(|| async { "fond worker" }))
-        .route("/api/sync", get_route(|| async { "fond sync" }))
-        .route("/api/notes", post(|| async { "fond saved" }))
-        .layer(axum::middleware::from_fn_with_state(
-            MutationGuard::new(RECIPES_ORIGIN),
-            guard_mutations,
-        ));
-    omni_runtime::Subsystem {
-        host_apps: vec![HostApp::new(RECIPES_ORIGIN, router).unwrap()],
-        ..omni_runtime::Subsystem::named("recipes-app")
-    }
-}
-
+/// Omni wired with the recipe app on its own host: the real Fond router of
+/// `omni-recipes`, served from a built app directory beside Omni's own.
 async fn router_with_recipes_app() -> (TestApp, axum::Router, tempfile::TempDir) {
     let (app, ctx, dist) = app_with_presspods().await;
     let mut env = omni_testkit::test_app_env();
@@ -350,12 +330,31 @@ async fn router_with_recipes_app() -> (TestApp, axum::Router, tempfile::TempDir)
     ] {
         env.insert(key.to_owned(), value.to_owned());
     }
+    let fond = dist.path().join("fond");
+    std::fs::create_dir_all(&fond).unwrap();
+    std::fs::write(
+        fond.join("index.html"),
+        "<!doctype html><title>Fond</title>",
+    )
+    .unwrap();
+    std::fs::write(fond.join("sw.js"), "// fond worker").unwrap();
     let ctx = AppContext {
         config: Arc::new(omni_config::Config::from_env(&env).unwrap()),
+        paths: omni_runtime::AppPaths {
+            recipes_web_dist: fond,
+            ..ctx.paths.clone()
+        },
         ..ctx
     };
     let mut wired = omni::wiring::wire(&ctx, 0).await.unwrap();
-    wired.subsystems.push(recipes_app());
+    // The app is a host app of the recipes subsystem and nothing else.
+    let hosts: Vec<(&str, usize)> = wired
+        .subsystems
+        .iter()
+        .filter(|subsystem| !subsystem.host_apps.is_empty())
+        .map(|subsystem| (subsystem.name, subsystem.host_apps.len()))
+        .collect();
+    assert_eq!(hosts, [("recipes", 1)]);
     let (router, _) = omni::boot::app_router(&ctx, &mut wired.subsystems, dist.path());
     (app, router, dist)
 }
@@ -377,13 +376,15 @@ async fn the_recipes_host_reaches_only_the_recipe_app() {
         "RECIPES.EXAMPLE.COM.",
     ] {
         for (path, body) in [
-            ("/", "fond page"),
-            ("/sw.js", "fond worker"),
-            ("/api/sync", "fond sync"),
+            ("/", "<title>Fond</title>"),
+            ("/inbox", "<title>Fond</title>"),
+            ("/sw.js", "// fond worker"),
+            ("/api/sync", "\"liveCount\":0"),
         ] {
             let response = send(&router, get_from(host, path)).await;
             assert_eq!(response.status(), StatusCode::OK, "{host}{path}");
-            assert_eq!(text(response).await, body, "{host}{path}");
+            let found = text(response).await;
+            assert!(found.contains(body), "{host}{path}: {found}");
         }
     }
 
@@ -460,20 +461,23 @@ async fn no_other_host_reaches_the_recipe_app() {
         let api = send(&router, get_from(host, "/api/sync")).await;
         assert_eq!(api.status(), StatusCode::NOT_FOUND, "{host}");
         assert_eq!(text(api).await, r#"{"error":"Not found"}"#, "{host}");
-        for path in ["/", "/sw.js"] {
+        for path in ["/", "/sw.js", "/inbox", "/r/rcp_7h2k9m4x"] {
             let page = send(&router, get_from(host, path)).await;
             let body = text(page).await;
-            assert!(!body.contains("fond"), "{host}{path}: {body}");
+            assert!(
+                !body.to_lowercase().contains("fond"),
+                "{host}{path}: {body}"
+            );
         }
         let root = send(&router, get_from(host, "/")).await;
         assert!(text(root).await.contains("<title>Omni</title>"), "{host}");
         let write = send(
             &router,
-            Request::post("/api/notes")
+            Request::post("/api/ops")
                 .header(header::HOST, host)
                 .header(header::ORIGIN, RECIPES_ORIGIN)
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from("{}"))
+                .body(Body::from(r#"{"ops":[]}"#))
                 .unwrap(),
         )
         .await;
@@ -488,18 +492,18 @@ async fn no_other_host_reaches_the_recipe_app() {
 async fn recipe_app_mutations_need_the_app_origin() {
     let (_app, router, _dist) = router_with_recipes_app().await;
     let post = |origin: Option<&str>| {
-        let mut request = Request::post("/api/notes")
+        let mut request = Request::post("/api/ops")
             .header(header::HOST, RECIPES_HOST)
             .header(header::CONTENT_TYPE, "application/json");
         if let Some(origin) = origin {
             request = request.header(header::ORIGIN, origin);
         }
-        request.body(Body::from("{}")).unwrap()
+        request.body(Body::from(r#"{"ops":[]}"#)).unwrap()
     };
 
     let own = send(&router, post(Some(RECIPES_ORIGIN))).await;
     assert_eq!(own.status(), StatusCode::OK);
-    assert_eq!(text(own).await, "fond saved");
+    assert_eq!(text(own).await, r#"{"seq":0,"results":[]}"#);
 
     for origin in [
         None,

@@ -50,6 +50,7 @@ const WASM_CRATES: &[&str] = &[
     "omni-web",
     "omni-web-kit",
     "omni-web-pages",
+    "omni-recipes-web",
     "omni-recipe-format",
 ];
 

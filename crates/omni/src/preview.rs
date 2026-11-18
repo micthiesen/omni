@@ -521,8 +521,13 @@ pub fn preview_env(dir: &Path, port: u16) -> std::collections::BTreeMap<String, 
     // Lets RetroRex's Kick binding through; nothing ever calls Kick.
     env.insert("KICK_CLIENT_ID".to_owned(), "preview".to_owned());
     env.insert("KICK_CLIENT_SECRET".to_owned(), "preview".to_owned());
-    if let Ok(tz) = std::env::var("TZ") {
-        env.insert("TZ".to_owned(), tz);
+    // The recipe app is served too when its origin is given, for example
+    // `RECIPES_APP_URL=http://fond.localhost:<port>`, from the app directory
+    // `OMNI_RECIPES_WEB_DIST` names (default `crates/omni-recipes-web/dist`).
+    for key in ["TZ", "RECIPES_APP_URL", "OMNI_RECIPES_WEB_DIST"] {
+        if let Ok(value) = std::env::var(key) {
+            env.insert(key.to_owned(), value);
+        }
     }
     env
 }
@@ -579,6 +584,9 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
     boot::run_steps(&ctx, &mut subsystems, BootPhase::Reconcile, &trace).await?;
     seed(&ctx, clock.now_ms()).await?;
     crate::preview_stylist::seed(&ctx).await?;
+    if ctx.config.recipes_app_url.is_some() {
+        crate::preview_recipes::seed(&ctx).await?;
+    }
     for task in fake_tasks()? {
         ctx.tasks.track(task)?;
     }

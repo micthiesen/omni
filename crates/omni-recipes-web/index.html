@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1613" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Fond" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v1.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Fond</title>
+    <link data-trunk rel="css" href="style/app.css" data-target-path="assets" />
+    <!-- Icons and the manifest keep stable names outside the immutable /assets/ cache. -->
+    <link data-trunk rel="copy-dir" href="icons" data-target-path="icons" />
+    <link data-trunk rel="copy-file" href="manifest.webmanifest" />
+    <link
+      data-trunk
+      rel="rust"
+      href="Cargo.toml"
+      data-bin="omni-recipes-web"
+      data-integrity="none"
+      data-target-path="assets"
+      data-wasm-opt="z"
+      data-cargo-profile-release="wasm-release"
+    />
+    <script data-trunk src="js/boot.js" type="module" data-target-path="assets"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

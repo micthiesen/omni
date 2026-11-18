@@ -93,6 +93,11 @@ pub fn app_paths(config: &Config, web_dist: PathBuf) -> AppPaths {
         } else {
             PathBuf::from(".local/recipes")
         },
+        recipes_web_dist: match &config.omni_recipes_web_dist {
+            Some(dir) => PathBuf::from(dir),
+            None if config.dockerized => PathBuf::from("/app/recipes-web"),
+            None => PathBuf::from("crates/omni-recipes-web/dist"),
+        },
     }
 }
 

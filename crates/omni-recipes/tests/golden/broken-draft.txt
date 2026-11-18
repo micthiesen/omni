@@ -1,0 +1,10 @@
+[invalid_recipe] 6 problems; nothing was saved.
+1. steps.sear.inputs.buter: [unknown_ref] no ingredient, step or component has id "buter" Hint: did you mean "butter"?
+2. steps.sear.text: [placeholder_not_input] {butter} is not one of this step's inputs Hint: did you mean {buter}?
+3. steps.deglaze.inputs.mount: [forward_ref] "mount" is produced by step "mount", which comes later Hint: steps are listed in cooking order; move the producing step earlier
+4. ingredients.butter: [under_allocated] uses add up to 3 tbsp but the ingredient list says 4 tbsp Hint: fix the amounts, or mark the last use {"rest": true}
+5. ingredients.capers: [unused_ingredient] "capers" is not an input of any step Hint: add it to the step that uses it, or remove the ingredient
+6. mount: [ambiguous_split] "mount" is used by 2 steps without saying how it is divided Hint: give each use a "fraction" (for example "1/2"), or mark the last one {"rest": true}
+2 warnings:
+- steps.mount.text: [input_not_mentioned] input "butter" has no {butter} placeholder Hint: amounts written as plain words do not scale and cannot be crossed off
+- steps.mount.text: [literal_quantity] "3 tbsp cold butter" is a hard-coded amount; it will not scale Hint: write {butter} and put the amount on the input

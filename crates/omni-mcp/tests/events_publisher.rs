@@ -216,6 +216,18 @@ fn every_payload_dto_matches_its_catalog_schema() {
                 include_all_day: "false".to_owned(),
             }),
         },
+        // The recipe events, as the recipe library itself builds them.
+        omni_recipes::events::inbox_added("inb_7h2k9m4x", "photo", Some("Cookbook page"), 0)
+            .unwrap(),
+        omni_recipes::events::inbox_added("inb_7h2k9m4x", "photo", None, 0).unwrap(),
+        omni_recipes::events::cook_finished(
+            "cook_2b7r9d4h",
+            "rcp_7h2k9m4x",
+            &"Long title ".repeat(40),
+            2,
+            0,
+        )
+        .unwrap(),
     ];
     for sample in &samples {
         assert!(

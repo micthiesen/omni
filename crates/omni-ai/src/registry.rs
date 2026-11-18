@@ -12,7 +12,7 @@ use omni_config::ModelRole;
 pub const LANGUAGE_MODEL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Every role, in registry order.
-pub const ALL_ROLES: [ModelRole; 12] = [
+pub const ALL_ROLES: [ModelRole; 13] = [
     ModelRole::LivestreamIntelligence,
     ModelRole::Extraction,
     ModelRole::CalendarExtraction,
@@ -25,6 +25,7 @@ pub const ALL_ROLES: [ModelRole; 12] = [
     ModelRole::PodcastTasteReflection,
     ModelRole::PressPodsMetadata,
     ModelRole::PressPodsCleaning,
+    ModelRole::RecipeReview,
 ];
 
 /// `(feature, default operation)` of each role. Roles whose callers name a specific
@@ -44,5 +45,6 @@ pub fn role_cost(role: ModelRole) -> (&'static str, &'static str) {
         ModelRole::PodcastTasteReflection => ("podcast-recommendations", "taste-reflection"),
         ModelRole::PressPodsMetadata => ("press-pods", "rate-retrieval"),
         ModelRole::PressPodsCleaning => ("press-pods", "clean-narration"),
+        ModelRole::RecipeReview => ("recipes", "review-extraction"),
     }
 }

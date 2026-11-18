@@ -103,6 +103,8 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_for_a_gateway_
             "task.run_finished",
             "calendar.event_changed",
             "calendar.event_starting",
+            "recipes.inbox_added",
+            "recipes.cook_finished",
         ]
     );
     let requests = events.store().requests().await.unwrap();

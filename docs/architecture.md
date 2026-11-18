@@ -11,16 +11,20 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
 
 - **Foundation:** `omni-core`, `omni-config`, `omni-store`, `omni-tasks`,
   `omni-http`, `omni-alerts`, `omni-mailer`, `omni-ai`, `omni-server-kit`,
-  `omni-mcp-kit`, `omni-runtime`, `omni-api`, `omni-image`. They know nothing
+  `omni-mcp-kit`, `omni-runtime`, `omni-api`, `omni-image`,
+  `omni-recipe-format`. They know nothing
   about features. `omni-image` depends on no other workspace crate: it decodes
   untrusted images (JPEG, PNG, GIF, WebP, HEIC by magic bytes) in memory under
   pixel, allocation and time limits, one at a time, and produces oriented JPEG
-  variants and an average colour.
+  variants and an average colour. `omni-recipe-format` is pure too (no I/O,
+  no clock, builds for wasm): the recipe document, its validator and its
+  renderers, shared by `omni-recipes` and the recipe app
+  ([recipes.md](recipes.md)).
 - **Subsystems:** `omni-imap`, `omni-email`, `omni-parcel`, `omni-calendar`,
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
   `omni-device-link`, `omni-personal`, `omni-stylist`, `omni-youtube`,
-  `omni-contacts`. Each exposes
+  `omni-contacts`, `omni-recipes`. Each exposes
   a constructor that returns an `omni_runtime::Subsystem`. `omni-mcp` hosts
   the MCP gateway (`/gateway/mcp`, [gateway.md](gateway.md)), Omni's only MCP
   endpoint, which serves every tool together with the configured upstream MCP
@@ -29,7 +33,9 @@ names are `omni` and `omni-*`; library names are `omni` and `omni_*`.
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
   the CLI.
 - **Outside the backend layering:** the frontend crates `omni-web`,
-  `omni-web-kit` and `omni-web-pages`; the dev-only `omni-testkit`; and `xtask`.
+  `omni-web-kit`, `omni-web-pages` and `omni-recipes-web` (Fond's phone app,
+  which also uses `omni-recipe-format`; `docs/recipes-app.md`); the dev-only
+  `omni-testkit`; and `xtask`.
 
 `cargo xtask deps-check` (part of the gate and CI) enforces the direction:
 

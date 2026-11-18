@@ -89,6 +89,7 @@ jobs:
       - name: Lint the web crates for wasm32
         run: >-
           cargo clippy -p omni-web -p omni-web-kit -p omni-web-pages
+          -p omni-recipes-web -p omni-recipe-format
           --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
 
       - name: Save the lint build
@@ -241,8 +242,9 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # The image's web stage runs the release trunk build with the pinned tools, so
-  # the frontend build is checked here rather than in lint or test.
+  # The image's web stage runs the release trunk builds (Omni and Fond) with the
+  # pinned tools, so the frontend builds are checked here rather than in lint or
+  # test.
   image:
     runs-on: ubuntu-latest
     needs: server

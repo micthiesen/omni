@@ -97,12 +97,22 @@ const OUTSIDE: &[&str] = &[
     "omni-web",
     "omni-web-kit",
     "omni-web-pages",
+    "omni-recipes-web",
     "omni-testkit",
     "xtask",
 ];
 
-/// Frontend crates may use only `omni-api` (and each other) from the workspace.
-const FRONTEND: &[&str] = &["omni-web", "omni-web-kit", "omni-web-pages"];
+/// Frontend crates may use only the wasm-safe foundation crates (and each
+/// other) from the workspace.
+const FRONTEND: &[&str] = &[
+    "omni-web",
+    "omni-web-kit",
+    "omni-web-pages",
+    "omni-recipes-web",
+];
+
+/// Pure crates that build for wasm32: the wire DTOs and the recipe format.
+const FRONTEND_FOUNDATION: &[&str] = &["omni-api", "omni-recipe-format"];
 
 /// Package name -> `(dependency, kind)` pairs.
 pub type Graph = BTreeMap<String, Vec<(String, Option<String>)>>;
@@ -135,7 +145,8 @@ pub fn violations(packages: &Graph) -> Vec<String> {
                     found.push(format!("foundation {name} -> {dep} is not allowed"));
                 }
             } else if FRONTEND.contains(&name.as_str()) {
-                if dep != "omni-api" && !FRONTEND.contains(&dep.as_str()) {
+                if !FRONTEND_FOUNDATION.contains(&dep.as_str()) && !FRONTEND.contains(&dep.as_str())
+                {
                     found.push(format!("frontend {name} -> {dep} is not allowed"));
                 }
             } else if is_subsystem(name) {
@@ -223,6 +234,11 @@ mod tests {
             ("omni-live", &[("omni-email", None)]),
             ("omni-mcp-kit", &[("omni-email", None)]),
             ("omni-media", &[("omni-testkit", None)]),
+            ("omni-recipe-format", &[]),
+            (
+                "omni-recipes-web",
+                &[("omni-recipe-format", None), ("omni-core", None)],
+            ),
         ]);
         assert_eq!(
             violations(&packages),
@@ -230,6 +246,7 @@ mod tests {
                 "subsystem omni-live -> subsystem omni-email is not allowlisted".to_owned(),
                 "foundation omni-mcp-kit -> omni-email is not allowed".to_owned(),
                 "omni-media -> omni-testkit must be a dev-dependency".to_owned(),
+                "frontend omni-recipes-web -> omni-core is not allowed".to_owned(),
             ]
         );
     }

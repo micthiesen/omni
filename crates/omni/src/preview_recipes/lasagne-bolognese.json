@@ -1,0 +1,455 @@
+{
+  "title": "Lasagne alla Bolognese",
+  "summary": "Slow-cooked ragù and béchamel layered with fresh pasta. The ragù is better made a day ahead.",
+  "yield": {
+    "qty": 8,
+    "unit": "servings"
+  },
+  "source": {
+    "kind": "original",
+    "name": "House recipe"
+  },
+  "components": [
+    {
+      "id": "ragu",
+      "name": "Ragù",
+      "makeAhead": {
+        "keeps": "3 days",
+        "where": "fridge"
+      },
+      "ingredients": [
+        {
+          "id": "oil",
+          "qty": 2,
+          "unit": "tbsp",
+          "name": "olive oil"
+        },
+        {
+          "id": "onion",
+          "qty": 1,
+          "name": "yellow onion",
+          "prep": "finely chopped"
+        },
+        {
+          "id": "carrot",
+          "qty": 1,
+          "name": "carrot",
+          "prep": "finely chopped"
+        },
+        {
+          "id": "celery",
+          "qty": 1,
+          "unit": "stalk",
+          "name": "celery",
+          "prep": "finely chopped"
+        },
+        {
+          "id": "beef",
+          "qty": 500,
+          "unit": "g",
+          "name": "ground beef"
+        },
+        {
+          "id": "pork",
+          "qty": 250,
+          "unit": "g",
+          "name": "ground pork"
+        },
+        {
+          "id": "ragusalt",
+          "name": "kosher salt",
+          "toTaste": true
+        },
+        {
+          "id": "wine",
+          "qty": 180,
+          "unit": "ml",
+          "name": "dry white wine"
+        },
+        {
+          "id": "ragumilk",
+          "qty": 240,
+          "unit": "ml",
+          "name": "whole milk"
+        },
+        {
+          "id": "passata",
+          "qty": 700,
+          "unit": "g",
+          "name": "tomato passata"
+        },
+        {
+          "id": "paste",
+          "qty": 2,
+          "unit": "tbsp",
+          "name": "tomato paste"
+        }
+      ],
+      "steps": [
+        {
+          "id": "soffritto",
+          "action": "sweat",
+          "output": "soffritto",
+          "inputs": [
+            {
+              "ref": "oil"
+            },
+            {
+              "ref": "onion"
+            },
+            {
+              "ref": "carrot"
+            },
+            {
+              "ref": "celery"
+            }
+          ],
+          "time": {
+            "min": 10,
+            "attention": "active"
+          },
+          "equipment": [
+            "Dutch oven"
+          ],
+          "text": "Warm {oil} in a Dutch oven over medium-low heat. Cook {onion}, {carrot} and {celery} until soft but not browned, about {time}."
+        },
+        {
+          "id": "brown",
+          "action": "brown",
+          "output": "browned meat",
+          "inputs": [
+            {
+              "ref": "soffritto"
+            },
+            {
+              "ref": "beef"
+            },
+            {
+              "ref": "pork"
+            },
+            {
+              "ref": "ragusalt"
+            }
+          ],
+          "time": {
+            "min": 10,
+            "attention": "active"
+          },
+          "text": "Raise the heat to medium-high. Add {beef} and {pork} to {soffritto}, season with {ragusalt}, and cook, breaking the meat up, until it has lost its pink colour and starts to brown, about {time}."
+        },
+        {
+          "id": "reduce",
+          "action": "reduce",
+          "output": "meat base",
+          "inputs": [
+            {
+              "ref": "brown"
+            },
+            {
+              "ref": "wine"
+            }
+          ],
+          "time": {
+            "min": 5,
+            "attention": "active"
+          },
+          "until": "nearly dry",
+          "text": "Pour {wine} over {brown} and boil until the pan is nearly dry, about {time}."
+        },
+        {
+          "id": "milkdown",
+          "action": "cook down",
+          "output": "milk-braised meat",
+          "inputs": [
+            {
+              "ref": "reduce"
+            },
+            {
+              "ref": "ragumilk"
+            }
+          ],
+          "time": {
+            "min": 10,
+            "attention": "active"
+          },
+          "until": "milk absorbed",
+          "text": "Add {ragumilk} to {reduce} and simmer until it has been absorbed, about {time}."
+        },
+        {
+          "id": "simmer",
+          "action": "simmer",
+          "output": "ragù",
+          "inputs": [
+            {
+              "ref": "milkdown"
+            },
+            {
+              "ref": "passata"
+            },
+            {
+              "ref": "paste"
+            }
+          ],
+          "time": {
+            "min": 150,
+            "attention": "passive"
+          },
+          "until": "thick and glossy",
+          "text": "Stir {passata} and {paste} into {milkdown}. Cover with the lid ajar and simmer on the lowest heat for {time}, stirring now and then, until thick and glossy."
+        }
+      ]
+    },
+    {
+      "id": "bechamel",
+      "name": "Béchamel",
+      "ingredients": [
+        {
+          "id": "bbutter",
+          "qty": 60,
+          "unit": "g",
+          "name": "unsalted butter"
+        },
+        {
+          "id": "bflour",
+          "qty": 60,
+          "unit": "g",
+          "name": "all-purpose flour"
+        },
+        {
+          "id": "bmilk",
+          "qty": 750,
+          "unit": "ml",
+          "name": "whole milk",
+          "prep": "warmed"
+        },
+        {
+          "id": "nutmeg",
+          "qty": 1,
+          "unit": "pinch",
+          "name": "nutmeg",
+          "prep": "freshly grated"
+        },
+        {
+          "id": "bsalt",
+          "name": "kosher salt",
+          "toTaste": true
+        }
+      ],
+      "steps": [
+        {
+          "id": "roux",
+          "action": "cook",
+          "output": "roux",
+          "inputs": [
+            {
+              "ref": "bbutter"
+            },
+            {
+              "ref": "bflour"
+            }
+          ],
+          "time": {
+            "min": 2,
+            "attention": "active"
+          },
+          "text": "Melt {bbutter} in a saucepan over medium heat, whisk in {bflour} and cook for {time} without colouring."
+        },
+        {
+          "id": "thicken",
+          "action": "whisk in, simmer",
+          "output": "white sauce",
+          "inputs": [
+            {
+              "ref": "roux"
+            },
+            {
+              "ref": "bmilk"
+            }
+          ],
+          "time": {
+            "min": 8,
+            "max": 10,
+            "attention": "active"
+          },
+          "until": "coats a spoon",
+          "text": "Whisk {bmilk} into {roux} a ladle at a time. Simmer, whisking, until it coats the back of a spoon, {time}."
+        },
+        {
+          "id": "season",
+          "action": "season",
+          "output": "béchamel",
+          "inputs": [
+            {
+              "ref": "thicken"
+            },
+            {
+              "ref": "nutmeg"
+            },
+            {
+              "ref": "bsalt"
+            }
+          ],
+          "text": "Season {thicken} with {nutmeg} and {bsalt}.",
+          "time": {
+            "min": 1,
+            "attention": "active"
+          }
+        }
+      ]
+    },
+    {
+      "id": "assembly",
+      "name": "Assembly",
+      "ingredients": [
+        {
+          "id": "dishbutter",
+          "qty": 1,
+          "unit": "tbsp",
+          "name": "butter",
+          "note": "for the dish",
+          "scales": false
+        },
+        {
+          "id": "sheets",
+          "qty": 250,
+          "unit": "g",
+          "name": "fresh lasagne sheets"
+        },
+        {
+          "id": "parm",
+          "qty": 100,
+          "unit": "g",
+          "name": "Parmigiano Reggiano",
+          "prep": "finely grated"
+        }
+      ],
+      "steps": [
+        {
+          "id": "oven",
+          "action": "heat oven",
+          "inputs": [],
+          "output": "hot oven",
+          "temp": {
+            "value": 375,
+            "unit": "F"
+          },
+          "time": {
+            "min": 15,
+            "attention": "passive"
+          },
+          "text": "Heat the oven to {temp}."
+        },
+        {
+          "id": "layer",
+          "action": "layer",
+          "output": "layered lasagne",
+          "inputs": [
+            {
+              "ref": "dishbutter"
+            },
+            {
+              "ref": "ragu"
+            },
+            {
+              "ref": "bechamel",
+              "fraction": "3/4"
+            },
+            {
+              "ref": "sheets"
+            },
+            {
+              "ref": "parm",
+              "qty": 70,
+              "unit": "g"
+            }
+          ],
+          "time": {
+            "min": 15,
+            "attention": "active"
+          },
+          "equipment": [
+            "23 x 33 cm baking dish"
+          ],
+          "text": "Grease a 23 x 33 cm baking dish with {dishbutter}. Using {ragu|all of the ragù}, {sheets}, {bechamel} and {parm}, build four layers: a thin coat of ragù, a sheet of pasta, a few spoonfuls of béchamel and a handful of cheese."
+        },
+        {
+          "id": "top",
+          "action": "top",
+          "output": "topped lasagne",
+          "inputs": [
+            {
+              "ref": "layer"
+            },
+            {
+              "ref": "bechamel",
+              "rest": true
+            },
+            {
+              "ref": "parm",
+              "rest": true
+            }
+          ],
+          "time": {
+            "min": 2,
+            "attention": "active"
+          },
+          "text": "Spread {bechamel} over {layer|the top} and finish with {parm}."
+        },
+        {
+          "id": "bake",
+          "action": "bake covered",
+          "output": "baked lasagne",
+          "inputs": [
+            {
+              "ref": "top"
+            },
+            {
+              "ref": "oven"
+            }
+          ],
+          "temp": {
+            "value": 375,
+            "unit": "F"
+          },
+          "time": {
+            "min": 25,
+            "attention": "passive"
+          },
+          "text": "Cover {top} with foil and bake in {oven|the hot oven} for {time}."
+        },
+        {
+          "id": "brown2",
+          "action": "bake uncovered",
+          "output": "browned lasagne",
+          "inputs": [
+            {
+              "ref": "bake"
+            }
+          ],
+          "time": {
+            "min": 15,
+            "max": 20,
+            "attention": "passive"
+          },
+          "until": "browned and bubbling",
+          "text": "Remove the foil from {bake|the lasagne} and bake {time} more, until browned and bubbling at the edges."
+        },
+        {
+          "id": "rest",
+          "action": "rest",
+          "output": "lasagne",
+          "inputs": [
+            {
+              "ref": "brown2"
+            }
+          ],
+          "time": {
+            "min": 15,
+            "attention": "passive"
+          },
+          "text": "Rest {brown2} for {time} before cutting."
+        }
+      ]
+    }
+  ]
+}

@@ -20,6 +20,9 @@
 crates/*/tests
 crates/*/target
 crates/*/dist
+# Fond's dev mock server and browser tests.
+crates/omni-recipes-web/dev
+crates/omni-recipes-web/e2e
 **/.DS_Store
 **/*.db
 **/*.db-shm

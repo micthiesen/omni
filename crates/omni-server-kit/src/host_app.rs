@@ -21,13 +21,16 @@ use tower::ServiceExt as _;
 
 use crate::public_host::request_host;
 
-/// The origin given to [`HostApp::new`] is not a plain `https://` origin.
+/// The origin given to [`HostApp::new`] is not a plain `https://` origin (or
+/// a plain `http://` origin on `localhost` or a `.localhost` name).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidAppOrigin;
 
 impl std::fmt::Display for InvalidAppOrigin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("expected an https:// origin without credentials, path, query or fragment")
+        f.write_str(
+            "expected an https:// origin (or http:// on localhost) without credentials, path, query or fragment",
+        )
     }
 }
 
@@ -43,14 +46,19 @@ pub struct HostApp {
 
 impl HostApp {
     /// `origin` is the app's HTTPS origin (`https://recipes.example.com`);
-    /// `router` holds its routes at absolute paths with state applied.
+    /// `router` holds its routes at absolute paths with state applied. Plain
+    /// HTTP is accepted only for `localhost` and `<name>.localhost`, which
+    /// never leave the machine (local runs).
     ///
     /// The router gets panic catching and a fixed fallback, replacing any it
     /// had: an unmatched path is a 404, as `{"error": "Not found"}` under
     /// `/api`. A host app has no catch-all page.
     pub fn new(origin: &str, router: Router) -> Result<Self, InvalidAppOrigin> {
         let url = url::Url::parse(origin).map_err(|_| InvalidAppOrigin)?;
-        let plain = url.scheme() == "https"
+        let local = url
+            .host_str()
+            .is_some_and(|host| host == "localhost" || host.ends_with(".localhost"));
+        let plain = (url.scheme() == "https" || (url.scheme() == "http" && local))
             && url.username().is_empty()
             && url.password().is_none()
             && matches!(url.path(), "" | "/")
@@ -280,8 +288,13 @@ mod tests {
         let app = HostApp::new("https://Recipes.Example.com:8443/", Router::new()).unwrap();
         assert_eq!(app.host(), "recipes.example.com");
         assert_eq!(app.origin(), "https://recipes.example.com:8443");
+        let local = HostApp::new("http://Fond.localhost:8099", Router::new()).unwrap();
+        assert_eq!(local.host(), "fond.localhost");
+        assert_eq!(local.origin(), "http://fond.localhost:8099");
+        assert!(HostApp::new("http://localhost", Router::new()).is_ok());
         for bad in [
             "http://recipes.example.com",
+            "http://localhost.example.com",
             "https://recipes.example.com/app",
             "https://user:pw@recipes.example.com",
             "https://recipes.example.com?x=1",

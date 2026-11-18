@@ -1,0 +1,159 @@
+// Checks that need the mock server (dev/mock-server.py): they only run when
+// FOND_DIST names the dist directory it serves.
+//
+// - The update flow: a deploy is simulated by changing the build digest in
+//   the served sw.js.
+// - What an agent does behind the app's back, played through /__mock/*.
+const fs = require('fs');
+const path = require('path');
+const { test, expect } = require('@playwright/test');
+
+const DIST = process.env.FOND_DIST;
+
+test.describe('a new deploy', () => {
+  test.skip(!DIST, 'set FOND_DIST to the dist directory the server serves');
+  const worker = DIST && path.join(DIST, 'sw.js');
+  let original;
+
+  test.beforeEach(async ({ page }) => {
+    original = fs.readFileSync(worker, 'utf8');
+    await page.goto('/');
+    await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  });
+
+  test.afterEach(() => fs.writeFileSync(worker, original));
+
+  function deploy(tag) {
+    const build = `${original.match(/const BUILD = "([^"]+)"/)[1]}-${tag}`;
+    fs.writeFileSync(worker, original.replace(/const BUILD = "[^"]+"/, `const BUILD = "${build}"`));
+    return `fond-shell-${build}`;
+  }
+
+  const shells = async (page) => {
+    try {
+      return (await page.evaluate(() => caches.keys())).filter((name) => name.startsWith('fond-shell-'));
+    } catch {
+      return null; // the page is reloading
+    }
+  };
+
+  test('waits behind the open app and takes over on a tap', async ({ page }) => {
+    const before = await shells(page);
+    const cache = deploy('tap');
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    await expect(page.getByText('A new version of Fond is ready.')).toBeVisible();
+    // Nothing changed under the running app.
+    expect(await shells(page)).toEqual(expect.arrayContaining(before));
+    await page.getByRole('button', { name: 'Update' }).click();
+    await expect.poll(() => shells(page)).toEqual([cache]);
+    await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
+    await expect(page.getByText('A new version of Fond is ready.')).toHaveCount(0);
+  });
+
+  test('takes over at the next launch', async ({ page }) => {
+    const cache = deploy('launch');
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    await expect(page.getByText('A new version of Fond is ready.')).toBeVisible();
+    await page.reload();
+    await expect.poll(() => shells(page)).toEqual([cache]);
+    await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
+  });
+});
+
+test.describe('an agent at work', () => {
+  test.skip(!DIST, 'needs the mock server (set FOND_DIST)');
+
+  test('a revised recipe shows "updated since you started" and the cook can switch', async ({ page, request }) => {
+    await page.goto('/');
+    await page.locator('[data-testid=grid] a.card').first().click();
+    const recipeId = page.url().split('/').pop();
+    await page.locator('[data-testid=cook]').click();
+    await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+    const sessionId = page.url().split('/').pop();
+    await expect(page.locator('.card-step')).toBeVisible();
+    await expect(page.locator('[data-testid=connection]')).toHaveCount(0);
+    await request.post('/__mock/revise', { data: { recipeId } });
+    const notice = page.locator('[data-testid=outdated]');
+    await expect(notice).toContainText('updated since you started');
+    await notice.getByRole('button', { name: 'Switch' }).click();
+    await expect(notice).toHaveCount(0);
+    await expect.poll(async () => (await (await request.get(`/api/cook/${sessionId}`)).json()).revision).toBe(2);
+
+    // Mid-cook help from an agent appears on the phone.
+    const step = await page.locator('.card-step').getAttribute('data-step');
+    await request.post('/__mock/adjust', { data: { sessionId, target: step, text: 'No buttermilk: use milk and lemon.' } });
+    await expect(page.locator('[data-testid=step-text]')).toHaveText('No buttermilk: use milk and lemon.');
+  });
+
+  test('a running passive step offers what can be done meanwhile', async ({ page }) => {
+    // The mock's enchiladas open with a passive step ("boil down") that the next step does not wait for.
+    await page.goto('/');
+    await page.locator('[data-testid=grid] a.card').filter({ has: page.locator('h3', { hasText: 'Chicken Enchiladas' }) }).click();
+    await page.locator('[data-testid=cook]').click();
+    await expect(page.locator('.card-step')).toHaveAttribute('data-step', 'sauce');
+    await page.locator('[data-testid=timer]').click();
+    const strip = page.locator('[data-testid=running]');
+    await expect(strip.locator('.meanwhile')).toContainText('While «boil down 15 min» runs:');
+    await strip.locator('.meanwhile .chip', { hasText: 'fry' }).click();
+    await expect(page.locator('.card-step')).toHaveAttribute('data-step', 'fry');
+  });
+
+  test('a session renders the document the server pinned, and a photo retry is stored once', async ({ page, request }) => {
+    await page.goto('/');
+    await page.locator('[data-testid=grid] a.card').first().click();
+    const recipeId = page.url().split('/').pop();
+    const sessionId = `cook_${String(Date.now()).slice(-8)}`;
+    const started = await request.post('/api/cook', { data: { id: sessionId, recipeId, revision: 1, scale: 1, at: Date.now() } });
+    expect((await started.json()).doc.title).toBeTruthy();
+    // Started elsewhere: this phone has no copy of its own, only the server's.
+    await page.goto(`/cook/${sessionId}`);
+    await expect(page.locator('.card-step [data-testid=step-text]')).not.toBeEmpty();
+    const stored = await page.evaluate(
+      (id) =>
+        new Promise((resolve) => {
+          const open = indexedDB.open('fond');
+          open.onsuccess = () => {
+            const get = open.result.transaction('sessions').objectStore('sessions').get(id);
+            get.onsuccess = () => resolve(JSON.parse(get.result));
+          };
+        }),
+      sessionId,
+    );
+    expect(stored.doc.title).toBeTruthy();
+
+    const images = async () => (await (await request.get('/api/sync')).json()).recipes.find((r) => r.id === recipeId).images.length;
+    const before = await images();
+    const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AN//Z', 'base64');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const sent = await request.post(`/api/cook/${sessionId}/photo?id=blob_e2e${sessionId}`, {
+        headers: { 'x-fond-upload': '1', 'content-type': 'image/jpeg' },
+        data: jpeg,
+      });
+      expect(sent.ok()).toBe(true);
+    }
+    expect(await images()).toBe(before + 1);
+  });
+
+  test('an imported inbox item links to its recipe', async ({ page, request }) => {
+    await page.goto('/');
+    await page.locator('[data-testid=grid] a.card').first().click();
+    const recipeId = page.url().split('/').pop();
+    await page.goto('/inbox');
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP8z8DAwMDAxAAGAA0GAQEVX6CUAAAAAElFTkSuQmCC',
+      'base64',
+    );
+    await page.locator('[data-testid=library-input]').setInputFiles([{ name: 'card.png', mimeType: 'image/png', buffer: png }]);
+    const item = page.locator('[data-testid=inbox-items] li[data-state=pending]').first();
+    await expect(item).toContainText('1 photo');
+    const itemId = await item.getAttribute('data-item');
+    await request.post('/__mock/import', { data: { itemId, recipeId } });
+    const imported = page.locator(`[data-testid=inbox-items] li[data-item="${itemId}"]`);
+    await expect(imported).toHaveAttribute('data-state', 'imported');
+    await imported.getByRole('link', { name: 'Open recipe' }).click();
+    await expect(page).toHaveURL(new RegExp(`/r/${recipeId}$`));
+  });
+});

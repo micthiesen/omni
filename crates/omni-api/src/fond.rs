@@ -42,9 +42,14 @@ pub mod paths {
         format!("{}/events", cook(session_id))
     }
 
-    /// `POST /api/cook/:id/photo` (image body, [`UPLOAD_HEADER`]).
-    pub fn cook_photo(session_id: &str) -> String {
-        format!("{}/photo", cook(session_id))
+    /// `POST /api/cook/:id/photo?id=` (image body, [`UPLOAD_HEADER`]). The
+    /// client-chosen `upload_id` makes a retry store the photo once.
+    pub fn cook_photo(session_id: &str, upload_id: &str) -> String {
+        format!(
+            "{}/photo?id={}",
+            cook(session_id),
+            encode_uri_component(upload_id)
+        )
     }
 
     /// `GET /api/original/:recipeId`.
@@ -286,6 +291,10 @@ pub struct CookSession {
     pub last_event_at: Ms,
     /// In sequence order.
     pub events: Vec<CookEvent>,
+    /// The pinned revision's `RecipeDoc`, so a session renders the recipe it
+    /// started on from any device. Absent only on a request body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

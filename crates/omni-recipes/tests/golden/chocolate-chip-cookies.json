@@ -1,0 +1,292 @@
+{
+  "title": "Chocolate Chip Cookies",
+  "summary": "Crisp-edged, soft-centred cookies from a creamed-butter dough.",
+  "yield": {
+    "qty": 28,
+    "unit": "cookies"
+  },
+  "source": {
+    "kind": "original",
+    "name": "House recipe"
+  },
+  "components": [
+    {
+      "id": "cookies",
+      "ingredients": [
+        {
+          "id": "flour",
+          "qty": 280,
+          "unit": "g",
+          "name": "all-purpose flour",
+          "alt": {
+            "qty": 2.25,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "soda",
+          "qty": 1,
+          "unit": "tsp",
+          "name": "baking soda"
+        },
+        {
+          "id": "salt",
+          "qty": 1,
+          "unit": "tsp",
+          "name": "fine sea salt"
+        },
+        {
+          "id": "butter",
+          "qty": 225,
+          "unit": "g",
+          "name": "unsalted butter",
+          "prep": "softened",
+          "alt": {
+            "qty": 1,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "sugar",
+          "qty": 150,
+          "unit": "g",
+          "name": "granulated sugar",
+          "alt": {
+            "qty": 0.75,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "brown",
+          "qty": 165,
+          "unit": "g",
+          "name": "light brown sugar",
+          "alt": {
+            "qty": 0.75,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "eggs",
+          "qty": 2,
+          "name": "large eggs"
+        },
+        {
+          "id": "vanilla",
+          "qty": 2,
+          "unit": "tsp",
+          "name": "vanilla extract"
+        },
+        {
+          "id": "chips",
+          "qty": 340,
+          "unit": "g",
+          "name": "semisweet chocolate chips",
+          "alt": {
+            "qty": 2,
+            "unit": "cup"
+          }
+        },
+        {
+          "id": "walnuts",
+          "qty": 100,
+          "unit": "g",
+          "name": "walnuts",
+          "prep": "chopped",
+          "optional": true
+        },
+        {
+          "id": "flaky",
+          "name": "flaky salt",
+          "toTaste": true,
+          "optional": true
+        }
+      ],
+      "steps": [
+        {
+          "id": "oven",
+          "action": "heat oven",
+          "inputs": [],
+          "temp": {
+            "value": 375,
+            "unit": "F"
+          },
+          "time": {
+            "min": 15,
+            "attention": "passive"
+          },
+          "equipment": [
+            "2 baking sheets",
+            "parchment"
+          ],
+          "output": "hot oven",
+          "text": "Heat the oven to {temp} with racks in the upper and lower thirds. Line two baking sheets with parchment."
+        },
+        {
+          "id": "dry",
+          "action": "whisk",
+          "output": "dry mix",
+          "inputs": [
+            {
+              "ref": "flour"
+            },
+            {
+              "ref": "soda"
+            },
+            {
+              "ref": "salt"
+            }
+          ],
+          "time": {
+            "min": 1,
+            "attention": "active"
+          },
+          "text": "Whisk {flour}, {soda} and {salt} together in a bowl."
+        },
+        {
+          "id": "cream",
+          "action": "cream",
+          "output": "creamed butter",
+          "inputs": [
+            {
+              "ref": "butter"
+            },
+            {
+              "ref": "sugar"
+            },
+            {
+              "ref": "brown"
+            }
+          ],
+          "time": {
+            "min": 3,
+            "max": 4,
+            "attention": "active"
+          },
+          "equipment": [
+            "stand mixer"
+          ],
+          "text": "Beat {butter} with {sugar} and {brown} until pale and fluffy, {time}."
+        },
+        {
+          "id": "wet",
+          "action": "beat in",
+          "output": "wet mix",
+          "inputs": [
+            {
+              "ref": "cream"
+            },
+            {
+              "ref": "eggs"
+            },
+            {
+              "ref": "vanilla"
+            }
+          ],
+          "time": {
+            "min": 2,
+            "attention": "active"
+          },
+          "text": "Beat {eggs} into {cream} one at a time, then {vanilla}."
+        },
+        {
+          "id": "combine",
+          "action": "mix on low",
+          "output": "dough",
+          "until": "just combined",
+          "inputs": [
+            {
+              "ref": "wet"
+            },
+            {
+              "ref": "dry"
+            }
+          ],
+          "time": {
+            "min": 1,
+            "attention": "active"
+          },
+          "text": "Add {dry} to {wet} and mix on low just until no dry flour remains."
+        },
+        {
+          "id": "fold",
+          "action": "fold in",
+          "output": "cookie dough",
+          "inputs": [
+            {
+              "ref": "combine"
+            },
+            {
+              "ref": "chips"
+            },
+            {
+              "ref": "walnuts"
+            }
+          ],
+          "time": {
+            "min": 1,
+            "attention": "active"
+          },
+          "text": "Fold {chips} and, if using, {walnuts} into {combine}."
+        },
+        {
+          "id": "scoop",
+          "action": "scoop",
+          "output": "scooped dough",
+          "inputs": [
+            {
+              "ref": "fold"
+            }
+          ],
+          "time": {
+            "min": 8,
+            "attention": "active"
+          },
+          "text": "Scoop {fold} into 45 g balls and space them 5 cm apart on the lined sheets."
+        },
+        {
+          "id": "bake",
+          "action": "bake",
+          "output": "baked cookies",
+          "inputs": [
+            {
+              "ref": "scoop"
+            },
+            {
+              "ref": "oven"
+            }
+          ],
+          "temp": {
+            "value": 375,
+            "unit": "F"
+          },
+          "time": {
+            "min": 9,
+            "max": 11,
+            "attention": "passive"
+          },
+          "until": "edges golden, centres soft",
+          "text": "Bake {scoop} in {oven|the hot oven} for {time}, swapping the sheets halfway, until the edges are golden and the centres still look soft."
+        },
+        {
+          "id": "cool",
+          "action": "cool",
+          "output": "cookies",
+          "inputs": [
+            {
+              "ref": "bake"
+            },
+            {
+              "ref": "flaky"
+            }
+          ],
+          "time": {
+            "min": 5,
+            "attention": "passive"
+          },
+          "text": "Sprinkle {bake} with {flaky} if you like. Cool on the sheets for {time}, then move to a rack."
+        }
+      ]
+    }
+  ]
+}

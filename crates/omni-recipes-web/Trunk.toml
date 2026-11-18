@@ -1,0 +1,29 @@
+# Built with `trunk build --release` in this directory (Docker web stage and
+# CI). Hashed assets land in dist/assets/, which the server caches as
+# immutable; index.html and sw.js are served `no-cache`.
+[build]
+target = "index.html"
+dist = "dist"
+public_url = "/"
+filehash = true
+# No inline bootstrap: the hashed js/boot.js module reads these paths, so a
+# CSP of `script-src 'self' 'wasm-unsafe-eval'` is enough.
+pattern_script = "<meta name=\"fond-bundle\" data-js=\"{base}{js}\" data-wasm=\"{base}{wasm}\">"
+
+[tools]
+# Must match the workspace wasm-bindgen pin and deploy/web-tools/install.sh.
+wasm_bindgen = "0.2.129"
+wasm_opt = "version_133"
+
+# Writes dist/sw.js with the precache list (docs/recipes-app.md).
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["build/precache.sh"]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8082
+
+[[proxy]]
+backend = "http://localhost:8787/api/"

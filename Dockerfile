@@ -5,7 +5,7 @@
 #              speaker, segmentation, parakeet
 #   rust:      chef -> planner -> server-build (cook, then workspace build),
 #              or server-prebuilt from CI (SERVER_SOURCE)
-#                             \-> web (cook, then trunk) -> web-dist
+#                             \-> web (cook, then trunk twice: Omni and Fond) -> web-dist
 #   runtime:   apt layer, then static assets, then the frequently changing outputs
 # Every download is pinned and SHA-256 verified in its own stage, so it caches
 # independently of the Rust sources and of every other download.
@@ -128,7 +128,7 @@ COPY .cargo ./.cargo
 # Crates the server never links keep their cargo-chef skeletons, so frontend and
 # xtask edits leave this layer cached.
 COPY --exclude=omni-web --exclude=omni-web-kit --exclude=omni-web-pages \
-  --exclude=xtask \
+  --exclude=omni-recipes-web --exclude=xtask \
   crates ./crates
 # One invocation with the cook's package set: dependency features then match the
 # cooked layer exactly, and shared workspace crates compile once.
@@ -150,17 +150,26 @@ COPY --from=web-tools /out/ /usr/local/bin/
 COPY --from=planner /src/recipe.json recipe.json
 # trunk runs `cargo metadata`, which needs every workspace package downloaded;
 # fetching beside the cook keeps that out of the per-source-change layer.
+# One cook per bundle: trunk builds each package on its own, and dependency
+# features (web-sys) only match a cook of that same package.
 RUN cargo chef cook --profile wasm-release --target wasm32-unknown-unknown --locked \
     --recipe-path recipe.json -p omni-web \
+  && cargo chef cook --profile wasm-release --target wasm32-unknown-unknown --locked \
+    --recipe-path recipe.json -p omni-recipes-web \
   && cargo fetch --locked
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo ./.cargo
-# Only omni-web's path dependencies; server crates keep their skeletons.
+# Only the two bundles' path dependencies; server crates keep their skeletons.
 COPY crates/omni-api ./crates/omni-api
+COPY crates/omni-recipe-format ./crates/omni-recipe-format
 COPY crates/omni-web-kit ./crates/omni-web-kit
 COPY crates/omni-web-pages ./crates/omni-web-pages
 COPY crates/omni-web ./crates/omni-web
 RUN cd crates/omni-web && trunk build --release --offline --locked
+# Fond, the recipe app on its own host (docs/recipes-app.md). Its post-build
+# hook writes sw.js with the precache list before the compressed copies exist.
+COPY crates/omni-recipes-web ./crates/omni-recipes-web
+RUN cd crates/omni-recipes-web && trunk build --release --offline --locked
 
 # The SPA service serves .br/.gz siblings when the client accepts them.
 FROM fetch AS web-dist
@@ -170,7 +179,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && apt-get update \
   && apt-get install -y --no-install-recommends brotli
 COPY --from=web /src/crates/omni-web/dist /dist
-RUN find /dist -type f \
+COPY --from=web /src/crates/omni-recipes-web/dist /recipes-dist
+RUN find /dist /recipes-dist -type f \
     \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
     -exec brotli -k -q 11 {} + -exec gzip -k -n -9 {} +
 
@@ -233,9 +243,11 @@ COPY --from=obscura /out/obscura /usr/local/bin/obscura
 COPY --from=mcp-stdio --chown=node:node /opt/mcp-stdio ./mcp-stdio
 COPY --chown=node:node assets ./assets
 COPY --from=web-dist --chown=node:node /dist ./web
+COPY --from=web-dist --chown=node:node /recipes-dist ./recipes-web
 COPY --from=server /out/ /usr/local/bin/
 
-ENV DOCKERIZED=true DB_NAME=/data/docstore.db OMNI_WEB_DIST=/app/web
+ENV DOCKERIZED=true DB_NAME=/data/docstore.db OMNI_WEB_DIST=/app/web \
+  OMNI_RECIPES_WEB_DIST=/app/recipes-web
 USER node
 
 # Fails the build when a runtime invariant is missing: ffmpeg arnndn,

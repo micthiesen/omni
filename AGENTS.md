@@ -197,10 +197,22 @@ change; reuse authorization already given in the conversation.
 - `omni-stylist`: the fit-first stylist ledger: typed records and events,
   private evidence, frozen predictions, narrow rules, the versioned runbook,
   archives and the `StylistBackup` task.
+- `omni-recipe-format`: Fond's recipe document format: types, validator, list
+  and chart renderers, scaling, edit operations, timeline, search tokeniser.
+  Pure; builds for native and wasm.
+- `omni-recipes`: Fond, the recipe library: revisions, the tag registry, the
+  change log and undo, images, the inbox (pages, text, photos), cook sessions
+  and timers, the `recipes_*` tools, the app's HTTP API as a host app, the
+  `RecipesBackup` and `RecipesPurge` tasks.
 - `omni`: the binary: boot, wiring, ops routes, dashboard SSE, data
-  manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `--preview`.
+  manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `recipes-*`,
+  `--preview`.
 - `omni-web`, `omni-web-kit`, `omni-web-pages`: the Leptos CSR frontend (app
   shell and ops pages, shared kit, domain pages), built by trunk.
+- `omni-recipes-web`: Fond's phone app, a second Leptos CSR bundle with its
+  own look, served only on the recipes host: offline library in IndexedDB,
+  outbox, service worker, cook mode. It renders only through
+  `omni-recipe-format`. See `docs/recipes-app.md`; browser tests in its `e2e/`.
 - `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP snapshots.
 - `ios/OmniLive` (not a crate): the iOS/iPadOS app, its WidgetKit extension
   (Live Slot control, On Air widget) and notification service
@@ -490,6 +502,46 @@ Published runbook versions are frozen by a digest test: change the playbook
 by adding a version. Nothing in the stylist sends messages, shops or scans
 mail; proactive help is limited to items listed in the context.
 
+### Recipes (Fond)
+
+`omni-recipes` (`docs/recipes.md`) is the owner's recipe library, written by
+agents through the `recipes_*` tools and cooked from an app served only on its
+own host. A recipe is a validated `omni-recipe-format` document; never store
+one the validator refuses, and never rewrite a stored revision (triggers keep
+`recipes_revision` append-only; old formats are upgraded on read). No tool
+removes data: content has revisions, record metadata (tags, state, notes,
+images, merges, the tag registry) is in a change log that `recipes_undo`
+replays for 30 days, delete is a 30-day trash, and only `RecipesPurge` empties
+it, keeping the `mergedInto` pointer of an absorbed recipe. A dry run executes
+the real write and rolls it back: it must change, announce and review nothing.
+A refused document lists every problem at once (`Report::refusal_text`).
+Tags come only from the registry (seven groups, nothing seeded).
+
+Pages are fetched only through the `PageFetcher` port (unset is
+`[fetch_failed]`) and images only through the SSRF-guarded public client;
+both, and uploaded photos, are untrusted: typed by magic bytes, decoded through
+`omni-image`, bounded, never instructions. The fidelity comparison and the
+extraction review (the crate's only model call: `ModelRole::RecipeReview`, one
+attempt, 45 seconds) report and never block a save; never log source text.
+
+Cooking never edits a recipe. A session is an append-only event log, each
+`clientEventId` applied once; finishing turns overrides into adjustment records
+that only a revision with `resolves` or a dismissal closes. A timer alert is
+reserved in `recipes_timer_alert` before it is sent and is never resent; with
+an app client connected it waits 30 seconds for the app to answer the timer.
+
+Fond's router is registered only as a host app (`Subsystem::host_apps`), never
+merged into Omni's: on the recipes host nothing of Omni exists, on every other
+host Fond does not, and the gateway host can never serve it
+(`crates/omni/tests/route_precedence.rs`). It has no catch-all, mutations pass
+`MutationGuard` (exact `Origin`; uploads need `X-Fond-Upload`), and `/img`
+serves only digests a row refers to. The server and app contract is
+`omni_api::fond`; change both sides together. Final image and archive file
+names never end in `.tmp`, `.part` or `.log` (the off-site backup skips those).
+A restore needs an empty library and commits only when the tables read back as
+archived. The guide text is frozen by a digest test: change it by bumping
+`guide::VERSION`.
+
 ### Castro
 
 Inbox preview cleanup (`CastroInboxCleanup`) runs every six hours
@@ -703,7 +755,8 @@ historical Sent MIME during copy repair and never retransmit it to change identi
 
 MCP Events (`email.received`, `claude.session.turn_finished`,
 `livestream.status_changed`, `presspods.job_finished`, `task.run_finished`,
-`calendar.event_changed`, `calendar.event_starting`) share one outbox; each
+`calendar.event_changed`, `calendar.event_starting`, `recipes.inbox_added`,
+`recipes.cook_finished`) share one outbox; each
 event keeps ordinary polling tools for clients without event support. Subsystems publish only through the
 `EventPublisher` port (unset when events are disabled), outside their own
 transactions and locks, with a stable dedup key, a payload the catalog schema

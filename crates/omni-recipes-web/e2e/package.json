@@ -1,0 +1,11 @@
+{
+  "name": "fond-e2e",
+  "private": true,
+  "description": "Browser tests for the Fond PWA (docs/recipes-app.md). Not part of the Rust build.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}

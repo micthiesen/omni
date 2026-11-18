@@ -1,0 +1,69 @@
+[package]
+name = "omni-recipes-web"
+description = "Fond, the recipe phone app (Leptos CSR PWA built by trunk), served on its own host."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+omni-api.workspace = true
+omni-recipe-format.workspace = true
+leptos.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+console_error_panic_hook.workspace = true
+
+[dependencies.web-sys]
+workspace = true
+features = [
+  "AbortController",
+  "AbortSignal",
+  "AudioContext",
+  "AudioDestinationNode",
+  "AudioNode",
+  "AudioParam",
+  "BaseAudioContext",
+  "Blob",
+  "CanvasRenderingContext2d",
+  "Document",
+  "DomRect",
+  "Element",
+  "Event",
+  "EventSource",
+  "EventTarget",
+  "File",
+  "FileList",
+  "GainNode",
+  "Headers",
+  "History",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "HtmlImageElement",
+  "HtmlInputElement",
+  "HtmlTextAreaElement",
+  "Location",
+  "MessageEvent",
+  "MouseEvent",
+  "Navigator",
+  "OscillatorNode",
+  "Request",
+  "RequestInit",
+  "Response",
+  "ScrollRestoration",
+  "ServiceWorker",
+  "ServiceWorkerContainer",
+  "ServiceWorkerRegistration",
+  "ServiceWorkerState",
+  "Storage",
+  "Url",
+  "VisibilityState",
+  "Window",
+]

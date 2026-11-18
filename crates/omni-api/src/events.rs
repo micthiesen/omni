@@ -12,6 +12,8 @@ pub const PRESSPODS_JOB_FINISHED: &str = "presspods.job_finished";
 pub const TASK_RUN_FINISHED: &str = "task.run_finished";
 pub const CALENDAR_EVENT_CHANGED: &str = "calendar.event_changed";
 pub const CALENDAR_EVENT_STARTING: &str = "calendar.event_starting";
+pub const RECIPES_INBOX_ADDED: &str = "recipes.inbox_added";
+pub const RECIPES_COOK_FINISHED: &str = "recipes.cook_finished";
 
 /// Longest title, in characters, any event payload carries.
 pub const TITLE_LIMIT: usize = 200;
@@ -199,4 +201,25 @@ mod tests {
             Some(TITLE_LIMIT)
         );
     }
+}
+
+/// `recipes.inbox_added`: captured material is waiting for an agent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipesInboxAdded {
+    pub item_id: String,
+    /// `photo`, `url` or `text`.
+    pub kind: String,
+    pub title: Option<String>,
+}
+
+/// `recipes.cook_finished`: a cook session ended and counted as a cook.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipesCookFinished {
+    pub session_id: String,
+    pub recipe_id: String,
+    pub title: Option<String>,
+    /// Adjustments on the recipe that no revision has folded in yet.
+    pub open_adjustments: u32,
 }

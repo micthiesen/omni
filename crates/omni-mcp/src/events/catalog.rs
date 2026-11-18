@@ -11,7 +11,7 @@ pub const EMAIL_RECEIVED: &str = "email.received";
 pub const CLAUDE_TURN_FINISHED: &str = "claude.session.turn_finished";
 pub use omni_api::events::{
     CALENDAR_EVENT_CHANGED, CALENDAR_EVENT_STARTING, LIVESTREAM_STATUS_CHANGED,
-    PRESSPODS_JOB_FINISHED, TASK_RUN_FINISHED,
+    PRESSPODS_JOB_FINISHED, RECIPES_COOK_FINISHED, RECIPES_INBOX_ADDED, TASK_RUN_FINISHED,
 };
 
 /// Validated subscription arguments (insertion ordered).
@@ -27,6 +27,8 @@ pub enum EventKind {
     TaskRunFinished,
     CalendarEventChanged,
     CalendarEventStarting,
+    RecipesInboxAdded,
+    RecipesCookFinished,
 }
 
 /// One catalog entry.
@@ -47,10 +49,13 @@ const TASK_RUN_DESCRIPTION: &str = "A scheduled or manual Omni task run finished
 const CALENDAR_CHANGED_DESCRIPTION: &str = "An event in the primary iCloud calendar was created, updated or deleted, by any client. By default changes written by Omni's calendar tools are skipped (origin any includes them); email-pipeline writes count as external. Omni checks for changes about every minute while a subscription is active. Read details with calendar_event_get using eventId.";
 const CALENDAR_STARTING_DESCRIPTION: &str = "An occurrence in the primary iCloud calendar is about to start (leadMinutes before its start) or one of its alerts is due. Fires once per occurrence and lead time; a rescheduled occurrence fires again for its new time. Omni checks every 30 seconds while a subscription is active. Read details with calendar_event_get using eventId (recurrenceId names the occurrence).";
 
+const RECIPES_INBOX_DESCRIPTION: &str = "Material was captured in the owner's recipe app and waits in the recipe inbox to become a recipe (photos of a cookbook page or recipe card). Fires once per item, when its last photo has arrived. Read it with recipes_inbox_get using itemId, then create the recipe with recipes_create (fromInbox).";
+const RECIPES_COOK_DESCRIPTION: &str = "A cook session was finished and counted as a cook. openAdjustments is the number of changes cooks made that no revision has folded in yet. Read the cook log and the adjustments with recipes_cook_get using recipeId.";
+
 /// `calendar.event_starting` leads, in minutes.
 pub const CALENDAR_LEAD_MINUTES: [&str; 8] = ["0", "5", "10", "15", "30", "60", "120", "1440"];
 
-pub const EVENT_DEFINITIONS: [EventDefinition; 7] = [
+pub const EVENT_DEFINITIONS: [EventDefinition; 9] = [
     EventDefinition {
         kind: EventKind::EmailReceived,
         name: EMAIL_RECEIVED,
@@ -85,6 +90,16 @@ pub const EVENT_DEFINITIONS: [EventDefinition; 7] = [
         kind: EventKind::CalendarEventStarting,
         name: CALENDAR_EVENT_STARTING,
         description: CALENDAR_STARTING_DESCRIPTION,
+    },
+    EventDefinition {
+        kind: EventKind::RecipesInboxAdded,
+        name: RECIPES_INBOX_ADDED,
+        description: RECIPES_INBOX_DESCRIPTION,
+    },
+    EventDefinition {
+        kind: EventKind::RecipesCookFinished,
+        name: RECIPES_COOK_FINISHED,
+        description: RECIPES_COOK_DESCRIPTION,
     },
 ];
 
@@ -300,6 +315,11 @@ impl EventDefinition {
                     ),
                 ]))
             }
+            // No filters: both are rare, owner-initiated moments.
+            EventKind::RecipesInboxAdded | EventKind::RecipesCookFinished => {
+                string_arguments(raw, &[])?;
+                Some(EventArguments::new())
+            }
         }
     }
 
@@ -356,6 +376,7 @@ impl EventDefinition {
                         || data_str(data, "leadMinutes")
                             == Some(args.get("leadMinutes").map_or("15", String::as_str)))
             }
+            EventKind::RecipesInboxAdded | EventKind::RecipesCookFinished => true,
         }
     }
 
@@ -472,6 +493,11 @@ impl EventDefinition {
                         "description": "Include all-day events, which start at local midnight",
                     },
                 },
+                "additionalProperties": false,
+            }),
+            EventKind::RecipesInboxAdded | EventKind::RecipesCookFinished => json!({
+                "type": "object",
+                "properties": {},
                 "additionalProperties": false,
             }),
         }
@@ -615,6 +641,27 @@ impl EventDefinition {
                     "end", "allDay", "timeZone", "trigger", "leadMinutes", "alarmId", "fireAt",
                     "late", "hasLocation", "includeAllDay",
                 ],
+                "additionalProperties": false,
+            }),
+            EventKind::RecipesInboxAdded => json!({
+                "type": "object",
+                "properties": {
+                    "itemId": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["photo", "url", "text"]},
+                    "title": {"type": ["string", "null"], "maxLength": 200},
+                },
+                "required": ["itemId", "kind", "title"],
+                "additionalProperties": false,
+            }),
+            EventKind::RecipesCookFinished => json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": {"type": "string"},
+                    "recipeId": {"type": "string"},
+                    "title": {"type": ["string", "null"], "maxLength": 200},
+                    "openAdjustments": {"type": "integer", "minimum": 0},
+                },
+                "required": ["sessionId", "recipeId", "title", "openAdjustments"],
                 "additionalProperties": false,
             }),
         }

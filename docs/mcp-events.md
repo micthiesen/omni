@@ -255,6 +255,36 @@ its alerts is due.
 - Polling: `calendar_events_list` with `from` now and `to` now plus the lead;
   `calendar_event_get` reports alarms.
 
+### `recipes.inbox_added`
+
+Fires when material captured in the owner's recipe app is complete and waits in
+the recipe inbox: photos of a cookbook page or a recipe card, once the last
+photo of the item has arrived.
+
+- Arguments: none.
+- Payload: `itemId`, `kind` (`photo`, `url` or `text`), `title` (the name the
+  owner gave the capture, when any).
+- Dedup key: `inbox:<itemId>`.
+- Source: `crates/omni-recipes/src/inbox.rs` (`upload_photo`), after the
+  transaction that made the item visible commits. A crash in between loses the
+  event; the item is still listed. `recipes_import_url` does not publish: the
+  agent that imported the page is already working on it.
+- Polling: `recipes_inbox_list`, `recipes_inbox_get`.
+
+### `recipes.cook_finished`
+
+Fires when a cook session ends and counts as a cook: the owner (or an agent)
+finished it, or it closed after 18 idle hours with at least half its steps
+done. An abandoned session does not fire.
+
+- Arguments: none.
+- Payload: `sessionId`, `recipeId`, `title` (the recipe's), `openAdjustments`
+  (changes cooks made that no revision has folded in yet).
+- Dedup key: `cook:<sessionId>`.
+- Source: `crates/omni-recipes/src/cook.rs`, after the finish commits. A crash
+  in between loses the event; the cook log holds the cook.
+- Polling: `recipes_cook_get` (a recipe's cook log and open adjustments).
+
 ## Other servers' events
 
 The gateway offers the events of configured integrations that support
