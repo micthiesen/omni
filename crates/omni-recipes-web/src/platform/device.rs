@@ -12,6 +12,7 @@ use super::{call, document, get, listen, settle, window};
 thread_local! {
     static REGISTRATION: RefCell<Option<web_sys::ServiceWorkerRegistration>> = const { RefCell::new(None) };
     static RELOAD_ON_TAKEOVER: Cell<bool> = const { Cell::new(false) };
+    static WORKER_RUNNING: Cell<bool> = const { Cell::new(false) };
     static WAKE_LOCK: RefCell<Option<JsValue>> = const { RefCell::new(None) };
     static AUDIO: RefCell<Option<web_sys::AudioContext>> = const { RefCell::new(None) };
 }
@@ -37,6 +38,7 @@ pub fn register_service_worker(update_available: RwSignal<bool>, on_control: imp
         }
     });
     let had_controller = container.controller().is_some();
+    WORKER_RUNNING.set(had_controller);
     leptos::task::spawn_local(async move {
         let Ok(registration) = JsFuture::from(container.register("/sw.js")).await else {
             return;
@@ -55,11 +57,15 @@ pub fn register_service_worker(update_available: RwSignal<bool>, on_control: imp
                 return;
             };
             let worker = installing.clone();
-            listen(&installing, "statechange", move |_| {
-                let replaces_running = service_workers().is_some_and(|c| c.controller().is_some());
-                if worker.state() == web_sys::ServiceWorkerState::Installed && replaces_running {
+            listen(&installing, "statechange", move |_| match worker.state() {
+                // WebKit reports a controller while the very first worker is
+                // still installing, so "is this an update" is remembered from
+                // before it, not read from the container here.
+                web_sys::ServiceWorkerState::Installed if WORKER_RUNNING.get() => {
                     update_available.set(true);
                 }
+                web_sys::ServiceWorkerState::Activated => WORKER_RUNNING.set(true),
+                _ => {}
             });
         });
     });

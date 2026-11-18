@@ -171,6 +171,13 @@ test('the shell is installable: manifest, icons and service worker', async ({ pa
   expect(registered).toBe(true);
 });
 
+test('a first visit installs the app shell without announcing an update', async ({ page }) => {
+  await openLibrary(page);
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller);
+  await page.waitForTimeout(1500);
+  await expect(page.getByText('A new version of Fond is ready.')).toHaveCount(0);
+});
+
 test('nothing the app does is refused by the content security policy', async ({ page }) => {
   const refused = [];
   page.on('console', (message) => {
