@@ -69,6 +69,27 @@ against `omni --preview`, 23/23 against the mock.
 5. Write the final report here and reply to Michael (what shipped, URL, Home Screen steps, tests
    run against production, deviations, what only he can check on the phone).
 
+## Michael's feedback after using it on the iPhone (2026-11-18 08:49 PT), decided, to build
+
+1. **Chart is squashed.** Cook mode > Chart for "Dad's Mustard Vinaigrette" at ~390pt: the
+   ingredient column takes ~40%, step columns are thin slivers with rotated text, the right half is
+   empty. Make the chart use the full width and read horizontally: step cells wide enough for
+   normal horizontal wrapped text, sized to content, horizontal scroll only when a big recipe
+   genuinely does not fit. No rotated text. Check every seeded recipe (small and big, e.g. the
+   lasagne) at iPhone width in the recipe view and in cook mode, with screenshots in the browser
+   tests.
+2. **Cancel a cook.** An obvious way to cancel an in-progress cook without finishing or logging
+   it: next to Finish, or in the close X flow (keep for later / discard), one confirmation, no cook
+   log entry. The existing discard (in the Finish sheet) is not discoverable.
+3. **Adjust amounts.** Capture "half the salt next time": the user can edit an ingredient's amount
+   (quantity and unit only; no adding or removing ingredients, no step edits) from the recipe view
+   and from cook mode. Saving writes a new recipe revision through the same validated path the
+   tools use (expectedRevision, revision history, undo): permanent, visible to agents, reversible.
+   Step placeholders follow. Notes stay the free-text channel.
+
+Then: redeploy, run the full production browser suite including these, clean up test data, final
+report.
+
 ## Decisions and deviations
 
 - Tools are named `recipes_*` (single underscore), as the spec corrects.
