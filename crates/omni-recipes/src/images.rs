@@ -23,6 +23,8 @@ use crate::service::Recipes;
 
 /// Decoded bytes of an image passed in a tool call.
 pub const MAX_INLINE_BYTES: usize = 3_000_000;
+/// Images one recipe holds.
+pub const MAX_IMAGES: usize = 100;
 
 struct NewImage {
     stored: Stored,
@@ -42,12 +44,12 @@ fn images_edit_tx(
     let ids = [row.id.clone()];
     let before = json!({ "recipes": meta::recipes_facets(conn, &ids, &[IMAGES])? });
     let mut said: Vec<String> = Vec::new();
-    let mut position = images_of(conn, &row.id)?
+    let first = images_of(conn, &row.id)?
         .iter()
         .map(|image| image.position + 1)
         .max()
         .unwrap_or(0);
-    for new in added {
+    for (position, new) in (first..).zip(added) {
         db::insert_image(
             conn,
             &ImageRow {
@@ -66,10 +68,11 @@ fn images_edit_tx(
                 created_at: now,
             },
         )?;
-        position += 1;
     }
-    if position > 100 {
-        return Err(invalid("a recipe holds at most 100 images"));
+    if images_of(conn, &row.id)?.len() > MAX_IMAGES {
+        return Err(invalid(format!(
+            "a recipe holds at most {MAX_IMAGES} images"
+        )));
     }
     let belongs = |image_id: &str| -> R<()> {
         match db::image(conn, image_id)? {
@@ -150,7 +153,10 @@ fn images_edit_tx(
 }
 
 impl Recipes {
-    async fn new_image(&self, add: &ImageAdd) -> R<NewImage> {
+    /// The image one `add` entry names, stored. A dry run validates the
+    /// entry and returns `None` for a URL or inline bytes: nothing is fetched
+    /// and no file is written.
+    async fn new_image(&self, add: &ImageAdd, dry: bool) -> R<Option<NewImage>> {
         let role = add.role.map_or("dish", crate::api::ImageRole::as_str);
         let caption = add
             .caption
@@ -166,16 +172,20 @@ impl Recipes {
             ));
         }
         if let Some(url) = &add.url {
-            let host = url::Url::parse(url)
+            let host = url::Url::parse(url.trim())
                 .ok()
+                .filter(|url| matches!(url.scheme(), "http" | "https"))
                 .and_then(|url| url.host_str().map(str::to_owned))
-                .unwrap_or_default();
-            return Ok(NewImage {
+                .ok_or_else(|| invalid(format!("{url:?} is not an http(s) URL")))?;
+            if dry {
+                return Ok(None);
+            }
+            return Ok(Some(NewImage {
                 stored: self.fetch_image(url).await?,
                 role,
                 caption,
                 origin: format!("url:{host}"),
-            });
+            }));
         }
         if let Some(data) = &add.data_base64 {
             // Four base64 characters carry three bytes.
@@ -202,13 +212,16 @@ impl Recipes {
                     ),
                 ));
             }
+            if dry {
+                return Ok(None);
+            }
             let _held = self.files_lock.lock().await;
-            return Ok(NewImage {
+            return Ok(Some(NewImage {
                 stored: self.files.put(bytes).await?,
                 role,
                 caption,
                 origin: "inline".to_owned(),
-            });
+            }));
         }
         let photo = add
             .inbox
@@ -245,12 +258,12 @@ impl Recipes {
                     .ok_or_else(|| not_found(format!("{} has no photo {index}", item.id)))
             })
             .await?;
-        Ok(NewImage {
+        Ok(Some(NewImage {
             stored,
             role,
             caption,
             origin: format!("inbox:{}:{}", photo.item_id, photo.index),
-        })
+        }))
     }
 
     pub async fn images_edit(&self, input: ImagesEditInput, actor: Actor) -> R<ImagesEditOutput> {
@@ -270,7 +283,8 @@ impl Recipes {
             .await?;
         let mut added = Vec::new();
         for add in adds {
-            added.push(self.new_image(add).await?);
+            // A dry run checks what it can without fetching or storing.
+            added.extend(self.new_image(add, dry).await?);
         }
         let (change, seq, images) = self
             .transact(dry, move |conn, now| {

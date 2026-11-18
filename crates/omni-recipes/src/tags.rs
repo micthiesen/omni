@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::api::{TagGroup, TagInfo, TagOp, TagsEditInput, TagsEditOutput};
 use crate::db::{self, Actor, Change, log_change, next_seq, refresh_fts, tag_name};
 use crate::error::{R, invalid, reject, sql};
-use crate::meta::{self, REGISTRY, REGISTRY_KEY, TAGS};
+use crate::meta::{self, REGISTRY, TAG_KEY_PREFIX, TAGS, USE};
 use crate::service::Recipes;
 
 /// Normalised, deduplicated tag names.
@@ -85,7 +85,7 @@ fn distance(a: &str, b: &str) -> usize {
 }
 
 /// Up to five registered names closest to `name`.
-fn nearest(conn: &Connection, name: &str) -> R<Vec<String>> {
+pub(crate) fn nearest(conn: &Connection, name: &str) -> R<Vec<String>> {
     let mut scored: Vec<(usize, String)> = meta::registry_rows(conn)?
         .into_iter()
         .filter_map(|row| {
@@ -100,13 +100,10 @@ fn nearest(conn: &Connection, name: &str) -> R<Vec<String>> {
     Ok(scored.into_iter().take(5).map(|(_, name)| name).collect())
 }
 
-pub(crate) fn unknown_tag(
-    conn: &Connection,
-    name: &str,
-    create_hint: bool,
-) -> R<crate::error::RecipesError> {
+/// "nearest: ..." for one unregistered name.
+pub(crate) fn nearest_text(conn: &Connection, name: &str) -> R<String> {
     let near = nearest(conn, name)?;
-    let near = if near.is_empty() {
+    Ok(if near.is_empty() {
         "no registered tag is close to it".to_owned()
     } else {
         format!(
@@ -116,35 +113,86 @@ pub(crate) fn unknown_tag(
                 .collect::<Vec<_>>()
                 .join(", ")
         )
-    };
+    })
+}
+
+/// The refusal for unregistered tags: every one of them at once, each with
+/// its nearest registered names.
+pub(crate) fn unknown_tags(
+    conn: &Connection,
+    names: &[String],
+    create_hint: bool,
+) -> R<crate::error::RecipesError> {
+    let mut parts = Vec::new();
+    for name in names {
+        parts.push(format!(
+            "tag {name:?} is not in the registry; {}",
+            nearest_text(conn, name)?
+        ));
+    }
     let hint = if create_hint {
-        " Use an existing tag, or pass createTags to add it to the registry (group \"other\"; recipes_tags_edit sets the group)."
+        " Use existing tags, or pass createTags to add these to the registry (group \"other\"; recipes_tags_edit sets the group)."
     } else {
         ""
     };
     Ok(reject(
         "unknown_tag",
-        format!("tag {name:?} is not in the registry; {near}.{hint}"),
+        format!("{}.{hint}", parts.join(". ")),
     ))
 }
 
 /// Every name must be registered; with `create`, missing names are added to
-/// the group `other`.
-pub fn require(conn: &Connection, names: &[String], create: bool, now: i64) -> R<()> {
+/// the group `other`. Returns the names it added.
+pub fn require(conn: &Connection, names: &[String], create: bool, now: i64) -> R<Vec<String>> {
+    let mut missing = Vec::new();
     for name in names {
-        if exists(conn, name)? {
-            continue;
+        if !exists(conn, name)? {
+            missing.push(name.clone());
         }
-        if !create {
-            return Err(unknown_tag(conn, name, true)?);
-        }
+    }
+    if !create && !missing.is_empty() {
+        return Err(unknown_tags(conn, &missing, true)?);
+    }
+    for name in &missing {
         conn.execute(
             "INSERT INTO recipes_tag (name, grp, created_at) VALUES (?1, 'other', ?2)",
             params![name, now],
         )
         .map_err(sql)?;
     }
-    Ok(())
+    Ok(missing)
+}
+
+/// The key of one tag in a change's `touched` map.
+pub fn tag_key(name: &str) -> String {
+    format!("{TAG_KEY_PREFIX}{name}")
+}
+
+/// Records in `touched` which tags a change used on recipes and which
+/// registry rows it wrote, so an undo of a registry change sees them.
+pub fn touch(
+    touched: &mut serde_json::Map<String, serde_json::Value>,
+    used: &[String],
+    wrote: &[String],
+) {
+    for name in used {
+        touched.entry(tag_key(name)).or_insert_with(|| json!([USE]));
+    }
+    for name in wrote {
+        touched.insert(tag_key(name), json!([REGISTRY]));
+    }
+}
+
+/// The registry rows of `names` as a snapshot: each name to its row, or to
+/// null when it is not registered.
+fn registry_of(conn: &Connection, names: &[String]) -> R<serde_json::Value> {
+    let rows = meta::registry_rows(conn)?;
+    let mut out = serde_json::Map::new();
+    for name in names {
+        let row = rows.iter().find(|row| row.name == *name);
+        out.insert(name.clone(), json!(row));
+    }
+    Ok(serde_json::Value::Object(out))
 }
 
 fn recipes_with(conn: &Connection, tag: &str) -> R<Vec<String>> {
@@ -162,21 +210,34 @@ fn known(conn: &Connection, raw: &str) -> R<String> {
     if exists(conn, &name)? {
         Ok(name)
     } else {
-        Err(unknown_tag(conn, &name, false)?)
+        Err(unknown_tags(conn, &[name], false)?)
     }
 }
 
 fn tags_edit_tx(conn: &Connection, now: i64, ops: &[TagOp], actor: &Actor) -> R<(String, u64)> {
-    // The recipes any op can reach, snapshotted before the first op runs.
+    // The recipes and registry rows any op can reach, snapshotted before
+    // the first op runs. Only these are put back by an undo: tags created or
+    // used since are left alone.
     let mut involved: Vec<String> = Vec::new();
+    let mut names: Vec<String> = Vec::new();
     for op in ops {
-        let named: Vec<&String> = match op {
-            TagOp::Rename { from, .. } => vec![from],
-            TagOp::Merge { from, into } => from.iter().chain([into]).collect(),
-            TagOp::Delete { name } => vec![name],
-            TagOp::Create { .. } | TagOp::SetGroup { .. } => Vec::new(),
+        let (on_recipes, all): (Vec<&String>, Vec<&String>) = match op {
+            TagOp::Rename { from, to } => (vec![from], vec![from, to]),
+            TagOp::Merge { from, into } => {
+                let all: Vec<&String> = from.iter().chain([into]).collect();
+                (all.clone(), all)
+            }
+            TagOp::Delete { name } => (vec![name], vec![name]),
+            TagOp::Create { name, .. } | TagOp::SetGroup { name, .. } => (Vec::new(), vec![name]),
         };
-        for name in named {
+        for name in all {
+            if let Ok(name) = tag_name(name)
+                && !names.contains(&name)
+            {
+                names.push(name);
+            }
+        }
+        for name in on_recipes {
             if let Ok(name) = tag_name(name) {
                 for id in recipes_with(conn, &name)? {
                     if !involved.contains(&id) {
@@ -187,8 +248,9 @@ fn tags_edit_tx(conn: &Connection, now: i64, ops: &[TagOp], actor: &Actor) -> R<
         }
     }
     involved.sort();
+    names.sort();
     let before = json!({
-        REGISTRY: meta::registry_rows(conn)?,
+        REGISTRY: registry_of(conn, &names)?,
         "recipes": meta::recipes_facets(conn, &involved, &[TAGS])?,
     });
     let mut said: Vec<String> = Vec::new();
@@ -277,14 +339,14 @@ fn tags_edit_tx(conn: &Connection, now: i64, ops: &[TagOp], actor: &Actor) -> R<
     }
     let seq = next_seq(conn)?;
     let mut touched = serde_json::Map::new();
-    touched.insert(REGISTRY_KEY.to_owned(), json!([REGISTRY]));
+    touch(&mut touched, &[], &names);
     for id in &involved {
         db::touch(conn, id, seq, now)?;
         refresh_fts(conn, id)?;
         touched.insert(id.clone(), json!([TAGS]));
     }
     let after = json!({
-        REGISTRY: meta::registry_rows(conn)?,
+        REGISTRY: registry_of(conn, &names)?,
         "recipes": meta::recipes_facets(conn, &involved, &[TAGS])?,
     });
     let change = log_change(

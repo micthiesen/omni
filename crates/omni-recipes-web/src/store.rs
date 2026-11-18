@@ -473,17 +473,19 @@ impl Store {
         };
         let mut rec = current.rec.clone();
         rec.notes = text;
-        self.put_recipe(rec);
-        let key = self.take_key();
-        let in_flight = self.in_flight.get_value();
-        self.outbox
-            .update(|entries| outbox::enqueue_notes(entries, &in_flight, key, op));
-        if let Some(last) = self
-            .outbox
-            .with_untracked(|entries| entries.last().cloned())
-        {
-            idb::put(idb::OUTBOX, last.key as f64, &last);
-        }
+        idb::atomic(|| {
+            self.put_recipe(rec);
+            let key = self.take_key();
+            let in_flight = self.in_flight.get_value();
+            self.outbox
+                .update(|entries| outbox::enqueue_notes(entries, &in_flight, key, op));
+            if let Some(last) = self
+                .outbox
+                .with_untracked(|entries| entries.last().cloned())
+            {
+                idb::put(idb::OUTBOX, last.key as f64, &last);
+            }
+        });
         if let Some(timer) = self.notes_timer.get_value() {
             timer.clear();
         }
@@ -506,74 +508,80 @@ impl Store {
     /// Archives, deletes or brings back. A deleted recipe stays in memory,
     /// hidden, until the next sync drops it, so an undo can show it again.
     pub fn set_state(self, recipe: &RecipeRecord, state: RecipeState) {
-        let mut rec = recipe.clone();
-        rec.state = state;
-        self.put_recipe(rec);
-        self.enqueue(Job::Op {
-            op: ClientOp {
-                id: random_id("op_", 12),
-                at: now_ms(),
-                kind: ClientOpKind::State {
-                    recipe_id: recipe.id.clone(),
-                    state,
+        idb::atomic(|| {
+            let mut rec = recipe.clone();
+            rec.state = state;
+            self.put_recipe(rec);
+            self.enqueue(Job::Op {
+                op: ClientOp {
+                    id: random_id("op_", 12),
+                    at: now_ms(),
+                    kind: ClientOpKind::State {
+                        recipe_id: recipe.id.clone(),
+                        state,
+                    },
                 },
-            },
-        });
+            });
+        })
     }
 
     /// Starts a session on the phone; the server learns of it from the outbox.
     pub fn start_cook(self, recipe: &Recipe, scale: f64) -> String {
-        let now = now_ms();
-        let id = random_id("cook_", 8);
-        let request = StartCookRequest {
-            id: id.clone(),
-            recipe_id: recipe.rec.id.clone(),
-            revision: recipe.rec.revision,
-            scale,
-            at: now,
-        };
-        self.put_session(CookSession {
-            id: id.clone(),
-            recipe_id: recipe.rec.id.clone(),
-            revision: recipe.rec.revision,
-            scale,
-            state: CookState::Active,
-            started_at: now,
-            finished_at: None,
-            last_event_at: now,
-            events: Vec::new(),
-            doc: Some(recipe.rec.doc.clone()),
-        });
-        self.enqueue(Job::StartCook { request });
-        id
+        idb::atomic(|| {
+            let now = now_ms();
+            let id = random_id("cook_", 8);
+            let request = StartCookRequest {
+                id: id.clone(),
+                recipe_id: recipe.rec.id.clone(),
+                revision: recipe.rec.revision,
+                scale,
+                at: now,
+            };
+            self.put_session(CookSession {
+                id: id.clone(),
+                recipe_id: recipe.rec.id.clone(),
+                revision: recipe.rec.revision,
+                scale,
+                state: CookState::Active,
+                started_at: now,
+                finished_at: None,
+                last_event_at: now,
+                events: Vec::new(),
+                doc: Some(recipe.rec.doc.clone()),
+            });
+            self.enqueue(Job::StartCook { request });
+            id
+        })
     }
 
     /// Appends an event to a session: applied locally now, sent in order.
     pub fn cook_event(self, session_id: &str, kind: CookEventKind) {
-        let now = now_ms();
-        let event = session::app_event(random_id("ev_", 12), now, kind);
-        let known = self.sessions.with_untracked(|s| s.get(session_id).cloned());
-        if let Some(mut session) = known {
-            if let CookEventKind::Rebase { revision } = &event.kind
-                && let Some(recipe) = self
-                    .recipes
-                    .with_untracked(|recipes| recipes.get(&session.recipe_id).cloned())
-                && recipe.rec.revision == *revision
-            {
-                session.revision = *revision;
-                session.doc = Some(recipe.rec.doc.clone());
+        idb::atomic(|| {
+            let now = now_ms();
+            let event = session::app_event(random_id("ev_", 12), now, kind);
+            let known = self.sessions.with_untracked(|s| s.get(session_id).cloned());
+            if let Some(mut session) = known {
+                if let CookEventKind::Rebase { revision } = &event.kind
+                    && let Some(recipe) = self
+                        .recipes
+                        .with_untracked(|recipes| recipes.get(&session.recipe_id).cloned())
+                    && recipe.rec.revision == *revision
+                {
+                    session.revision = *revision;
+                    session.doc = Some(recipe.rec.doc.clone());
+                }
+                if let CookEventKind::Finish { .. } = &event.kind {
+                    self.finished_locally(&session, now);
+                }
+                session.events.push(event.clone());
+                session.last_event_at = now;
+                self.put_session(session);
             }
-            if let CookEventKind::Finish { .. } = &event.kind {
-                self.finished_locally(&session, now);
-            }
-            session.events.push(event.clone());
-            session.last_event_at = now;
-            self.put_session(session);
-        }
-        self.enqueue(Job::CookEvent {
-            session: session_id.to_owned(),
-            event,
-        });
+            self.enqueue(Job::CookEvent {
+                session: session_id.to_owned(),
+                event,
+            });
+        })
     }
 
     /// Shows the cook in the library before the server confirms it.
@@ -591,19 +599,21 @@ impl Store {
 
     /// Closes an open adjustment from an earlier cook.
     pub fn dismiss_adjustment(self, recipe: &RecipeRecord, adjustment_id: &str) {
-        let Some(adjustment) = recipe.adjustments.iter().find(|a| a.id == adjustment_id) else {
-            return;
-        };
-        let session = adjustment.session_id.clone();
-        let mut rec = recipe.clone();
-        rec.adjustments.retain(|a| a.id != adjustment_id);
-        self.put_recipe(rec);
-        self.cook_event(
-            &session,
-            CookEventKind::DismissAdjustment {
-                id: adjustment_id.to_owned(),
-            },
-        );
+        idb::atomic(|| {
+            let Some(adjustment) = recipe.adjustments.iter().find(|a| a.id == adjustment_id) else {
+                return;
+            };
+            let session = adjustment.session_id.clone();
+            let mut rec = recipe.clone();
+            rec.adjustments.retain(|a| a.id != adjustment_id);
+            self.put_recipe(rec);
+            self.cook_event(
+                &session,
+                CookEventKind::DismissAdjustment {
+                    id: adjustment_id.to_owned(),
+                },
+            );
+        })
     }
 
     /// Queues a photo of the finished dish for a session.

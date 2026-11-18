@@ -262,6 +262,17 @@ pub struct SearchOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<u32>,
     pub recipes: Vec<Card>,
+    /// Tag filters that name no registered tag (so the filter matched
+    /// nothing, or excluded nothing), each with the nearest registered names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown_tags: Vec<UnknownTag>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UnknownTag {
+    pub name: String,
+    pub nearest: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -326,6 +337,11 @@ pub struct AdjustmentInfo {
     pub text: String,
     pub session_id: String,
     pub cooked_on: String,
+    /// True when the recipe's newest revision has no step or ingredient with
+    /// this id any more (after a merge or a removal): fold it in by hand from
+    /// `original` and `text`, or dismiss it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub target_missing: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -508,6 +524,9 @@ pub struct CreateOutput {
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<u32>,
+    /// Pass to recipes_undo (which sends the new recipe to the trash).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_id: Option<String>,
     /// Only on a dry run that would be refused.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub problems: Option<Vec<Problem>>,
@@ -562,6 +581,9 @@ pub struct WriteOutput {
     pub id: String,
     /// The newest revision after the call.
     pub revision: u32,
+    /// Pass to recipes_undo. Absent on a dry run or when nothing changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub problems: Option<Vec<Problem>>,
     /// One line per change, addressed by id.
@@ -591,6 +613,13 @@ pub struct RevertOutput {
     pub saved: bool,
     pub id: String,
     pub revision: u32,
+    /// Pass to recipes_undo. Absent on a dry run or when nothing changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_id: Option<String>,
+    /// Only on a dry run that would be refused: the earlier revision no
+    /// longer passes the format's rules.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problems: Option<Vec<Problem>>,
     pub changes: Vec<String>,
     pub text: String,
 }
@@ -1040,6 +1069,16 @@ pub struct InboxResolveInput {
 #[serde(rename_all = "camelCase")]
 pub struct InboxResolveOutput {
     pub resolved: u32,
+    /// Items left as they were because they were not pending.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedItem {
+    pub item_id: String,
+    pub state: InboxState,
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,6 +1146,10 @@ pub struct SessionView {
     pub revision: u32,
     /// The recipe's newest revision; larger when it was edited since.
     pub head_revision: u32,
+    /// The absorbed recipe whose document the session still shows, when a
+    /// merge moved the session; a rebase moves it to this recipe's revisions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_from: Option<String>,
     pub scale: f64,
     pub started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]

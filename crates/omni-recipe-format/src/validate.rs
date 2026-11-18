@@ -296,6 +296,16 @@ fn check_limits(doc: &RecipeDoc, report: &mut Report) {
             format!("title is {title} characters; the limit is {TITLE_MAX}"),
         );
     }
+    if let Some(url) = &doc.source.url
+        && !crate::model::is_web_url(url)
+    {
+        report.error_hint(
+            Code::BadValue,
+            "source.url",
+            "source.url must be an http:// or https:// address",
+            "put anything else (a book page, a person) in source.detail",
+        );
+    }
     if !(doc.r#yield.qty.is_finite() && doc.r#yield.qty > 0.0) {
         report.error(
             Code::BadValue,

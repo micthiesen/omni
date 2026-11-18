@@ -387,3 +387,35 @@ fn problems_serialize_with_their_code_and_level() {
         })
     );
 }
+
+#[test]
+fn a_source_url_must_be_a_web_address() {
+    use omni_recipe_format::is_web_url;
+    for (url, ok) in [
+        ("https://example.com/recipes/piccata", true),
+        ("HTTP://Example.com", true),
+        ("https://[::1]/x", true),
+        ("javascript:alert(1)", false),
+        ("data:text/html,<script>", false),
+        ("ftp://example.com/x", false),
+        ("//example.com/x", false),
+        ("/recipes/piccata", false),
+        ("https://", false),
+        ("https:///x", false),
+        ("https://example.com/a b", false),
+        ("https://example.com/\n", false),
+        ("", false),
+    ] {
+        assert_eq!(is_web_url(url), ok, "{url:?}");
+        let mut doc = piccata();
+        doc.source.url = Some(url.to_owned());
+        let report = validate(&doc);
+        assert_eq!(report.is_valid(), ok, "{url:?}");
+        if !ok {
+            assert_eq!(
+                line(&report, Code::BadValue),
+                "source.url: [bad_value] source.url must be an http:// or https:// address Hint: put anything else (a book page, a person) in source.detail"
+            );
+        }
+    }
+}

@@ -19,7 +19,12 @@ use axum::middleware::Next;
 use axum::response::Response;
 use tower::ServiceExt as _;
 
-use crate::public_host::request_host;
+use crate::public_host::named_hosts;
+
+const LOG: &str = "Server";
+
+/// Headers Cloudflare's edge adds to every request it forwards.
+const EDGE_HEADERS: [&str; 2] = ["cf-connecting-ip", "cf-ray"];
 
 /// The origin given to [`HostApp::new`] is not a plain `https://` origin (or
 /// a plain `http://` origin on `localhost` or a `.localhost` name).
@@ -97,19 +102,43 @@ async fn not_found(request: Request) -> Response {
     response
 }
 
-/// Middleware over the whole application: a request whose host (see
-/// [`request_host`]) is a host app's goes to that app's router; any other
+/// Middleware over the whole application: a request whose host (`Host`, or
+/// the URI authority) is a host app's goes to that app's router; any other
 /// request continues unchanged. With two apps on one host the first wins.
+///
+/// Two refusals come first, both only for requests that name an app's host:
+/// 400 when the request names two different hosts, and 403 when it carries
+/// Cloudflare's edge headers.
 pub async fn dispatch_to_host_apps(
     State(apps): State<Arc<[HostApp]>>,
     request: Request,
     next: Next,
 ) -> Response {
-    let host = request_host(&request);
-    let app = host
-        .as_deref()
-        .and_then(|host| apps.iter().find(|app| &*app.host == host));
-    match app {
+    let named = named_hosts(&request);
+    let is_app = |host: &String| apps.iter().any(|app| &*app.host == host.as_str());
+    if !named.iter().any(is_app) {
+        return next.run(request).await;
+    }
+    // A request that names an app's host and another host at once (two Host
+    // headers, or an absolute-form URI that disagrees with Host) could be
+    // routed one way here and another way by a proxy: refuse it.
+    if named.iter().any(|host| *host != named[0]) {
+        return crate::api_error(StatusCode::BAD_REQUEST, "Conflicting hosts");
+    }
+    // An app's host is private: its DNS record is not proxied. A request for
+    // it that came through Cloudflare means that record or the proxy's
+    // access list is gone, so the app closes instead of answering the world.
+    if EDGE_HEADERS
+        .iter()
+        .any(|name| request.headers().contains_key(*name))
+    {
+        tracing::warn!(target: LOG, host = %named[0], "Refused a host app request that came through the public edge");
+        return crate::api_error(
+            StatusCode::FORBIDDEN,
+            "This app is not available from the public internet",
+        );
+    }
+    match apps.iter().find(|app| *app.host == *named[0]) {
         Some(app) => match app.router.clone().oneshot(request).await {
             Ok(response) => response,
             Err(never) => match never {},
@@ -303,6 +332,71 @@ mod tests {
         ] {
             assert!(HostApp::new(bad, Router::new()).is_err(), "{bad}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_request_through_the_public_edge_never_reaches_the_app() {
+        for header in ["cf-connecting-ip", "cf-ray"] {
+            let request = Request::get("/")
+                .header(header::HOST, "recipes.example.com")
+                .header(header, "203.0.113.9")
+                .body(Body::empty())
+                .unwrap();
+            let (status, body) = send(request).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{header}");
+            assert_eq!(
+                body,
+                r#"{"error":"This app is not available from the public internet"}"#
+            );
+            // Omni's own hosts are not affected.
+            let request = Request::get("/")
+                .header(header::HOST, "omni.boris")
+                .header(header, "203.0.113.9")
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(send(request).await.1, "omni", "{header}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_request_that_names_two_hosts_is_refused_when_one_is_an_app() {
+        let conflicting = [
+            Request::get("http://recipes.example.com/")
+                .header(header::HOST, "omni.boris")
+                .body(Body::empty())
+                .unwrap(),
+            Request::get("http://omni.boris/api/health")
+                .header(header::HOST, "recipes.example.com")
+                .body(Body::empty())
+                .unwrap(),
+            Request::get("/")
+                .header(header::HOST, "omni.boris")
+                .header(header::HOST, "recipes.example.com")
+                .body(Body::empty())
+                .unwrap(),
+            Request::get("/")
+                .header(header::HOST, "recipes.example.com")
+                .header(header::HOST, "omni.boris")
+                .body(Body::empty())
+                .unwrap(),
+        ];
+        for request in conflicting {
+            let (status, body) = send(request).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body, r#"{"error":"Conflicting hosts"}"#);
+        }
+        // Agreement is fine, whatever the port or case; so is a mismatch that
+        // involves no app.
+        let agreeing = Request::get("http://Recipes.Example.com:8080/")
+            .header(header::HOST, "recipes.example.com")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(send(agreeing).await, (StatusCode::OK, "app".to_owned()));
+        let elsewhere = Request::get("http://example.com/")
+            .header(header::HOST, "omni.boris")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(send(elsewhere).await.1, "omni");
     }
 
     #[tokio::test]

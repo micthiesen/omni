@@ -47,6 +47,35 @@ pub const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval';
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 const JSON_LIMIT: usize = 1024 * 1024;
 const PING_EVERY: Duration = Duration::from_secs(20);
+/// Event streams open at once.
+pub const MAX_STREAMS: usize = 16;
+/// Uploads handled at once (each may hold 25 MB and a decode).
+pub const MAX_UPLOADS: usize = 2;
+/// Other requests handled at once.
+pub const MAX_REQUESTS: usize = 32;
+
+/// Refuses a request over the route group's concurrency limit with a 503 the
+/// app retries, instead of queueing work without bound for a surface that
+/// has no login.
+async fn limit_concurrency(
+    State(slots): State<Arc<tokio::sync::Semaphore>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    match slots.try_acquire() {
+        Ok(_held) => next.run(request).await,
+        Err(_) => {
+            let mut response = omni_server_kit::api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "[unavailable] the server is busy; try again",
+            );
+            response
+                .headers_mut()
+                .insert("retry-after", HeaderValue::from_static("2"));
+            response
+        }
+    }
+}
 
 #[derive(Clone)]
 struct App {
@@ -62,7 +91,10 @@ fn api_error(error: RecipesError) -> ApiError {
         "not_found" => StatusCode::NOT_FOUND,
         "too_large" => StatusCode::PAYLOAD_TOO_LARGE,
         "unsupported_media" => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        "merged" | "revision_conflict" | "session_closed" => StatusCode::CONFLICT,
+        "merged" | "trashed" | "revision_conflict" | "session_closed" => StatusCode::CONFLICT,
+        // What the app retries: a limit that will clear, a busy decoder.
+        "too_many" => StatusCode::TOO_MANY_REQUESTS,
+        "unavailable" => StatusCode::SERVICE_UNAVAILABLE,
         _ if error.is_rejection() => StatusCode::BAD_REQUEST,
         _ => return ApiError::internal(error.tool_text()),
     };
@@ -113,6 +145,14 @@ async fn sync(State(app): State<App>, Query(query): Query<SyncQuery>) -> Api<Syn
 }
 
 async fn events(State(app): State<App>) -> Result<Response, ApiError> {
+    // The app has no login: a bounded number of open streams, and the one
+    // over the limit is refused rather than an older one dropped.
+    if app.recipes.hub().clients() >= MAX_STREAMS {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "[unavailable] too many open event streams; try again",
+        ));
+    }
     // Subscribe before reading the sequence number, so no change falls between.
     let receiver = app.recipes.hub().subscribe();
     let seq = app.recipes.query(current_seq).await.map_err(api_error)?;
@@ -257,7 +297,7 @@ async fn cook_photo(
         ));
     }
     app.recipes
-        .cook_photo(&id, query.id, body.to_vec())
+        .cook_photo(&id, query.id, Vec::from(body))
         .await
         .map(axum::Json)
         .map_err(api_error)
@@ -290,7 +330,7 @@ async fn inbox_upload(
             query.index,
             query.count,
             query.title,
-            body.to_vec(),
+            Vec::from(body),
         )
         .await
         .map(|upload| {
@@ -507,11 +547,19 @@ async fn root_file(State(app): State<App>, request: Request) -> Response {
 }
 
 async fn asset(State(app): State<App>, Path(path): Path<String>, headers: HeaderMap) -> Response {
+    // Trunk names its own assets by content hash, so they never change. A
+    // wasm-bindgen snippet's path is hashed from the crate, not from the
+    // file: it can change in place and must be revalidated.
+    let cache = if path.starts_with("snippets/") {
+        "no-cache"
+    } else {
+        IMMUTABLE
+    };
     static_file(
         &app.dist,
         &FsPath::new("assets").join(path),
         &headers,
-        IMMUTABLE,
+        cache,
     )
     .await
     .unwrap_or_else(not_found)
@@ -564,8 +612,12 @@ pub fn router(recipes: Recipes, origin: &str, dist: PathBuf, build: Option<Strin
     let uploads = Router::new()
         .route(paths::INBOX, post(inbox_upload))
         .route("/api/cook/{id}/photo", post(cook_photo))
-        .layer(DefaultBodyLimit::max(MAX_PHOTO_BYTES));
-    Router::new()
+        .layer(DefaultBodyLimit::max(MAX_PHOTO_BYTES))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::new(tokio::sync::Semaphore::new(MAX_UPLOADS)),
+            limit_concurrency,
+        ));
+    let rest = Router::new()
         .route(paths::SYNC, get(sync))
         .route(paths::EVENTS, get(events))
         .route(paths::OPS, post(ops))
@@ -574,7 +626,6 @@ pub fn router(recipes: Recipes, origin: &str, dist: PathBuf, build: Option<Strin
         .route("/api/cook/{id}/events", post(cook_events))
         .route(paths::INBOX, get(inbox_list))
         .route("/api/original/{id}", get(original))
-        .merge(uploads)
         .route("/img/{digest}/{file}", get(image))
         .route("/src/{item}/{file}", get(source_photo))
         .route("/", get(index))
@@ -585,6 +636,11 @@ pub fn router(recipes: Recipes, origin: &str, dist: PathBuf, build: Option<Strin
         .route("/manifest.webmanifest", get(root_file))
         .route("/assets/{*path}", get(asset))
         .route("/icons/{*path}", get(icon))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::new(tokio::sync::Semaphore::new(MAX_REQUESTS)),
+            limit_concurrency,
+        ));
+    rest.merge(uploads)
         .layer(axum::middleware::from_fn_with_state(guard, guard_mutations))
         .layer(axum::middleware::from_fn(security_headers))
         .with_state(app)
@@ -597,4 +653,76 @@ pub fn host_app(
     dist: PathBuf,
 ) -> Result<HostApp, InvalidAppOrigin> {
     HostApp::new(origin, router(recipes, origin, dist, running_build()))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use tower::ServiceExt as _;
+
+    use super::*;
+    use crate::error::reject;
+
+    #[test]
+    fn the_app_can_tell_a_retry_from_a_refusal() {
+        // It retries 429 and 5xx and drops its outbox entry on any other 4xx.
+        for (code, status) in [
+            ("too_many", StatusCode::TOO_MANY_REQUESTS),
+            ("unavailable", StatusCode::SERVICE_UNAVAILABLE),
+            ("not_found", StatusCode::NOT_FOUND),
+            ("merged", StatusCode::CONFLICT),
+            ("trashed", StatusCode::CONFLICT),
+            ("too_large", StatusCode::PAYLOAD_TOO_LARGE),
+            ("unsupported_media", StatusCode::UNSUPPORTED_MEDIA_TYPE),
+            ("validation", StatusCode::BAD_REQUEST),
+        ] {
+            let response = api_error(reject(code, "x")).into_response();
+            assert_eq!(response.status(), status, "{code}");
+        }
+        let fault = api_error(crate::error::io("disk")).into_response();
+        assert_eq!(fault.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        // A decode that timed out is the server being busy, not a bad image.
+        let busy = api_error(crate::files::image_error(&omni_image::ImageError::Timeout));
+        assert_eq!(
+            busy.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
+    async fn requests_over_the_concurrency_limit_are_told_to_retry() {
+        let release = Arc::new(tokio::sync::Notify::new());
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let (wait, signal) = (release.clone(), entered.clone());
+        let router = Router::new()
+            .route(
+                "/slow",
+                get(move || {
+                    let (wait, signal) = (wait.clone(), signal.clone());
+                    async move {
+                        signal.notify_one();
+                        wait.notified().await;
+                        "done"
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                Arc::new(tokio::sync::Semaphore::new(1)),
+                limit_concurrency,
+            ));
+        let request = || Request::get("/slow").body(Body::empty()).unwrap();
+        let first = tokio::spawn(router.clone().oneshot(request()));
+        entered.notified().await;
+        let second = router.clone().oneshot(request()).await.unwrap();
+        assert_eq!(second.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(second.headers()["retry-after"], "2");
+        release.notify_one();
+        assert_eq!(first.await.unwrap().unwrap().status(), StatusCode::OK);
+        // The slot is free again.
+        release.notify_one();
+        assert_eq!(
+            router.oneshot(request()).await.unwrap().status(),
+            StatusCode::OK
+        );
+    }
 }

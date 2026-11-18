@@ -362,6 +362,10 @@ async fn photos_captured_in_the_app_reach_agents_as_image_blocks() {
         )
         .await;
     assert_eq!(twice["resolved"], 0);
+    assert_eq!(
+        twice["skipped"],
+        json!([{ "itemId": item_id, "state": "duplicate" }])
+    );
     assert_eq!(h.ok("recipes_inbox_list", json!({})).await["total"], 0);
     let duplicates = h
         .ok("recipes_inbox_list", json!({ "state": "duplicate" }))

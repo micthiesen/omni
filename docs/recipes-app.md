@@ -74,9 +74,12 @@ once, so a resend after a lost answer is safe. A sync always drains the
 outbox first, and unsent edits are laid over synced records, so a sync never
 undoes what is on screen.
 
-IndexedDB transactions are committed as soon as their writes are issued, and
-at launch any session event stored without its outbox entry (the app stopped
-between the two writes) is queued again, so a tap is not silently undone.
+A local change and the outbox entry that sends it are stored in one
+IndexedDB transaction (`idb::atomic`, `idbTx` in `js/idb.js`), committed as
+soon as the writes are issued: a note, an archive or delete, a session start
+or a session event is on the phone with its entry or not at all, so a sync
+never undoes a change that was not queued. As a second line, at launch any
+session event found without an outbox entry is queued again.
 Events for a session the server has not seen are answered 425 and stay
 queued behind their start; when a start is refused for good, everything
 queued for that session is dropped with it.

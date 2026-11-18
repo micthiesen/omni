@@ -489,6 +489,116 @@ async fn no_other_host_reaches_the_recipe_app() {
 }
 
 #[tokio::test]
+async fn the_recipe_app_closes_when_reached_through_the_public_edge() {
+    let (_app, router, _dist) = router_with_recipes_app().await;
+    // The app's DNS record is private. A request for its host that carries
+    // Cloudflare's headers means that protection is gone.
+    for (header, path) in [
+        ("cf-connecting-ip", "/"),
+        ("cf-ray", "/api/sync"),
+        ("cf-ray", "/sw.js"),
+        ("cf-connecting-ip", "/img/0123456789abcdef/thumb.jpg"),
+    ] {
+        let response = send(
+            &router,
+            Request::get(path)
+                .header(header::HOST, RECIPES_HOST)
+                .header(header, "203.0.113.9")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{header} {path}");
+        assert_eq!(
+            text(response).await,
+            r#"{"error":"This app is not available from the public internet"}"#
+        );
+    }
+    let write = send(
+        &router,
+        Request::post("/api/ops")
+            .header(header::HOST, RECIPES_HOST)
+            .header(header::ORIGIN, RECIPES_ORIGIN)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("cf-ray", "8a1b2c3d4e5f-YVR")
+            .body(Body::from(r#"{"ops":[]}"#))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(write.status(), StatusCode::FORBIDDEN);
+    // The public gateway host, which does come through the edge, still works.
+    let gateway = send(
+        &router,
+        Request::get("/.well-known/oauth-authorization-server")
+            .header(header::HOST, "gateway.example.com")
+            .header("cf-ray", "8a1b2c3d4e5f-YVR")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_ne!(gateway.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_recipe_app_host_cannot_be_confused_with_another() {
+    let (_app, router, _dist) = router_with_recipes_app().await;
+    // HEAD reads like GET; OPTIONS is never answered as a CORS preflight.
+    let head = send(
+        &router,
+        Request::head("/api/sync")
+            .header(header::HOST, RECIPES_HOST)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(head.status(), StatusCode::OK);
+    for path in ["/api/ops", "/api/inbox", "/"] {
+        let options = send(
+            &router,
+            Request::options(path)
+                .header(header::HOST, RECIPES_HOST)
+                .header(header::ORIGIN, "https://evil.example")
+                .header("access-control-request-method", "POST")
+                .header("access-control-request-headers", "x-fond-upload")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(options.status(), StatusCode::FORBIDDEN, "{path}");
+        assert!(header_of(&options, header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
+        assert!(header_of(&options, header::ACCESS_CONTROL_ALLOW_HEADERS).is_none());
+    }
+    // An absolute-form URI that disagrees with Host, and two Host headers,
+    // are refused whenever either names the app: no proxy and Omni can
+    // disagree about where such a request goes.
+    let conflicting = [
+        Request::get("http://recipes.example.com/api/sync")
+            .header(header::HOST, "gateway.example.com")
+            .body(Body::empty())
+            .unwrap(),
+        Request::get("http://gateway.example.com/gateway/mcp")
+            .header(header::HOST, RECIPES_HOST)
+            .body(Body::empty())
+            .unwrap(),
+        Request::get("/api/sync")
+            .header(header::HOST, "omni.boris")
+            .header(header::HOST, RECIPES_HOST)
+            .body(Body::empty())
+            .unwrap(),
+        Request::get("/api/sync")
+            .header(header::HOST, RECIPES_HOST)
+            .header(header::HOST, "gateway.example.com")
+            .body(Body::empty())
+            .unwrap(),
+    ];
+    for request in conflicting {
+        let response = send(&router, request).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(text(response).await, r#"{"error":"Conflicting hosts"}"#);
+    }
+}
+
+#[tokio::test]
 async fn recipe_app_mutations_need_the_app_origin() {
     let (_app, router, _dist) = router_with_recipes_app().await;
     let post = |origin: Option<&str>| {

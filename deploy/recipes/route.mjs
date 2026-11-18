@@ -142,21 +142,39 @@ if (mode === "apply") {
   }
   // The proposed server block must be valid nginx before NPM writes anything.
   const candidate = `/tmp/omni-recipes-${process.pid}.conf`;
-  await writeFile(
-    candidate,
-    `user root; pid /tmp/omni-recipes-test.pid; events {} http { server { listen 127.0.0.1:47893;\n${advanced}\nlocation / { return 204; } } }`,
-    { mode: 0o600 },
-  );
-  execFileSync("nginx", ["-t", "-c", candidate], { stdio: "pipe" });
-  await unlink(candidate);
+  try {
+    await writeFile(
+      candidate,
+      `user root; pid /tmp/omni-recipes-test.pid; events {} http { server { listen 127.0.0.1:47893;\n${advanced}\nlocation / { return 204; } } }`,
+      { mode: 0o600 },
+    );
+    execFileSync("nginx", ["-t", "-c", candidate], { stdio: "pipe" });
+  } finally {
+    await unlink(candidate).catch(() => {});
+  }
+  // What an existing host looked like, to put back if the new one is not safe.
+  const previous = existing && {
+    ...Object.fromEntries(Object.keys(wanted).map((key) => [key, existing[key]])),
+  };
   const saved = existing
     ? await proxyHosts.update(access, { id: existing.id, ...wanted })
     : await proxyHosts.create(access, wanted);
-  if (saved.meta?.nginx_online === false)
-    throw new Error("NPM rejected the nginx configuration; run rollback");
-  execFileSync("nginx", ["-t"], { stdio: "pipe" });
+  // Recorded at once: from here on rollback must be able to find the host.
   await writeFile(recordPath, JSON.stringify({ id: saved.id, domain }), { mode: 0o600 });
-  await assertGuarded(saved.id);
+  try {
+    if (saved.meta?.nginx_online === false)
+      throw new Error("NPM rejected the nginx configuration");
+    execFileSync("nginx", ["-t"], { stdio: "pipe" });
+    await assertGuarded(saved.id);
+  } catch (error) {
+    // A host that is not provably guarded must not stay up: delete the one
+    // this run created, or put back the one it changed.
+    if (previous) await proxyHosts.update(access, { id: saved.id, ...previous });
+    else await proxyHosts.delete(access, { id: saved.id });
+    throw new Error(
+      `${error.message}; ${previous ? "restored the previous host" : "deleted the new host"}`,
+    );
+  }
   const verified = await ProxyHost.query().findById(saved.id);
   console.log(JSON.stringify({ mode, [existing ? "updated" : "created"]: summary(verified) }));
   process.exit(0);

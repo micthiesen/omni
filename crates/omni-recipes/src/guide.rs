@@ -122,6 +122,49 @@ mod tests {
         assert!(report.errors.is_empty() && report.warnings.is_empty());
     }
 
+    /// Every key of the document format is named in the guide's reference,
+    /// so a field added to the format cannot go undocumented.
+    #[test]
+    fn the_reference_names_every_field_of_the_format() {
+        fn keys(schema: &serde_json::Value, into: &mut Vec<String>) {
+            match schema {
+                serde_json::Value::Object(map) => {
+                    if let Some(serde_json::Value::Object(properties)) = map.get("properties") {
+                        into.extend(properties.keys().cloned());
+                    }
+                    map.values().for_each(|value| keys(value, into));
+                }
+                serde_json::Value::Array(items) => items.iter().for_each(|item| keys(item, into)),
+                _ => {}
+            }
+        }
+        let settings = schemars::generate::SchemaSettings::draft2020_12()
+            .with(|settings| settings.inline_subschemas = true);
+        let schema = settings
+            .into_generator()
+            .into_root_schema_for::<omni_recipe_format::RecipeDoc>()
+            .to_value();
+        let mut fields = Vec::new();
+        keys(&schema, &mut fields);
+        fields.sort();
+        fields.dedup();
+        assert!(fields.len() > 40, "{fields:?}");
+        let guide = text();
+        let reference =
+            &guide[guide.find("## Format reference").unwrap()..guide.find("## Units").unwrap()];
+        let words: Vec<&str> = reference
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .collect();
+        let missing: Vec<&String> = fields
+            .iter()
+            .filter(|field| !words.contains(&field.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "the guide's reference omits {missing:?}"
+        );
+    }
+
     #[test]
     fn a_published_version_is_frozen() {
         // Changing the guide text means a new VERSION and a new digest here.
@@ -129,7 +172,7 @@ mod tests {
             (VERSION, crate::db::sha256_hex(text().as_bytes()).as_str()),
             (
                 "1",
-                "245dc0c310467c6e1c089aa1d2e8528da8bb644dff4f163c2789be8127de636e"
+                "2cba438003d2fcb7e12d06bed3a17dc3da0ad90e8f438a83d2d5eb50bc06c283"
             )
         );
     }

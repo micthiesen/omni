@@ -10,6 +10,9 @@ use crate::error::{R, sql};
 /// One migration step: the statements that take the schema to `version`.
 struct Migration {
     version: u32,
+    /// Columns to add first, each only when it is not there yet (SQLite has
+    /// no `ADD COLUMN IF NOT EXISTS`): `(table, column, type)`.
+    columns: &'static [(&'static str, &'static str, &'static str)],
     statements: &'static [&'static str],
 }
 
@@ -174,13 +177,25 @@ const V1: &[&str] = &[
        tokenize = \"unicode61 remove_diacritics 2\", prefix = '2 3 4')",
 ];
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    statements: V1,
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        statements: V1,
+        columns: &[],
+    },
+    // A cook session remembers which recipe's revision it pinned, so a merge
+    // can move the session without changing what it shows.
+    Migration {
+        version: 2,
+        statements: &[
+            "UPDATE recipes_cook SET doc_recipe_id = recipe_id WHERE doc_recipe_id IS NULL",
+        ],
+        columns: &[("recipes_cook", "doc_recipe_id", "TEXT")],
+    },
+];
 
 /// The newest schema version this build writes.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Every table an archive carries, and a restore compares.
 pub const TABLES: &[&str] = &[
@@ -195,6 +210,7 @@ pub const TABLES: &[&str] = &[
     "recipes_cook_event",
     "recipes_adjustment",
     "recipes_change",
+    "recipes_client_op",
     "recipes_redirect",
 ];
 
@@ -238,6 +254,19 @@ pub fn migrate(conn: &Connection) -> R<()> {
         )));
     }
     for migration in MIGRATIONS.iter().filter(|m| m.version > current) {
+        for (table, column, kind) in migration.columns {
+            let present: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                    params![table, column],
+                    |row| row.get(0),
+                )
+                .map_err(sql)?;
+            if present == 0 {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"))
+                    .map_err(sql)?;
+            }
+        }
         for statement in migration.statements {
             conn.execute_batch(statement).map_err(sql)?;
         }
@@ -261,11 +290,42 @@ mod tests {
     fn migrations_are_idempotent_and_record_the_version() {
         let conn = open();
         migrate(&conn).unwrap();
-        assert_eq!(meta_u64(&conn, "schema_version").unwrap(), 1);
+        assert_eq!(
+            meta_u64(&conn, "schema_version").unwrap(),
+            u64::from(SCHEMA_VERSION)
+        );
         // A step interrupted before its version was recorded runs again.
         set_meta(&conn, "schema_version", "0").unwrap();
         migrate(&conn).unwrap();
-        assert_eq!(meta_u64(&conn, "schema_version").unwrap(), 1);
+        assert_eq!(
+            meta_u64(&conn, "schema_version").unwrap(),
+            u64::from(SCHEMA_VERSION)
+        );
+    }
+
+    #[test]
+    fn the_second_step_upgrades_a_first_version_database_in_place() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE recipes_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .unwrap();
+        for statement in V1 {
+            conn.execute_batch(statement).unwrap();
+        }
+        set_meta(&conn, "schema_version", "1").unwrap();
+        conn.execute(
+            "INSERT INTO recipes_cook (id, recipe_id, rev, scale, state, started_at, last_event_at)
+             VALUES ('cook_a', 'rcp_a', 1, 1.0, 'active', 0, 0)",
+            [],
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let pinned: String = conn
+            .query_row("SELECT doc_recipe_id FROM recipes_cook", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(pinned, "rcp_a");
     }
 
     #[test]

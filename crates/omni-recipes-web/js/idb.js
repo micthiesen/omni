@@ -55,6 +55,22 @@ export async function idbGet(store, key) {
   return request.result;
 }
 
+// Applies writes to several stores in one transaction, so a record and the
+// outbox entry that carries it to the server are stored together or not at
+// all. Each op is [store, key, value] (put) or [store, key] (delete).
+export function idbTx(ops) {
+  const stores = [...new Set(ops.map((op) => op[0]))];
+  return run(stores, 'readwrite', (tx) => {
+    for (const [store, key, ...value] of ops) {
+      if (value.length) tx.objectStore(store).put(value[0], key);
+      else tx.objectStore(store).delete(key);
+    }
+    // Commit now instead of when the requests report back: a write must
+    // not be lost to a reload or to the app being closed just after a tap.
+    tx.commit?.();
+  });
+}
+
 // Applies puts ([key, value] pairs) and deletes (keys) in one transaction;
 // `clear` empties the store first.
 export function idbWrite(store, puts, deletes, clear) {

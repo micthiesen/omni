@@ -90,11 +90,15 @@ fn purge_tx(conn: &Connection, now: i64) -> R<Purged> {
             "DELETE FROM recipes_timer_alert WHERE session_id IN
                (SELECT id FROM recipes_cook WHERE recipe_id = ?1)",
             "DELETE FROM recipes_cook WHERE recipe_id = ?1",
-            "DELETE FROM recipes_inbox_file WHERE item_id IN
-               (SELECT id FROM recipes_inbox WHERE recipe_id = ?1 AND state = 'imported')",
-            "DELETE FROM recipes_inbox WHERE recipe_id = ?1 AND state = 'imported'",
             "DELETE FROM recipes_fts WHERE recipe_id = ?1",
             "DELETE FROM recipes_recipe WHERE id = ?1",
+            // The recipe's stored source goes with it, unless another recipe
+            // (a second import, or the recipe that absorbed this one) uses it.
+            "DELETE FROM recipes_inbox_file WHERE item_id IN
+               (SELECT id FROM recipes_inbox WHERE recipe_id = ?1 AND state = 'imported'
+                  AND id NOT IN (SELECT source_item FROM recipes_recipe WHERE source_item IS NOT NULL))",
+            "DELETE FROM recipes_inbox WHERE recipe_id = ?1 AND state = 'imported'
+               AND id NOT IN (SELECT source_item FROM recipes_recipe WHERE source_item IS NOT NULL)",
         ] {
             conn.execute(statement, params![id]).map_err(sql)?;
         }
@@ -165,6 +169,25 @@ impl Recipes {
     /// of a merged-away recipe), drops change-log entries older than 30
     /// days, and deletes image files nothing refers to any more.
     pub async fn purge(&self) -> R<Purged> {
+        // Nothing is removed for good before a verified archive holds it.
+        let due = self
+            .transact(false, |conn, now| {
+                conn.query_row(
+                    "SELECT count(*) FROM recipes_recipe
+                     WHERE state = 'trashed' AND state_changed_at <= ?1",
+                    params![now - RETENTION_MS],
+                    |row| row.get::<_, u32>(0),
+                )
+                .map_err(sql)
+            })
+            .await?;
+        if due > 0 {
+            let archive = self.archive_before_purge().await?;
+            tracing::info!(
+                target: LOG,
+                "Wrote {archive} before removing {due} recipes from the trash for good"
+            );
+        }
         let mut purged = self.transact(false, purge_tx).await?;
         let held = self.files_lock.lock().await;
         let kept = self.query(kept_digests).await?;
@@ -185,6 +208,17 @@ impl Recipes {
                 if !fresh {
                     files.remove(&digest)?;
                     removed += 1;
+                }
+            }
+            // Renditions left without their original, after the same grace.
+            for path in files.orphan_renditions()? {
+                let old = std::fs::metadata(&path)
+                    .and_then(|file| file.modified())
+                    .ok()
+                    .and_then(|modified| modified.elapsed().ok())
+                    .is_some_and(|age| age >= grace);
+                if old {
+                    std::fs::remove_file(&path)?;
                 }
             }
             Ok(removed)

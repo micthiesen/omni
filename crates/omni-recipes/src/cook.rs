@@ -34,12 +34,23 @@ pub const ALERT_WINDOW_MS: i64 = 10 * 60 * 1000;
 /// How long a connected app has to answer an ended timer before it is
 /// announced anyway.
 pub const APP_GRACE_MS: i64 = 30 * 1000;
+/// Cook sessions open at once. The app has no login, so this bounds what
+/// anyone on the network can pile up.
+pub const MAX_ACTIVE_SESSIONS: u32 = 20;
+/// Timers running in one session.
+pub const MAX_TIMERS: usize = 30;
+/// Timer alerts sent to the phone in any hour.
+pub const MAX_ALERTS_PER_HOUR: u32 = 10;
 const MAX_EVENT_TEXT: usize = 2000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SessionRow {
     pub id: String,
     pub recipe_id: String,
+    /// The recipe whose revision `rev` names. It is the session's recipe
+    /// until a merge moves the session to the kept recipe: the session then
+    /// still shows the document it started on.
+    pub doc_recipe_id: String,
     pub rev: u32,
     pub scale: f64,
     pub state: String,
@@ -51,7 +62,7 @@ pub struct SessionRow {
 }
 
 const SESSION_COLUMNS: &str = "id, recipe_id, rev, scale, state, started_at, finished_at, \
-     last_event_at, note, photo_image";
+     last_event_at, note, photo_image, coalesce(doc_recipe_id, recipe_id)";
 
 fn session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
     Ok(SessionRow {
@@ -65,6 +76,7 @@ fn session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
         last_event_at: row.get(7)?,
         note: row.get(8)?,
         photo_image: row.get(9)?,
+        doc_recipe_id: row.get(10)?,
     })
 }
 
@@ -178,7 +190,7 @@ pub fn wire_session(conn: &Connection, row: &SessionRow) -> R<CookSession> {
         events: session_events(conn, &row.id)?,
         // The pinned revision travels with the session, so any device
         // renders the recipe the cook started on.
-        doc: match doc_at(conn, &row.recipe_id, row.rev) {
+        doc: match session_doc(conn, row) {
             Ok(doc) => Some(serde_json::to_value(doc).map_err(crate::error::corrupt)?),
             Err(_) => None,
         },
@@ -191,6 +203,18 @@ pub fn open_sessions(conn: &Connection) -> R<Vec<CookSession>> {
         .iter()
         .map(|row| wire_session(conn, row))
         .collect()
+}
+
+/// The document a session shows: the revision it pinned, or, when that
+/// revision left with a purged recipe, the newest one of its recipe. A
+/// session is never hidden for want of its document.
+pub fn session_doc(conn: &Connection, row: &SessionRow) -> R<RecipeDoc> {
+    if let Ok(doc) = doc_at(conn, &row.doc_recipe_id, row.rev) {
+        return Ok(doc);
+    }
+    let recipe = db::recipe(conn, &row.recipe_id)?
+        .ok_or_else(|| not_found(format!("no recipe has id {:?}", row.recipe_id)))?;
+    doc_at(conn, &recipe.id, recipe.head_rev)
 }
 
 /// What the event log amounts to.
@@ -263,7 +287,7 @@ fn done_steps(doc: &RecipeDoc, projection: &Projection) -> Vec<String> {
 fn view(conn: &Connection, row: &SessionRow, now: i64) -> R<SessionView> {
     let recipe = db::recipe(conn, &row.recipe_id)?
         .ok_or_else(|| not_found(format!("no recipe has id {:?}", row.recipe_id)))?;
-    let doc = doc_at(conn, &row.recipe_id, row.rev)?;
+    let doc = session_doc(conn, row)?;
     let projection = project(&session_events(conn, &row.id)?);
     let done = done_steps(&doc, &projection);
     let steps = step_ids(&doc);
@@ -273,7 +297,10 @@ fn view(conn: &Connection, row: &SessionRow, now: i64) -> R<SessionView> {
         title: doc.title.clone(),
         state: row.state.clone(),
         revision: row.rev,
+        // A session moved by a merge pins a revision of the absorbed recipe;
+        // any revision of the recipe it now belongs to is newer.
         head_revision: recipe.head_rev,
+        merged_from: (row.doc_recipe_id != row.recipe_id).then(|| row.doc_recipe_id.clone()),
         scale: row.scale,
         started_at: iso(row.started_at),
         finished_at: row.finished_at.map(iso),
@@ -426,7 +453,7 @@ fn finish_tx(
     }
     let recipe = db::recipe(conn, &row.recipe_id)?
         .ok_or_else(|| not_found(format!("no recipe has id {:?}", row.recipe_id)))?;
-    let doc = doc_at(conn, &row.recipe_id, row.rev)?;
+    let doc = session_doc(conn, row)?;
     let projection = project(&session_events(conn, &row.id)?);
     let ix = Index::build(&doc);
     let ids = [recipe.id.clone()];
@@ -539,12 +566,15 @@ pub fn append_tx(
             continue;
         }
         if strict {
-            check_event(&doc_at(conn, &row.recipe_id, row.rev)?, &event.kind)?;
+            check_event(&session_doc(conn, &row)?, &event.kind)?;
         }
         match &event.kind {
             CookEventKind::Rebase { revision } => {
+                // After a merge the session's recipe is the kept one: any of
+                // its revisions is a step forward from the absorbed document.
+                let moved = row.doc_recipe_id != row.recipe_id;
                 let exists = db::revision(conn, &row.recipe_id, *revision)?.is_some();
-                if !exists || *revision < row.rev {
+                if !exists || (!moved && *revision < row.rev) {
                     if strict {
                         return Err(invalid(format!(
                             "revision {revision} is not a newer revision of {}",
@@ -554,11 +584,24 @@ pub fn append_tx(
                     continue;
                 }
                 conn.execute(
-                    "UPDATE recipes_cook SET rev = ?2 WHERE id = ?1",
+                    "UPDATE recipes_cook SET rev = ?2, doc_recipe_id = recipe_id WHERE id = ?1",
                     params![row.id, revision],
                 )
                 .map_err(sql)?;
+                row.doc_recipe_id.clone_from(&row.recipe_id);
                 row.rev = *revision;
+            }
+            CookEventKind::Timer { step, .. } => {
+                let running = project(&session_events(conn, &row.id)?).timers;
+                if running.len() >= MAX_TIMERS && !running.iter().any(|(known, _)| known == step) {
+                    if strict {
+                        return Err(reject(
+                            "too_many",
+                            format!("a session runs at most {MAX_TIMERS} timers; cancel one first"),
+                        ));
+                    }
+                    continue;
+                }
             }
             CookEventKind::DismissAdjustment { id } => {
                 let changed = conn
@@ -615,14 +658,7 @@ pub fn append_tx(
             row.finished_at = Some(now);
         }
     }
-    conn.execute(
-        "UPDATE recipes_meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'cook_seq'",
-        [],
-    )
-    .map_err(sql)?;
-    if conn.changes() == 0 {
-        crate::schema::set_meta(conn, "cook_seq", "1")?;
-    }
+    bump_cook_seq(conn)?;
     let row = session_row(conn, session_id)?
         .ok_or_else(|| not_found(format!("no cook session has id {session_id:?}")))?;
     Ok(Appended {
@@ -631,6 +667,11 @@ pub fn append_tx(
         library_seq,
         finished,
     })
+}
+
+fn bump_cook_seq(conn: &Connection) -> R<()> {
+    let next = crate::schema::meta_u64(conn, "cook_seq")? + 1;
+    crate::schema::set_meta(conn, "cook_seq", &next.to_string())
 }
 
 /// What starting a session needs.
@@ -655,15 +696,34 @@ fn start_tx(conn: &Connection, now: i64, start: &Start) -> R<SessionRow> {
             return Ok(existing);
         }
     }
-    let (recipe, _) = recipe_for_read(conn, &start.recipe_id)?;
+    let (recipe, redirected) = recipe_for_read(conn, &start.recipe_id)?;
     if recipe.state == "trashed" {
         return Err(not_found(format!("{} is in the trash", recipe.id)));
     }
-    let revision = start.revision.unwrap_or(recipe.head_rev);
+    let active: u32 = conn
+        .query_row(
+            "SELECT count(*) FROM recipes_cook WHERE state = 'active'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(sql)?;
+    if active >= MAX_ACTIVE_SESSIONS {
+        return Err(reject(
+            "too_many",
+            format!("{MAX_ACTIVE_SESSIONS} cook sessions are open; finish one first"),
+        ));
+    }
+    // A revision number asked for a merged-away recipe means nothing for
+    // the recipe it became: the session starts on that recipe's newest.
+    let revision = match redirected {
+        Some(_) => recipe.head_rev,
+        None => start.revision.unwrap_or(recipe.head_rev),
+    };
     let doc = doc_at(conn, &recipe.id, revision)?;
     let scale = factor(&doc, start.scale, start.servings)?;
     let row = SessionRow {
         id: start.id.clone().unwrap_or_else(|| ids::new_id(ids::COOK)),
+        doc_recipe_id: recipe.id.clone(),
         recipe_id: recipe.id,
         rev: revision,
         scale,
@@ -675,11 +735,13 @@ fn start_tx(conn: &Connection, now: i64, start: &Start) -> R<SessionRow> {
         photo_image: None,
     };
     conn.execute(
-        "INSERT INTO recipes_cook (id, recipe_id, rev, scale, state, started_at, last_event_at)
-         VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
+        "INSERT INTO recipes_cook (id, recipe_id, doc_recipe_id, rev, scale, state, started_at, last_event_at)
+         VALUES (?1, ?2, ?2, ?3, ?4, 'active', ?5, ?5)",
         params![row.id, row.recipe_id, row.rev, row.scale, now],
     )
     .map_err(sql)?;
+    // A new session is something the next archive must hold.
+    bump_cook_seq(conn)?;
     Ok(row)
 }
 
@@ -912,18 +974,13 @@ impl Recipes {
                 }
                 return Ok(CookGetOutput {
                     cooks: Some(cooks),
-                    open_adjustments: Some(adjustment_infos(
-                        &open_adjustments(conn, &recipe.id)?,
-                        &tz,
-                    )),
+                    open_adjustments: Some(adjustment_infos(conn, &recipe, &tz)?),
                     ..CookGetOutput::default()
                 });
             }
             let mut active = Vec::new();
             for row in sessions_where(conn, "state = ?1", "active")? {
-                let Ok(doc) = doc_at(conn, &row.recipe_id, row.rev) else {
-                    continue;
-                };
+                let doc = session_doc(conn, &row)?;
                 let projection = project(&session_events(conn, &row.id)?);
                 active.push(ActiveCook {
                     recipe_id: row.recipe_id.clone(),
@@ -1021,7 +1078,7 @@ impl Recipes {
                     if now - row.last_event_at < IDLE_CLOSE_MS {
                         continue;
                     }
-                    let counts = match doc_at(conn, &row.recipe_id, row.rev) {
+                    let counts = match session_doc(conn, &row) {
                         Ok(doc) => {
                             let projection = project(&session_events(conn, &row.id)?);
                             let (done, of) =
@@ -1095,8 +1152,20 @@ impl Recipes {
                         if watched && now - ends_at < APP_GRACE_MS {
                             continue;
                         }
+                        // The phone gets at most a few alerts an hour, whoever
+                        // starts the timers: the rest are recorded and dropped.
+                        let recent: u32 = conn
+                            .query_row(
+                                "SELECT count(*) FROM recipes_timer_alert
+                                 WHERE at > ?1 AND state IN ('sending', 'sent', 'failed', 'unrouted')",
+                                params![now - 60 * 60 * 1000],
+                                |row| row.get(0),
+                            )
+                            .map_err(sql)?;
                         let state = if now - ends_at > ALERT_WINDOW_MS {
                             "missed"
+                        } else if recent >= MAX_ALERTS_PER_HOUR {
+                            "suppressed"
                         } else {
                             "sending"
                         };
@@ -1108,7 +1177,7 @@ impl Recipes {
                             )
                             .map_err(sql)?;
                         if reserved == 1 && state == "sending" {
-                            let doc = doc_at(conn, &row.recipe_id, row.rev).ok();
+                            let doc = session_doc(conn, &row).ok();
                             let action = doc
                                 .as_ref()
                                 .and_then(|doc| {

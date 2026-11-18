@@ -40,8 +40,11 @@ pub struct Recipes {
     pub(crate) online: Option<Online>,
     /// The app's origin when it is served (`RECIPES_APP_URL`).
     pub(crate) app_url: Option<String>,
-    /// Serializes image intake with the purge of unreferenced files, so a
-    /// purge never removes a file whose row is about to commit.
+    /// Held while an uploaded photo is stored and its row committed, and
+    /// while the purge deletes unreferenced files, so the purge never runs
+    /// between those two. Images added through the tools hold it only while
+    /// the file is written; the purge's grace period for recently written
+    /// files covers the gap until their row commits.
     pub(crate) files_lock: Arc<tokio::sync::Mutex<()>>,
     /// Image files younger than this are never purged.
     pub(crate) file_grace: std::time::Duration,

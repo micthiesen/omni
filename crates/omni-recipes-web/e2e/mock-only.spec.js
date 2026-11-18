@@ -137,6 +137,28 @@ test.describe('an agent at work', () => {
     expect(await images()).toBe(before + 1);
   });
 
+  test('images no recipe refers to any more leave the image cache', async ({ page, request }) => {
+    await page.goto('/');
+    await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+    const withImages = (await (await request.get('/api/sync')).json()).recipes.filter((recipe) => recipe.images.length);
+    expect(withImages.length).toBeGreaterThan(1);
+    const [gone, kept] = withImages;
+    const cached = () =>
+      page.evaluate(async () => {
+        const cache = await caches.open('fond-img-v1');
+        return (await cache.keys()).map((entry) => new URL(entry.url).pathname.split('/')[2]);
+      });
+    // Every cover thumbnail is cached after the sync.
+    await expect.poll(cached).toEqual(expect.arrayContaining([gone.images[0].digest, kept.images[0].digest]));
+    await request.post('/__mock/unimage', { data: { recipeId: gone.id } });
+    await expect.poll(cached).not.toContain(gone.images[0].digest);
+    expect(await cached()).toContain(kept.images[0].digest);
+    await request.post('/__mock/reset', { data: {} });
+  });
+
   test('an imported inbox item links to its recipe', async ({ page, request }) => {
     await page.goto('/');
     await page.locator('[data-testid=grid] a.card').first().click();

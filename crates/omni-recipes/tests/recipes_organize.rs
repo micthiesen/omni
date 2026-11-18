@@ -296,7 +296,7 @@ async fn organize_changes_listed_recipes_in_one_undoable_change() {
         )
         .await;
     assert!(
-        edit_trashed.starts_with("[not_found]") && edit_trashed.contains("in the trash"),
+        edit_trashed.starts_with("[trashed]") && edit_trashed.contains("recipes_undo"),
         "{edit_trashed}"
     );
 

@@ -46,7 +46,7 @@ fn organize_tx(
             "tag {both:?} is in both addTags and removeTags"
         )));
     }
-    tags::require(conn, &add, input.create_tags.unwrap_or(false), now)?;
+    let created = tags::require(conn, &add, input.create_tags.unwrap_or(false), now)?;
     let mut ids: Vec<String> = Vec::new();
     for id in &input.ids {
         let row = recipe_for_write(conn, id)?;
@@ -109,6 +109,8 @@ fn organize_tx(
             refresh_fts(conn, id)?;
             touched.insert(id.clone(), json!(facets));
         }
+        let used: Vec<String> = add.iter().chain(&remove).cloned().collect();
+        tags::touch(&mut touched, &used, &created);
         let after = json!({ "recipes": meta::recipes_facets(conn, &changed_ids, &facets)? });
         let summary = input
             .summary
@@ -252,6 +254,16 @@ fn merge_tx(
         )
         .map_err(sql)?;
     }
+    // A kept recipe without a stored source inherits the first one absorbed.
+    if keep.source_item.is_none()
+        && let Some(source) = absorbed.iter().find_map(|row| row.source_item.clone())
+    {
+        conn.execute(
+            "UPDATE recipes_recipe SET source_item = ?2 WHERE id = ?1",
+            params![keep.id, source],
+        )
+        .map_err(sql)?;
+    }
     keep_tags.sort();
     db::set_tags(conn, &keep.id, &keep_tags)?;
     let notes_changed = notes != keep.notes;
@@ -274,6 +286,7 @@ fn merge_tx(
         refresh_fts(conn, id)?;
         touched.insert(id.clone(), json!(ALL_FACETS));
     }
+    tags::touch(&mut touched, &keep_tags, &[]);
     let after = json!({
         "recipes": meta::recipes_facets(conn, &ids, &ALL_FACETS)?,
         "own": meta::ownership(conn, &cooks, &adjustments)?,
@@ -347,9 +360,16 @@ fn overlaps(a: &Value, b: &Value) -> bool {
         let Some(other) = b.get(key).and_then(Value::as_array) else {
             return false;
         };
-        facets
-            .as_array()
-            .is_some_and(|facets| facets.iter().any(|facet| other.contains(facet)))
+        let Some(facets) = facets.as_array() else {
+            return false;
+        };
+        // Two changes that merely used the same tag do not collide; a change
+        // to the tag's registry row collides with any other touch of it.
+        if key.starts_with(meta::TAG_KEY_PREFIX) {
+            let registry = json!(REGISTRY);
+            return facets.contains(&registry) || other.contains(&registry);
+        }
+        facets.iter().any(|facet| other.contains(facet))
     })
 }
 
@@ -484,6 +504,15 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<(St
                 json!({ "recipe": id, "rev": revision, "resolved": reopened, "reopened": resolved }),
                 1,
             )
+        }
+        // A cook is history, not a change to take back.
+        "cook" => {
+            return Err(reject(
+                "not_undoable",
+                format!(
+                    "{change_id} records a finished cook, which cannot be undone; dismiss its adjustments with recipes_cook_update instead"
+                ),
+            ));
         }
         _ => {
             let before = meta::like(conn, &change.before)?;

@@ -25,6 +25,8 @@ pub const ARCHIVE_FORMAT: &str = "fond-archive";
 pub const ARCHIVE_VERSION: u32 = 1;
 /// Archives kept in the archive directory.
 pub const KEEP: usize = 72;
+/// Days an archive written before a purge is kept.
+pub const PURGE_ARCHIVE_DAYS: i64 = 180;
 const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -117,14 +119,55 @@ pub fn referenced_digests(conn: &Connection) -> R<Vec<String>> {
     rows.collect::<Result<_, _>>().map_err(sql)
 }
 
+/// A sortable time for file names: `20261118T103700Z`.
+fn stamp(ms: i64) -> String {
+    iso(ms)
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(16)
+        .collect()
+}
+
+/// The time in an archive's file name (`fond-<seq>-<time>.json.gz`).
+fn stamp_of(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".json.gz"))
+        .and_then(|name| name.rsplit('-').next())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Writes `archive` into `dir` under its id (blocking): a temporary file,
+/// synced and renamed, the directory synced, then read back and compared. A
+/// damaged archive is no backup.
+fn write(dir: &Path, archive: &Archive) -> R<PathBuf> {
+    std::fs::create_dir_all(dir).map_err(io)?;
+    let path = dir.join(format!("{}.json.gz", archive.archive_id));
+    let temp = dir.join(format!(
+        "{}.{}.tmp",
+        archive.archive_id,
+        omni_core::ids::uuid_v4()
+    ));
+    let text = serde_json::to_string(archive).map_err(corrupt)?;
+    let mut encoder = GzEncoder::new(
+        std::fs::File::create(&temp).map_err(io)?,
+        Compression::default(),
+    );
+    encoder.write_all(text.as_bytes()).map_err(io)?;
+    encoder.finish().map_err(io)?.sync_all().map_err(io)?;
+    std::fs::rename(&temp, &path).map_err(io)?;
+    crate::files::sync_dir(&path).map_err(io)?;
+    if read(&path)? != *archive {
+        return Err(archive_error("the archive did not read back as written"));
+    }
+    Ok(path)
+}
+
 fn build(conn: &Connection, now: i64) -> R<Archive> {
     let tables = dump(conn)?;
     let seq = db::current_seq(conn)?;
-    let stamp: String = iso(now)
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .take(16)
-        .collect();
+    let stamp = stamp(now);
     let mut counts = Map::new();
     let mut checksums = Map::new();
     for (table, rows) in &tables {
@@ -339,6 +382,37 @@ pub enum BackupOutcome {
 }
 
 impl Recipes {
+    /// Writes a verified archive of the library as it is now into
+    /// `archives/purge`, where the hourly rotation never deletes it, and
+    /// drops the ones older than [`PURGE_ARCHIVE_DAYS`]. `RecipesPurge` calls
+    /// it before it removes any recipe for good.
+    pub async fn archive_before_purge(&self) -> R<String> {
+        self.ready().await?;
+        let now = self.now();
+        let mut archive = self.query(move |conn| build(conn, now)).await?;
+        archive.archive_id = archive.archive_id.replacen("fond-", "fond-purge-", 1);
+        let id = archive.archive_id.clone();
+        let dir = self.archives_dir().join("purge");
+        let oldest = stamp(now - PURGE_ARCHIVE_DAYS * 24 * 60 * 60 * 1000);
+        tokio::task::spawn_blocking(move || -> R<()> {
+            write(&dir, &archive)?;
+            for entry in std::fs::read_dir(&dir).map_err(io)? {
+                let path = entry.map_err(io)?.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name.starts_with("fond-purge-")
+                    && name.ends_with(".json.gz")
+                    && stamp_of(&path) < oldest
+                {
+                    std::fs::remove_file(&path).map_err(io)?;
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map_err(io)??;
+        Ok(id)
+    }
+
     /// The archive files, oldest first.
     pub fn archive_files(&self) -> std::io::Result<Vec<PathBuf>> {
         let mut found = Vec::new();
@@ -357,7 +431,9 @@ impl Recipes {
                 found.push(path);
             }
         }
-        found.sort();
+        // By the time in the name, not by the sequence number before it: a
+        // library restored from an older archive counts from a lower number.
+        found.sort_by_key(|path| (stamp_of(path), path.clone()));
         Ok(found)
     }
 
@@ -400,24 +476,8 @@ impl Recipes {
         let dir = self.archives_dir();
         let id = archive.archive_id.clone();
         let files = self.clone();
-        let written = id.clone();
         tokio::task::spawn_blocking(move || -> R<()> {
-            std::fs::create_dir_all(&dir).map_err(io)?;
-            let path = dir.join(format!("{written}.json.gz"));
-            let temp = dir.join(format!("{written}.{}.tmp", omni_core::ids::uuid_v4()));
-            let text = serde_json::to_string(&archive).map_err(corrupt)?;
-            let mut encoder = GzEncoder::new(
-                std::fs::File::create(&temp).map_err(io)?,
-                Compression::default(),
-            );
-            encoder.write_all(text.as_bytes()).map_err(io)?;
-            encoder.finish().map_err(io)?.sync_all().map_err(io)?;
-            std::fs::rename(&temp, &path).map_err(io)?;
-            // Verified as written: a damaged archive is no backup.
-            let reread = read(&path)?;
-            if reread != archive {
-                return Err(archive_error("the archive did not read back as written"));
-            }
+            write(&dir, &archive)?;
             let all = files.archive_files().map_err(io)?;
             for old in all.iter().take(all.len().saturating_sub(KEEP)) {
                 std::fs::remove_file(old).map_err(io)?;

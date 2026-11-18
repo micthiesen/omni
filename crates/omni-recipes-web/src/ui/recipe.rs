@@ -115,10 +115,13 @@ fn OriginalSection(rec: RecipeRecord, doc_url: Option<String>) -> impl IntoView 
             });
         }
     };
+    // Only a plain web address becomes a link: a stored value is data from
+    // a page or an agent, and a `javascript:` link must never render.
     let link = source
         .as_ref()
         .and_then(|source| source.url.clone())
-        .or(doc_url);
+        .or(doc_url)
+        .filter(|url| omni_recipe_format::is_web_url(url));
     let photos = source.as_ref().map_or(0, |source| source.files);
     let item = source.map(|source| source.item_id).unwrap_or_default();
     (has_stored || link.is_some()).then(|| view! {

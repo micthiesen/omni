@@ -26,6 +26,8 @@ extern "C" {
         deletes: &Array,
         clear: bool,
     ) -> Result<JsValue, JsValue>;
+    #[wasm_bindgen(catch, js_name = idbTx)]
+    async fn idb_tx(ops: &Array) -> Result<JsValue, JsValue>;
 }
 
 /// Every value of `store` that decodes, in key order.
@@ -63,16 +65,59 @@ fn spawn_write(store: &'static str, puts: Array, deletes: Array, clear: bool) {
     });
 }
 
+thread_local! {
+    /// The writes of the [`atomic`] call in progress.
+    static OPEN: std::cell::RefCell<Option<Array>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `work` and stores every [`put`] and [`delete`] it makes in one
+/// transaction: all of them or none. A change to a record and the outbox
+/// entry that will send it must go together, or the next sync would undo a
+/// change that was never queued.
+pub fn atomic<R>(work: impl FnOnce() -> R) -> R {
+    let outer = OPEN.with_borrow_mut(|open| open.replace(Array::new()));
+    let result = work();
+    let ops = OPEN.with_borrow_mut(|open| std::mem::replace(open, outer));
+    if let Some(ops) = ops.filter(|ops| ops.length() > 0) {
+        // Inside another `atomic`, the writes join the outer transaction.
+        let joined = OPEN.with_borrow(|open| {
+            open.as_ref().map(|outer| {
+                for op in ops.iter() {
+                    outer.push(&op);
+                }
+            })
+        });
+        if joined.is_none() {
+            leptos::task::spawn_local(async move {
+                let _ = idb_tx(&ops).await;
+            });
+        }
+    }
+    result
+}
+
+fn write(op: Array) {
+    let queued = OPEN.with_borrow(|open| open.as_ref().map(|ops| ops.push(&op)).is_some());
+    if !queued {
+        leptos::task::spawn_local(async move {
+            let _ = idb_tx(&Array::of1(&op)).await;
+        });
+    }
+}
+
 /// Stores `value` as JSON; the write happens in the background, in call order.
 pub fn put<T: Serialize>(store: &'static str, key: impl Into<JsValue>, value: &T) {
     if let Ok(text) = serde_json::to_string(value) {
-        let puts = Array::of1(&pair(&key.into(), &JsValue::from_str(&text)));
-        spawn_write(store, puts, Array::new(), false);
+        write(Array::of3(
+            &JsValue::from_str(store),
+            &key.into(),
+            &JsValue::from_str(&text),
+        ));
     }
 }
 
 pub fn delete(store: &'static str, key: impl Into<JsValue>) {
-    spawn_write(store, Array::new(), Array::of1(&key.into()), false);
+    write(Array::of2(&JsValue::from_str(store), &key.into()));
 }
 
 /// Replaces or patches a store in one transaction.

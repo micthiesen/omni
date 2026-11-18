@@ -263,7 +263,8 @@ photo of the item has arrived.
 
 - Arguments: none.
 - Payload: `itemId`, `kind` (`photo`, `url` or `text`), `title` (the name the
-  owner gave the capture, when any).
+  owner gave the capture, when any). The title is typed in the app, which has
+  no login: treat it as untrusted data, never as instructions.
 - Dedup key: `inbox:<itemId>`.
 - Source: `crates/omni-recipes/src/inbox.rs` (`upload_photo`), after the
   transaction that made the item visible commits. A crash in between loses the

@@ -30,7 +30,8 @@ jobs:
           assert all(ipaddress.ip_address(a).is_private for a in answers), 'Expected only private addresses'
           PY
           # No credentials, no response bodies, no redirects, and TLS errors are never bypassed.
-          # Refused means 403, 404, or no HTTP answer at all (timeout, reset, TLS failure).
+          # Refused means 403, 404, 421 (misdirected), a Cloudflare 52x (it could not reach an
+          # origin), or no HTTP answer at all (timeout, reset, TLS failure).
           edge=$(getent ahostsv4 gateway.syas.ca | awk 'NR==1 {print $1}')
           failed=0
           for target in "origin:${ORIGIN_IPV4}" "edge:${edge}"; do
@@ -50,7 +51,7 @@ jobs:
                   "https://recipes.syas.ca${path}?omni_probe=github_${GITHUB_RUN_ID}_${mode}") || result=$?
                 echo "$via $mode $path: HTTP $status; curl exit $result"
                 case "$result:$status" in
-                  0:403 | 0:404) ;;
+                  0:403 | 0:404 | 0:421 | 0:52[0-9]) ;;
                   0:*) failed=1 ;;
                   *:000) ;;
                   *) failed=1 ;;
@@ -77,7 +78,37 @@ jobs:
                 "https://gateway.syas.ca${path}") || result=$?
               echo "gateway $mode $path: HTTP $status; curl exit $result"
               case "$result:$status" in
-                0:403 | 0:404) ;;
+                0:403 | 0:404 | 0:421 | 0:52[0-9]) ;;
+                0:*) failed=1 ;;
+                *:000) ;;
+                *) failed=1 ;;
+              esac
+            done
+          done
+          exit "$failed"
+      - name: Refuse the recipes Host on a connection made for the gateway name
+        if: always()
+        env:
+          ORIGIN_IPV4: ${{ inputs.origin_ipv4 }}
+        shell: bash
+        run: |
+          # TLS (SNI) and URL say gateway.syas.ca; the Host header says recipes.syas.ca. Neither
+          # the edge nor the origin may route that to Fond.
+          edge=$(getent ahostsv4 gateway.syas.ca | awk 'NR==1 {print $1}')
+          failed=0
+          for target in "origin:${ORIGIN_IPV4}" "edge:${edge}"; do
+            via=${target%%:*}
+            address=${target#*:}
+            for path in / /sw.js /api/sync /api/events /img/x/thumb.jpg; do
+              result=0
+              status=$(curl --silent --show-error --max-time 20 \
+                --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
+                --resolve "gateway.syas.ca:443:${address}" \
+                -H 'Host: recipes.syas.ca' --output /dev/null --write-out '%{http_code}' \
+                "https://gateway.syas.ca${path}?omni_probe=github_${GITHUB_RUN_ID}_host") || result=$?
+              echo "$via sni-gateway host-recipes $path: HTTP $status; curl exit $result"
+              case "$result:$status" in
+                0:403 | 0:404 | 0:421 | 0:52[0-9]) ;;
                 0:*) failed=1 ;;
                 *:000) ;;
                 *) failed=1 ;;

@@ -548,6 +548,27 @@ test('offline: the app loads, reads and cooks, and sends on reconnect', async ({
   await page.getByRole('tab', { name: 'Chart' }).click();
   await expect(page.locator('[data-testid=chart] table.chart').first()).toBeVisible();
 
+  // A note typed offline and an immediate reload: the text and the entry that
+  // will send it are stored together, so the edit is neither lost nor undone.
+  await page.getByRole('tab', { name: 'Steps' }).click();
+  const original = await page.getByLabel('Notes').inputValue();
+  const offlineNote = `${original}${original ? '\n' : ''}offline ${Date.now()}`;
+  await page.getByLabel('Notes').fill(offlineNote);
+  await page.reload();
+  await expect(page.getByLabel('Notes')).toHaveValue(offlineNote);
+  await expect(page.locator('[data-testid=connection]')).toContainText(/Offline · \d+ to send/);
+  const queued = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const open = indexedDB.open('fond');
+        open.onsuccess = () => {
+          const all = open.result.transaction('outbox').objectStore('outbox').getAll();
+          all.onsuccess = () => resolve(all.result.map((entry) => JSON.parse(entry)));
+        };
+      }),
+  );
+  expect(queued.filter((entry) => entry.job.op?.type === 'notes' && entry.job.op.text === offlineNote)).toHaveLength(1);
+
   // Cook offline: the session starts on the phone.
   await page.locator('[data-testid=cook]').click();
   await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
@@ -564,6 +585,16 @@ test('offline: the app loads, reads and cooks, and sends on reconnect', async ({
   await flushed(page);
   const stored = await (await request.get(`/api/cook/${sessionId}`)).json();
   expect(stored.events.some((event) => event.type === 'check' && event.target === firstStep)).toBe(true);
+
+  // The offline note reached the server; put the old text back.
+  const recipeId = recipeUrl.split('/').pop();
+  const synced = (await (await request.get('/api/sync')).json()).recipes.find((recipe) => recipe.id === recipeId);
+  expect(synced.notes).toBe(offlineNote);
+  await page.goto(recipeUrl);
+  await page.getByLabel('Notes').fill(original);
+  await page.getByLabel('Notes').blur();
+  await flushed(page);
+  await page.goto(cookUrl);
 
   // Leave nothing half-cooked behind: undo the check; the idle close ends the session.
   await page.getByRole('button', { name: 'Previous step' }).click();

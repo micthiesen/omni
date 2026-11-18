@@ -132,7 +132,7 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
         h.recipes.dump().await.unwrap(),
         restored_to.dump().await.unwrap(),
     );
-    assert_eq!(original.len(), 12);
+    assert_eq!(original.len(), 13);
     for (table, rows) in &original {
         assert_eq!(copy[table], *rows, "{table}");
         if table != "recipes_redirect" {

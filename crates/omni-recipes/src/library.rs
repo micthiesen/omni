@@ -17,7 +17,7 @@ use crate::api::{
 use crate::db::{
     self, Actor, CURRENT_FORMAT, Change, ImageRow, RecipeRow, adjustment_infos, doc_at, encode_doc,
     image_infos, images_of, iso, live_recipe_for_write, log_change, next_seq, normal_url,
-    open_adjustments, recipe_for_read, refresh_fts, tags_of, time_info, touched_one,
+    recipe_for_read, refresh_fts, tags_of, time_info, touched_one,
 };
 use crate::error::{R, RecipesError, invalid, not_found, reject, sql};
 use crate::fidelity;
@@ -52,10 +52,12 @@ pub(crate) fn factor(doc: &RecipeDoc, scale: Option<f64>, servings: Option<f64>)
         }
         (None, None) => 1.0,
     };
-    if factor.is_finite() && (0.01..=1000.0).contains(&factor) {
+    if factor.is_finite() && (0.05..=100.0).contains(&factor) {
         Ok(factor)
     } else {
-        Err(invalid("the scale must be between 0.01 and 1000"))
+        Err(invalid(
+            "the scale (or servings divided by the recipe's yield) must be between 0.05 and 100",
+        ))
     }
 }
 
@@ -140,6 +142,7 @@ impl Recipes {
                 saved: false,
                 id: None,
                 revision: None,
+                change_id: None,
                 problems: Some(report.errors),
                 time,
                 warnings: report.warnings,
@@ -175,7 +178,7 @@ impl Recipes {
             derived_from: input.derived_from,
             allow_duplicate: input.allow_duplicate.unwrap_or(false),
         };
-        let (id, seq) = self
+        let (id, seq, change) = self
             .transact(dry, move |conn, now| create_tx(conn, now, create, &actor))
             .await?;
         if !dry {
@@ -187,6 +190,7 @@ impl Recipes {
             saved: !dry,
             id: (!dry).then_some(id),
             revision: (!dry).then_some(1),
+            change_id: (!dry).then_some(change),
             problems: None,
             time,
             warnings: report.warnings,
@@ -253,6 +257,8 @@ impl Recipes {
             saved: result.saved,
             id: result.id,
             revision: result.revision,
+            change_id: result.change_id,
+            problems: result.problems,
             changes: result.changes,
             text: result.text,
         })
@@ -273,6 +279,7 @@ impl Recipes {
         if dry {
             result.saved = false;
             result.revision = expected;
+            result.change_id = None;
         } else if let Some(seq) = result.seq {
             self.hub.library(seq);
         }
@@ -294,7 +301,6 @@ impl Recipes {
             }
             let factor = factor(&doc, input.scale, input.servings)?;
             let images = images_of(conn, &row.id)?;
-            let adjustments = open_adjustments(conn, &row.id)?;
             let source = match &row.source_item {
                 Some(item) => inbox::item(conn, item)?.map(|item| SourceInfo {
                     url: item.url(),
@@ -331,7 +337,7 @@ impl Recipes {
                     count: row.cook_count,
                     last_on: row.last_cooked_at.map(|at| db::local_date(at, &tz)),
                 },
-                open_adjustments: adjustment_infos(&adjustments, &tz),
+                open_adjustments: adjustment_infos(conn, &row, &tz)?,
                 warnings: validate(&doc).warnings,
                 linked,
                 scale: (view != View::Document).then_some(factor),
@@ -457,7 +463,12 @@ fn duplicate(id: &str, title: &str, why: &str) -> RecipesError {
     )
 }
 
-fn create_tx(conn: &Connection, now: i64, create: Create, actor: &Actor) -> R<(String, u64)> {
+fn create_tx(
+    conn: &Connection,
+    now: i64,
+    create: Create,
+    actor: &Actor,
+) -> R<(String, u64, String)> {
     let Create {
         doc,
         tags: tag_names,
@@ -468,7 +479,7 @@ fn create_tx(conn: &Connection, now: i64, create: Create, actor: &Actor) -> R<(S
         derived_from,
         allow_duplicate,
     } = create;
-    tags::require(conn, &tag_names, create_tags, now)?;
+    let created_tags = tags::require(conn, &tag_names, create_tags, now)?;
     let derived_from = match derived_from {
         Some(id) => Some(recipe_for_read(conn, &id)?.0.id),
         None => None,
@@ -489,24 +500,54 @@ fn create_tx(conn: &Connection, now: i64, create: Create, actor: &Actor) -> R<(S
         }
         None => None,
     };
-    let source_url = doc.source.url.as_deref().and_then(normal_url).or_else(|| {
-        item.as_ref()
-            .and_then(|item| item.url())
-            .and_then(|url| normal_url(&url))
-    });
+    // Both the URL the document names and the one the page was read from.
+    let doc_url = doc.source.url.as_deref().and_then(normal_url);
+    let item_url = item
+        .as_ref()
+        .and_then(|item| item.url())
+        .and_then(|url| normal_url(&url));
+    let source_url = doc_url.clone().or_else(|| item_url.clone());
     let (stored, digest) = encode_doc(&doc)?;
     if !allow_duplicate {
-        if let Some(url) = &source_url {
-            let found: Option<(String, String)> =
-                rusqlite::OptionalExtension::optional(conn.query_row(
-                    "SELECT id, title FROM recipes_recipe
-                     WHERE source_url = ?1 AND state != 'trashed' LIMIT 1",
-                    params![url],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                ))
+        let wanted: Vec<&String> = doc_url.iter().chain(&item_url).collect();
+        if !wanted.is_empty() {
+            let mut statement = conn
+                .prepare(
+                    "SELECT r.id, r.title, r.source_url, i.payload FROM recipes_recipe r
+                     LEFT JOIN recipes_inbox i ON i.id = r.source_item AND i.kind = 'url'
+                     WHERE r.state != 'trashed' ORDER BY r.created_at",
+                )
                 .map_err(sql)?;
-            if let Some((id, title)) = found {
-                return Err(duplicate(&id, &title, "a recipe from this source URL"));
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                })
+                .map_err(sql)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql)?;
+            for (id, title, stored_url, payload) in rows {
+                let page = payload
+                    .and_then(|payload| serde_json::from_str::<serde_json::Value>(&payload).ok())
+                    .and_then(|payload| {
+                        ["finalUrl", "url"].iter().find_map(|key| {
+                            payload
+                                .get(*key)
+                                .and_then(|v| v.as_str())
+                                .map(str::to_owned)
+                        })
+                    })
+                    .and_then(|url| normal_url(&url));
+                if wanted
+                    .iter()
+                    .any(|url| Some(*url) == stored_url.as_ref() || Some(*url) == page.as_ref())
+                {
+                    return Err(duplicate(&id, &title, "a recipe from this source URL"));
+                }
             }
         }
         let found: Option<(String, String)> =
@@ -556,12 +597,18 @@ fn create_tx(conn: &Connection, now: i64, create: Create, actor: &Actor) -> R<(S
     )
     .map_err(sql)?;
     db::set_tags(conn, &id, &tag_names)?;
+    let mut touched = serde_json::Map::new();
+    touched.insert(
+        id.clone(),
+        json!(["content", "state", "tags", "notes", "images"]),
+    );
+    tags::touch(&mut touched, &tag_names, &created_tags);
     if let Some(item) = &item {
         adopt_images(conn, now, &id, item)?;
         inbox::mark_imported(conn, now, &item.id, &id)?;
     }
     refresh_fts(conn, &id)?;
-    log_change(
+    let change = log_change(
         conn,
         seq,
         now,
@@ -569,12 +616,12 @@ fn create_tx(conn: &Connection, now: i64, create: Create, actor: &Actor) -> R<(S
             actor,
             summary: format!("Created {}", doc.title),
             kind: "create",
-            touched: touched_one(&id, &["content", "state", "tags", "notes", "images"]),
+            touched: serde_json::Value::Object(touched),
             before: json!({}),
             after: json!({ "recipe": id, "rev": 1 }),
         },
     )?;
-    Ok((id, seq))
+    Ok((id, seq, change))
 }
 
 /// Gives a new recipe its inbox item's images: a page's lead image becomes
@@ -652,6 +699,7 @@ struct ContentResult {
     warnings: Vec<omni_recipe_format::Problem>,
     text: String,
     seq: Option<u64>,
+    change_id: Option<String>,
     doc: Option<RecipeDoc>,
     source_item: Option<String>,
 }
@@ -662,6 +710,7 @@ impl ContentResult {
             saved: self.saved,
             id: self.id,
             revision: self.revision,
+            change_id: self.change_id,
             problems: self.problems,
             changes: self.changes,
             warnings: self.warnings,
@@ -736,8 +785,9 @@ pub(crate) fn write_revision(
     )
     .map_err(sql)?;
     conn.execute(
+        // A revision that names another source URL is found by that URL.
         "UPDATE recipes_recipe SET head_rev = ?2, title = ?3, active_min = ?4, total_min = ?5,
-           updated_at = ?6, seq = ?7 WHERE id = ?1",
+           updated_at = ?6, seq = ?7, source_url = coalesce(?8, source_url) WHERE id = ?1",
         params![
             row.id,
             revision,
@@ -745,7 +795,8 @@ pub(crate) fn write_revision(
             time.active_min,
             time.total_min,
             now,
-            db::sql_seq(seq)
+            db::sql_seq(seq),
+            doc.source.url.as_deref().and_then(normal_url)
         ],
     )
     .map_err(sql)?;
@@ -796,6 +847,7 @@ fn content_tx(
         warnings: report.warnings.clone(),
         text: String::new(),
         seq: None,
+        change_id: None,
         doc: None,
         source_item: row.source_item.clone(),
     };
@@ -848,7 +900,7 @@ fn content_tx(
         )
         .map_err(sql)?;
     }
-    log_change(
+    result.change_id = Some(log_change(
         conn,
         seq,
         now,
@@ -860,7 +912,7 @@ fn content_tx(
             before: json!({ "recipe": row.id, "rev": row.head_rev }),
             after: json!({ "recipe": row.id, "rev": revision, "resolved": write.resolves }),
         },
-    )?;
+    )?);
     result.saved = true;
     result.revision = revision;
     result.seq = Some(seq);

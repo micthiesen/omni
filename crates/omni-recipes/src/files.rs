@@ -37,6 +37,14 @@ impl Rendition {
     }
 }
 
+/// Makes a rename durable: syncs the directory that holds `path`.
+pub fn sync_dir(path: &Path) -> std::io::Result<()> {
+    match path.parent() {
+        Some(parent) => std::fs::File::open(parent)?.sync_all(),
+        None => Ok(()),
+    }
+}
+
 /// What intake learned about one stored image.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stored {
@@ -82,12 +90,17 @@ pub fn accepted_kind(data: &[u8]) -> R<ImageKind> {
     }
 }
 
-fn image_error(error: &ImageError) -> crate::error::RecipesError {
+pub(crate) fn image_error(error: &ImageError) -> crate::error::RecipesError {
     match error {
         ImageError::Unsupported | ImageError::Decode(_) => {
             reject("unsupported_media", error.to_string())
         }
         ImageError::TooManyPixels | ImageError::TooLarge => reject("too_large", error.to_string()),
+        // The decoder is busy or slow, not the image wrong: worth a retry.
+        ImageError::Timeout => reject(
+            "unavailable",
+            "image processing is busy and timed out; try again",
+        ),
         other => io(other),
     }
 }
@@ -148,7 +161,8 @@ impl ImageFiles {
                 let temp = path.with_extension(format!("{}.tmp", omni_core::ids::uuid_v4()));
                 std::fs::write(&temp, bytes)?;
                 std::fs::File::open(&temp)?.sync_all()?;
-                std::fs::rename(&temp, &path)
+                std::fs::rename(&temp, &path)?;
+                sync_dir(&path)
             };
             // The original lands last: it is what marks the image as stored.
             write(Rendition::Thumb, &thumb.jpeg)?;
@@ -198,6 +212,38 @@ impl ImageFiles {
                     && is_digest(name)
                 {
                     found.push(name.to_owned());
+                }
+            }
+        }
+        found.sort();
+        Ok(found)
+    }
+
+    /// Rendition files whose original is gone (a crash between the writes of
+    /// one image, or a file removed by hand), by path (blocking).
+    pub fn orphan_renditions(&self) -> std::io::Result<Vec<PathBuf>> {
+        let mut found = Vec::new();
+        let shards = match std::fs::read_dir(&self.root) {
+            Ok(shards) => shards,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(found),
+            Err(error) => return Err(error),
+        };
+        for shard in shards {
+            let shard = shard?;
+            if !shard.file_type()?.is_dir() {
+                continue;
+            }
+            for file in std::fs::read_dir(shard.path())? {
+                let path = file?.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let digest = name
+                    .strip_suffix(".thumb.jpg")
+                    .or_else(|| name.strip_suffix(".full.jpg"));
+                if let Some(digest) = digest
+                    && is_digest(digest)
+                    && !shard.path().join(digest).exists()
+                {
+                    found.push(path);
                 }
             }
         }

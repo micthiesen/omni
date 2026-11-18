@@ -613,17 +613,21 @@ async fn the_app_shell_is_served_on_its_routes_and_nothing_else() {
     .await;
     assert_eq!(other.text(), "omni");
 
-    // Nested asset paths (wasm-bindgen snippets) are served too.
-    std::fs::create_dir_all(dist.join("assets/snippets/fond-1a/src")).unwrap();
+    // Nested asset paths (wasm-bindgen snippets) are served too, and are
+    // revalidated: their path does not change when the file does.
+    std::fs::create_dir_all(dist.join("assets/snippets/fond-1a/js")).unwrap();
     std::fs::write(
-        dist.join("assets/snippets/fond-1a/src/idb.js"),
+        dist.join("assets/snippets/fond-1a/js/idb.js"),
         "export const x = 1;",
     )
     .unwrap();
-    let snippet = get(&router, "/assets/snippets/fond-1a/src/idb.js").await;
+    let snippet = get(&router, "/assets/snippets/fond-1a/js/idb.js").await;
     assert_eq!(snippet.status, 200);
+    assert_eq!(snippet.header("cache-control"), Some("no-cache"));
     assert_eq!(
-        snippet.header("cache-control"),
+        get(&router, "/assets/app-1a2b.js")
+            .await
+            .header("cache-control"),
         Some("public, max-age=31536000, immutable")
     );
 }

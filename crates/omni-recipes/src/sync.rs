@@ -156,9 +156,14 @@ fn apply_op(
         ClientOpKind::Notes { recipe_id, .. } | ClientOpKind::State { recipe_id, .. } => recipe_id,
     };
     // An op on a recipe that was merged away lands on the recipe it became.
-    let Ok((row, _)) = recipe_for_read(conn, target) else {
+    let Ok((row, redirected)) = recipe_for_read(conn, target) else {
         return refuse("no such recipe");
     };
+    // A note follows the recipe to where it lives now. A state change does
+    // not: archiving or deleting the absorbed copy must never hit the kept one.
+    if redirected.is_some() && matches!(op.kind, ClientOpKind::State { .. }) {
+        return refuse("[merged] the recipe was merged into another");
+    }
     let ids = [row.id.clone()];
     let actor = Actor::app();
     match &op.kind {
@@ -170,11 +175,21 @@ fn apply_op(
             let fresh = *base_rev == row.notes_rev || *text == row.notes;
             let merged = if fresh || row.notes.trim().is_empty() {
                 text.clone()
-            } else if text.trim().is_empty() {
+            } else if text.trim().is_empty() || row.notes.contains(text.trim()) {
                 row.notes.clone()
+            } else if text.contains(row.notes.trim()) {
+                // The stale edit already holds the server's text: no repeat.
+                text.clone()
             } else {
                 format!("{}\n\n{}", row.notes.trim_end(), text)
             };
+            // Nothing is ever cut: a merge that cannot fit leaves the
+            // server's text alone and tells the app.
+            if merged.chars().count() > MAX_NOTES {
+                return refuse(
+                    "notes are limited to 20,000 characters; this edit and the newer notes do not fit together",
+                );
+            }
             if merged == row.notes {
                 return Ok((true, None, Some(row.id)));
             }

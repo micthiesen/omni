@@ -31,7 +31,7 @@ pub use list::{
 pub use model::{
     Amount, Attention, Byproduct, Component, FORMAT, Id, Ingredient, Input, MakeAhead, RecipeDoc,
     Source, SourceKind, Step, StepTime, Temp, TimeOverride, UpgradeError, Yield, is_valid_id,
-    upgrade,
+    is_web_url, upgrade,
 };
 pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, scaled};
 pub use search::{fold, matches, search_text, tokens};

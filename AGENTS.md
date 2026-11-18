@@ -524,6 +524,15 @@ both, and uploaded photos, are untrusted: typed by magic bytes, decoded through
 extraction review (the crate's only model call: `ModelRole::RecipeReview`, one
 attempt, 45 seconds) report and never block a save; never log source text.
 
+A merged cook session keeps the document it pinned (`doc_recipe_id`) and is
+never hidden; an undo of a tag change restores only the registry rows that
+change wrote. The app has no login, so its surface is bounded (open sessions,
+timers, waiting inbox items, event streams, requests in flight, timer alerts
+per hour); keep new app routes inside those limits. Text written in the app or
+taken from pages is untrusted and every tool that returns it says so.
+`RecipesPurge` writes a verified archive to `archives/purge` before it removes
+any recipe.
+
 Cooking never edits a recipe. A session is an append-only event log, each
 `clientEventId` applied once; finishing turns overrides into adjustment records
 that only a revision with `resolves` or a dismissal closes. A timer alert is
@@ -533,7 +542,9 @@ an app client connected it waits 30 seconds for the app to answer the timer.
 Fond's router is registered only as a host app (`Subsystem::host_apps`), never
 merged into Omni's: on the recipes host nothing of Omni exists, on every other
 host Fond does not, and the gateway host can never serve it
-(`crates/omni/tests/route_precedence.rs`). It has no catch-all, mutations pass
+(`crates/omni/tests/route_precedence.rs`). Host dispatch refuses a request for
+an app host that names a second host (400) or carries Cloudflare's
+`CF-Connecting-IP`/`CF-Ray` (403: the private DNS record is gone). It has no catch-all, mutations pass
 `MutationGuard` (exact `Origin`; uploads need `X-Fond-Upload`), and `/img`
 serves only digests a row refers to. The server and app contract is
 `omni_api::fond`; change both sides together. Final image and archive file

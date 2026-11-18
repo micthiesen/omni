@@ -170,9 +170,12 @@ pub fn recipe_for_write(conn: &Connection, id: &str) -> R<RecipeRow> {
 pub fn live_recipe_for_write(conn: &Connection, id: &str) -> R<RecipeRow> {
     let row = recipe_for_write(conn, id)?;
     if row.state == "trashed" {
-        return Err(not_found(format!(
-            "{id} is in the trash; restore it first with recipes_organize (state \"active\")"
-        )));
+        return Err(reject(
+            "trashed",
+            format!(
+                "{id} is in the trash; restore it first with recipes_organize (state \"active\") or recipes_undo"
+            ),
+        ));
     }
     Ok(row)
 }
@@ -455,8 +458,21 @@ pub fn open_adjustments(conn: &Connection, id: &str) -> R<Vec<AdjustmentRow>> {
     rows.collect::<Result<_, _>>().map_err(sql)
 }
 
-pub fn adjustment_infos(rows: &[AdjustmentRow], tz: &jiff::tz::TimeZone) -> Vec<AdjustmentInfo> {
-    rows.iter()
+/// The open adjustments of `recipe` as tools show them, each flagged when
+/// its target is no longer in the newest revision.
+pub fn adjustment_infos(
+    conn: &Connection,
+    recipe: &RecipeRow,
+    tz: &jiff::tz::TimeZone,
+) -> R<Vec<AdjustmentInfo>> {
+    let rows = open_adjustments(conn, &recipe.id)?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let head = doc_at(conn, &recipe.id, recipe.head_rev)?;
+    let ix = omni_recipe_format::Index::build(&head);
+    Ok(rows
+        .iter()
         .map(|row| AdjustmentInfo {
             id: row.id.clone(),
             target: row.target.clone(),
@@ -464,8 +480,9 @@ pub fn adjustment_infos(rows: &[AdjustmentRow], tz: &jiff::tz::TimeZone) -> Vec<
             text: row.text.clone(),
             session_id: row.session_id.clone(),
             cooked_on: local_date(row.created_at, tz),
+            target_missing: ix.step(&row.target).is_none() && ix.ingredient(&row.target).is_none(),
         })
-        .collect()
+        .collect())
 }
 
 /// Rewrites the recipe's full-text row from its head revision, tags and notes.
@@ -582,7 +599,7 @@ pub fn tag_name(raw: &str) -> R<String> {
         Ok(name)
     } else {
         Err(crate::error::invalid(format!(
-            "tag {raw:?} must be 1 to 40 letters, digits or hyphens"
+            "tag {raw:?} must be 1 to 40 characters: letters, digits, hyphens, underscores, & or apostrophes (spaces become hyphens)"
         )))
     }
 }

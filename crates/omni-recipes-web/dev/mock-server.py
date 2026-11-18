@@ -710,6 +710,18 @@ class State:
             self.emit_library()
             return copy.deepcopy(recipe)
 
+    def mock_unimage(self, body):
+        """Removes every image of a recipe, as an agent's images edit would."""
+        with self.lock:
+            recipe = self.recipes.get(body.get("recipeId"))
+            if recipe is None:
+                raise ApiError(404, "unknown recipe")
+            recipe["images"] = []
+            recipe["cover"] = None
+            self.touch(recipe)
+            self.emit_library()
+            return copy.deepcopy(recipe)
+
     def mock_import(self, body):
         with self.lock:
             item = self.inbox.get(body.get("itemId"))
@@ -863,7 +875,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/__mock/reset":
                 self.read_json()
                 answer = state.reset()
-            elif path in ("/__mock/adjust", "/__mock/revise", "/__mock/import"):
+            elif path in ("/__mock/adjust", "/__mock/revise", "/__mock/import", "/__mock/unimage"):
                 body = self.read_json()
                 if not isinstance(body, dict):
                     raise ApiError(400, "body must be an object")

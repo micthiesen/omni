@@ -20,7 +20,9 @@ pub const NOTES: &str = "notes";
 pub const IMAGES: &str = "images";
 pub const COOKS: &str = "cooks";
 /// The key of the tag registry in a change's `touched` map.
-pub const REGISTRY_KEY: &str = "*tags";
+pub const TAG_KEY_PREFIX: &str = "tag:";
+/// The facet of a tag a change put on or took off recipes.
+pub const USE: &str = "use";
 pub const REGISTRY: &str = "registry";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +61,7 @@ pub fn recipe_facets(conn: &Connection, id: &str, facets: &[&str]) -> R<Value> {
                 "state": row.state,
                 "changedAt": row.state_changed_at,
                 "mergedInto": row.merged_into,
+                "sourceItem": row.source_item,
             }),
             TAGS => json!(tags_of(conn, id)?),
             NOTES => json!({ "text": row.notes }),
@@ -112,15 +115,20 @@ fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 /// Puts back everything `snapshot` holds and returns the ids of the recipes
 /// it wrote. Each of them is stamped with `seq`.
 pub fn apply(conn: &Connection, snapshot: &Value, seq: u64, now: i64) -> R<Vec<String>> {
-    if let Some(registry) = snapshot.get(REGISTRY) {
-        let rows: Vec<TagRow> = serde_json::from_value(registry.clone()).map_err(corrupt)?;
-        conn.execute("DELETE FROM recipes_tag", []).map_err(sql)?;
-        for row in rows {
-            conn.execute(
-                "INSERT INTO recipes_tag (name, grp, description, created_at) VALUES (?1, ?2, ?3, ?4)",
-                params![row.name, row.grp, row.description, row.created_at],
-            )
-            .map_err(sql)?;
+    // Only the registry rows the snapshot names: a tag registered since
+    // stays registered.
+    if let Some(registry) = snapshot.get(REGISTRY).and_then(Value::as_object) {
+        for (name, row) in registry {
+            conn.execute("DELETE FROM recipes_tag WHERE name = ?1", params![name])
+                .map_err(sql)?;
+            if !row.is_null() {
+                let row: TagRow = serde_json::from_value(row.clone()).map_err(corrupt)?;
+                conn.execute(
+                    "INSERT INTO recipes_tag (name, grp, description, created_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![row.name, row.grp, row.description, row.created_at],
+                )
+                .map_err(sql)?;
+            }
         }
     }
     let empty = Map::new();
@@ -156,6 +164,14 @@ pub fn apply(conn: &Connection, snapshot: &Value, seq: u64, now: i64) -> R<Vec<S
                 ],
             )
             .map_err(sql)?;
+            // A merge can hand the kept recipe its source; undo takes it back.
+            if let Some(source) = state.get("sourceItem") {
+                conn.execute(
+                    "UPDATE recipes_recipe SET source_item = ?2 WHERE id = ?1",
+                    params![id, source.as_str()],
+                )
+                .map_err(sql)?;
+            }
         }
         if let Some(tags) = facets.get(TAGS) {
             let tags: Vec<String> = serde_json::from_value(tags.clone()).map_err(corrupt)?;
@@ -238,8 +254,16 @@ pub fn digests(snapshot: &Value, into: &mut std::collections::HashSet<String>) {
 /// The current state of everything `shape` (an earlier snapshot) covers.
 pub fn like(conn: &Connection, shape: &Value) -> R<Value> {
     let mut out = Map::new();
-    if shape.get(REGISTRY).is_some() {
-        out.insert(REGISTRY.to_owned(), json!(registry_rows(conn)?));
+    if let Some(registry) = shape.get(REGISTRY).and_then(Value::as_object) {
+        let rows = registry_rows(conn)?;
+        let mut map = Map::new();
+        for name in registry.keys() {
+            map.insert(
+                name.clone(),
+                json!(rows.iter().find(|row| row.name == *name)),
+            );
+        }
+        out.insert(REGISTRY.to_owned(), Value::Object(map));
     }
     if let Some(recipes) = shape.get("recipes").and_then(Value::as_object) {
         let mut map = Map::new();

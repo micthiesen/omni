@@ -40,13 +40,32 @@ pub fn request_host(request: &Request) -> Option<String> {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .or_else(|| request.uri().authority().map(|a| a.as_str()))?;
+    Some(host_name(raw))
+}
+
+/// A `Host` value or URI authority as a bare name: lowercased, without port
+/// or trailing dot.
+pub fn host_name(raw: &str) -> String {
     let name = match raw.rsplit_once(':') {
         Some((name, port)) if !name.ends_with(']') && port.bytes().all(|b| b.is_ascii_digit()) => {
             name
         }
         _ => raw,
     };
-    Some(name.trim_end_matches('.').to_ascii_lowercase())
+    name.trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// Every host a request names: each `Host` header and, for an absolute-form
+/// or HTTP/2 request, the URI authority.
+pub fn named_hosts(request: &Request) -> Vec<String> {
+    let mut hosts: Vec<String> = request
+        .headers()
+        .get_all(header::HOST)
+        .iter()
+        .map(|value| host_name(value.to_str().unwrap_or("")))
+        .collect();
+    hosts.extend(request.uri().authority().map(|a| host_name(a.as_str())));
+    hosts
 }
 
 /// Middleware over the whole application for one [`PublicHost`].

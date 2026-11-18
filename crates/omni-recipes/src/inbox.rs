@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::api::{
     ImportUrlInput, ImportUrlOutput, InboxGetInput, InboxGetOutput, InboxItemInfo, InboxKind,
     InboxListInput, InboxListOutput, InboxResolveInput, InboxResolveOutput, InboxState, PhotoInfo,
-    RecipeRef, Render, Resolution, Structured,
+    RecipeRef, Render, Resolution, SkippedItem, Structured,
 };
 use crate::db::{self, iso, next_seq, normal_url, recipe_for_read};
 use crate::error::{R, invalid, not_found, reject, sql};
@@ -32,6 +32,29 @@ pub const PHOTOS_PER_CALL: usize = 4;
 pub const MAX_PHOTOS: u32 = 20;
 /// Bytes of one uploaded photo.
 pub const MAX_PHOTO_BYTES: usize = 25 * 1024 * 1024;
+/// Items waiting in the inbox (pending or still uploading). The app has no
+/// login, so this bounds what anyone on the network can pile up.
+pub const MAX_WAITING_ITEMS: u32 = 200;
+
+/// Refuses a new inbox item while the inbox is full.
+pub fn room_for_item(conn: &Connection) -> R<()> {
+    let waiting: u32 = conn
+        .query_row(
+            "SELECT count(*) FROM recipes_inbox WHERE state IN ('pending', 'uploading')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(sql)?;
+    if waiting >= MAX_WAITING_ITEMS {
+        return Err(reject(
+            "too_many",
+            format!(
+                "the inbox holds {waiting} waiting items; import or discard some first (recipes_inbox_resolve)"
+            ),
+        ));
+    }
+    Ok(())
+}
 /// Bytes of an image fetched from a URL.
 pub const MAX_URL_IMAGE_BYTES: usize = 15 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(20);
@@ -234,7 +257,11 @@ pub fn insert_text(
 
 pub fn mark_imported(conn: &Connection, now: i64, item: &str, recipe: &str) -> R<()> {
     conn.execute(
-        "UPDATE recipes_inbox SET state = 'imported', resolved_at = ?2, recipe_id = ?3 WHERE id = ?1",
+        // An item already imported keeps the recipe it first became: a second
+        // recipe made from it with allowDuplicate shares the source.
+        "UPDATE recipes_inbox SET resolved_at = CASE WHEN state = 'imported' THEN resolved_at ELSE ?2 END,
+           recipe_id = CASE WHEN state = 'imported' AND recipe_id IS NOT NULL THEN recipe_id ELSE ?3 END,
+           state = 'imported' WHERE id = ?1",
         params![item, now, recipe],
     )
     .map_err(sql)?;
@@ -502,7 +529,7 @@ impl Recipes {
             ));
         }
         let _held = self.files_lock.lock().await;
-        self.files.put(response.body.to_vec()).await
+        self.files.put(Vec::from(response.body)).await
     }
 
     pub async fn import_url(&self, input: ImportUrlInput) -> R<ImportUrlOutput> {
@@ -551,6 +578,7 @@ impl Recipes {
         );
         let (seq, duplicate_of) = self
             .transact(false, move |conn, now| {
+                room_for_item(conn)?;
                 conn.execute(
                     "INSERT INTO recipes_inbox (id, kind, state, title, payload, created_at)
                      VALUES (?1, 'url', 'pending', ?2, ?3, ?4)",
@@ -687,16 +715,21 @@ impl Recipes {
         if input.resolution == Resolution::Discarded && input.duplicate_of.is_some() {
             return Err(invalid("duplicateOf goes with resolution \"duplicate\""));
         }
-        let (resolved, seq) = self
+        let (resolved, skipped, seq) = self
             .transact(false, move |conn, now| {
                 let recipe = match &input.duplicate_of {
                     Some(id) => Some(recipe_for_read(conn, id)?.0.id),
                     None => None,
                 };
                 let mut resolved = 0;
+                let mut skipped = Vec::new();
                 for id in &input.item_ids {
                     let item = visible_item(conn, id)?;
                     if item.state != "pending" {
+                        skipped.push(SkippedItem {
+                            state: item.state(),
+                            item_id: item.id,
+                        });
                         continue;
                     }
                     conn.execute(
@@ -712,13 +745,13 @@ impl Recipes {
                 } else {
                     db::current_seq(conn)?
                 };
-                Ok((resolved, seq))
+                Ok((resolved, skipped, seq))
             })
             .await?;
         if resolved > 0 {
             self.hub.library(seq);
         }
-        Ok(InboxResolveOutput { resolved })
+        Ok(InboxResolveOutput { resolved, skipped })
     }
 
     /// Stores photo `index` of `count` for the app's item `token`. The item
@@ -744,9 +777,25 @@ impl Recipes {
         if bytes.len() > MAX_PHOTO_BYTES {
             return Err(reject("too_large", "a photo may be at most 25 MB"));
         }
+        let external = format!("app:{token}");
+        // A new item needs room; a photo of an item already begun does not.
+        let known = external.clone();
+        self.query(move |conn| {
+            let begun: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM recipes_inbox WHERE external_id = ?1",
+                    params![known],
+                    |row| row.get(0),
+                )
+                .map_err(sql)?;
+            if begun == 0 {
+                room_for_item(conn)?;
+            }
+            Ok(())
+        })
+        .await?;
         let _held = self.files_lock.lock().await;
         let stored = self.files.put(bytes).await?;
-        let external = format!("app:{token}");
         let title = title
             .map(|title| title.trim().chars().take(200).collect::<String>())
             .filter(|title| !title.is_empty());
@@ -763,6 +812,7 @@ impl Recipes {
                 let id = match existing {
                     Some(id) => id,
                     None => {
+                        room_for_item(conn)?;
                         let id = ids::new_id(ids::INBOX);
                         conn.execute(
                             "INSERT INTO recipes_inbox (id, kind, state, title, payload, external_id, created_at)

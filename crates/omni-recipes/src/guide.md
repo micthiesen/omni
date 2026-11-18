@@ -48,8 +48,27 @@ Component   { id, name?, makeAhead?: { keeps, where }, ingredients[], steps[] }
 Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { qty, unit },
               optional?, toTaste?, scales?, recipe? }
 Step        { id, action, inputs[], text, time?: { min, max?, attention: active | passive },
-              temp?: { value, unit: "F" | "C" }, until?, equipment?[], output?, byproducts?[], optional?, tip? }
+              temp?: { value, unit: "F" | "C" }, until?, equipment?[], output?,
+              byproducts?[]: { id, name }, optional?, tip? }
 Input       { ref, qty?, unit?, fraction?, rest?, part?, prep? }
+```
+
+A `?` marks an optional key; leave it out, never send `null`. Everything else is required:
+
+- `title`, `yield` (`qty` and `unit`), `source` (with `kind`) and `components` on the document.
+- `id` and `steps` on a component, and `name` as soon as the recipe has two or more components.
+- `id` and `name` on an ingredient.
+- `id`, `action`, `inputs` and `text` on a step. `inputs` is always there: a setup step that
+  consumes nothing has `"inputs": []`.
+- `min` and `attention` whenever a step has `time`; `value` and `unit` whenever it has `temp`.
+- `ref` on an input; `id` and `name` on a by-product; `keeps` and `where` on `makeAhead`.
+
+A setup step, consumed by the step that needs it:
+
+```json
+{ "id": "oven", "action": "heat oven", "inputs": [], "output": "hot oven",
+  "time": { "min": 15, "attention": "passive" }, "temp": { "value": 375, "unit": "F" },
+  "text": "Heat the oven to {temp}." }
 ```
 
 - **Ids** are short names you choose (`butter`, `sear`, `ragu`): lowercase, `^[a-z][a-z0-9_]{0,23}$`,
@@ -73,11 +92,13 @@ Input       { ref, qty?, unit?, fraction?, rest?, part?, prep? }
   **`scales: false`** for amounts that do not follow the yield ("butter for the dish").
 - **`recipe`** on an ingredient links another recipe by id ("1 batch pizza dough").
 - **`time`** on the document is an override; leave it out and the times are derived from the steps.
-- **`source.kind`**: `web` with `url` and `name` (the site), `book` with `name`, `author` and
-  `detail` (the page), `person`, or `original`.
+- **`source.kind`**: `web` with `url` (http or https) and `name` (the site), `book` with `name`,
+  `author` and `detail` (the page), `person`, or `original`. `crouton` means imported from Crouton
+  by hand; do not use it for anything else.
 - No nutrition data anywhere.
 
-Limits: title 1 to 120 characters, 1 to 8 components, `action` 1 to 40 characters (over 28 warns).
+Limits: title 1 to 120 characters, 1 to 8 components, at most 100 ingredients and 100 steps in
+a component, `action` 1 to 40 characters (over 28 warns).
 
 ## Units
 

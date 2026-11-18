@@ -1321,9 +1321,18 @@ fn validate_recipes_app_host(config: &Config) -> Result<(), ConfigError> {
     let Some(app) = config.recipes_app_url.as_deref().and_then(url_host) else {
         return Ok(());
     };
+    // Every origin Omni itself is served on: the app's host would hide it.
+    let recs = Some(config.recs_public_url.clone());
+    let youtube = Some(config.youtube_redirect_uri.clone());
     for (key, other) in [
         ("OMNI_GATEWAY_PUBLIC_URL", &config.omni_gateway_public_url),
         ("PRESSPODS_PUBLIC_URL", &config.presspods_public_url),
+        (
+            "ICLOUD_REMINDERS_PUBLIC_ORIGIN",
+            &config.icloud_reminders_public_origin,
+        ),
+        ("RECS_PUBLIC_URL", &recs),
+        ("YOUTUBE_REDIRECT_URI", &youtube),
     ] {
         if other.as_deref().and_then(url_host).as_deref() == Some(app.as_str()) {
             return Err(invalid(
@@ -1536,6 +1545,15 @@ mod tests {
                 "https://recipes.example.com:8443",
             ),
             ("PRESSPODS_PUBLIC_URL", "https://RECIPES.example.com./"),
+            (
+                "ICLOUD_REMINDERS_PUBLIC_ORIGIN",
+                "https://recipes.example.com",
+            ),
+            ("RECS_PUBLIC_URL", "https://recipes.example.com/"),
+            (
+                "YOUTUBE_REDIRECT_URI",
+                "https://recipes.example.com/api/youtube/oauth/callback",
+            ),
         ] {
             let error = load(&[app, clash]).unwrap_err().to_string();
             assert!(error.contains(clash.0), "{error}");

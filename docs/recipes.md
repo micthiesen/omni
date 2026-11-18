@@ -34,10 +34,12 @@ test, so changing what agents are told means bumping `guide::VERSION`.
   adjustments after a merge). `recipes_undo` applies `before`; undoing that
   undo applies it the other way. An undo is refused with `[undo_conflict]`
   when a newer change that still stands wrote the same facet of the same
-  recipe. Content changes and creates are in the log too: undoing an edit
+  recipe. An undo of a tag-registry change puts back only the registry rows
+  that change wrote, and is refused when a later change created or used one
+  of those names. Content changes and creates are in the log too: undoing an edit
   writes the earlier document as a new revision, and undoing a create sends
   the recipe to the trash. A finished cook is logged but is history, not a
-  change: it cannot be undone.
+  change: `recipes_undo` refuses it with `[not_undoable]`.
 - **Delete** is a state: `trashed` recipes stay restorable for 30 days, then
   `RecipesPurge` removes them. No tool removes data.
 - **Tags** come from a registry that agents maintain. Each tag is in one of
@@ -46,7 +48,14 @@ test, so changing what agents are told means bumping `guide::VERSION`.
   the nearest names unless it passes `createTags` (which registers it in
   `other`).
 - **Merging** moves images, cook history, adjustments and tags to the kept
-  recipe, appends notes, and trashes each absorbed recipe with `mergedInto`.
+  recipe (and the stored source, when the kept recipe has none), appends
+  notes, and trashes each absorbed recipe with `mergedInto`. A moved cook
+  session keeps showing the document it pinned (`recipes_cook.doc_recipe_id`
+  names the recipe whose revision that is; `mergedFrom` in tool output) and
+  finishes against the kept recipe; a `rebase` moves it to the kept recipe's
+  revisions. A moved adjustment whose step or ingredient is not in the kept
+  recipe stays listed with its own text, flagged `targetMissing`. A cook
+  started on a merged-away id uses the kept recipe's newest revision.
   Reading an absorbed id returns the kept recipe with `redirectedFrom`; a write
   to it is refused with `[merged]`. The pointer outlives the purge
   (`recipes_redirect`).
@@ -94,6 +103,18 @@ Behaviour every tool keeps:
 - Every content write returns the rendered recipe (`text`), so the caller can
   compare it with the source without a second call.
 - Bulk work takes explicit ids. There is no "everything matching".
+- Every write that is logged returns its `changeId` (create, edit, replace and
+  revert included), which `recipes_undo` takes.
+- `recipes_search` refuses a tag filter that cannot be a tag name and returns
+  filters that name no registered tag in `unknownTags`, with nearest names.
+- Titles, notes, cook notes, adjustment text, inbox titles and page text are
+  written in the app (which has no login) or taken from web pages. Tool
+  descriptions mark them as untrusted data, never instructions; the review's
+  `issues` are model text derived from such a source.
+- A duplicate is found by the document's `source.url` or by the URL the inbox
+  item was read from; a revision that changes `source.url` is found by the
+  new one. `source.url` must be an `http(s)` address (the format refuses
+  anything else, and the app renders a link only for one).
 
 ### Errors
 
@@ -105,8 +126,12 @@ A failed call is text that starts with a code:
 | `revision_conflict` | `expectedRevision` is stale; names the current revision and what changed since |
 | `op_failed` | An edit operation cannot apply: `ops[1] (set): ...` |
 | `duplicate_source` | A create matches an existing recipe's source URL, inbox item or exact document |
-| `unknown_tag` | A tag is not in the registry; lists the nearest names |
-| `not_found` | Unknown recipe, revision, image, inbox item, session or adjustment; also a write to a trashed recipe |
+| `unknown_tag` | Tags are not in the registry; lists every one with its nearest names |
+| `not_found` | Unknown recipe, revision, image, inbox item, session or adjustment |
+| `trashed` | A write names a recipe in the trash; restore it with `recipes_organize` or `recipes_undo` |
+| `not_undoable` | `recipes_undo` on a finished cook |
+| `too_many` | A limit of the open app surface: 20 open cook sessions, 30 timers in a session, 200 waiting inbox items |
+| `unavailable` | Image processing is busy and timed out; try again |
 | `merged` | A write names a recipe that was merged into another; names where it lives now |
 | `undo_conflict` | Something newer touched what the change touched, or it was already undone |
 | `too_large`, `unsupported_media` | Image input; the limit and the detected type |
@@ -291,8 +316,17 @@ same tokeniser.
   service worker and the manifest are `no-cache`, and a precompressed `.br` or
   `.gz` sibling is served when accepted. When the directory is missing the API
   still works and `/` answers 503 with a plain message.
+- `/assets/snippets/*` (wasm-bindgen snippets, whose path does not change
+  when the file does) is `no-cache`; everything else under `/assets` is
+  immutable.
 - There is no catch-all. Any other path is a 404, as `{"error": "Not found"}`
   under `/api`.
+- The surface is bounded, because it has no login: 20 open cook sessions and
+  200 waiting inbox items (429 beyond), 30 timers in a session, 16 open event
+  streams (the 17th gets 503; none is dropped), two uploads and 32 other
+  requests in flight at once (503 with `Retry-After` beyond), and at most ten
+  timer alerts to the phone in any hour (the rest are recorded as suppressed
+  and never sent later).
 - Every response carries a Content-Security-Policy for a wasm app that loads
   only its own files (`script-src 'self' 'wasm-unsafe-eval'`; no inline
   script).
@@ -301,7 +335,11 @@ same tokeniser.
   upload routes take the `X-Fond-Upload` header instead, which a page on
   another origin cannot send without a CORS preflight that Fond never answers.
 - A notes edit carries the revision it was made from. A stale one never
-  overwrites: both texts are kept, the server's first. The app's notes and
+  overwrites: both texts are kept, the server's first (or the longer one alone
+  when it contains the other). Nothing is cut: when the two do not fit in
+  20,000 characters the server's text stays and the op answers `ok: false`.
+  A state change on a merged-away recipe answers `ok: false` (`[merged]`); a
+  note follows the recipe to where it lives. The app's notes and
   state changes are in the change log, so an agent can undo them.
 - Every cook session the server returns carries `doc`, the pinned revision's
   document, so any device renders the recipe the cook started on.
@@ -330,6 +368,17 @@ for every path but its own; the proxy forwards only those paths; and boot
 refuses a `RECIPES_APP_URL` whose host equals the gateway's or PressPods'
 public host. `crates/omni/tests/route_precedence.rs` holds the matrix against
 the real router.
+
+Two refusals come before the app, for any request that names its host. A
+request that names two different hosts (two `Host` headers, or an
+absolute-form URI that disagrees with `Host`) is a 400: no proxy and Omni can
+disagree about where it goes. A request that carries `CF-Connecting-IP` or
+`CF-Ray` is a 403: the app's DNS record is private, so a request that came
+through Cloudflare means that record or the proxy's access list is gone, and
+the app closes instead of answering the world. Boot also refuses a
+`RECIPES_APP_URL` on the host of any origin Omni itself is served on
+(`OMNI_GATEWAY_PUBLIC_URL`, `PRESSPODS_PUBLIC_URL`,
+`ICLOUD_REMINDERS_PUBLIC_ORIGIN`, `RECS_PUBLIC_URL`, `YOUTUBE_REDIRECT_URI`).
 
 `RECIPES_APP_URL` must be an `https://` origin. Outside the container,
 `http://localhost[:port]` and `http://<name>.localhost[:port]` are accepted for
@@ -380,9 +429,15 @@ so the library keeps its own archive.
   moved. It writes `<recipes_dir>/archives/fond-<seq>-<time>.json.gz`: every
   row of every recipe table as plain JSON with a SHA-256 per table and the
   list of image digests. It reads the file back, compares it with what it
-  wrote, and keeps the newest 72.
+  wrote, and keeps the newest 72 by the time in the file name. Applied
+  app-edit ids (`recipes_client_op`) are archived too, so a restored library
+  still applies each of the app's edits once.
 - **Images** need no archive: they are immutable files written atomically, so
   a file-level snapshot of them is always consistent.
+- Before **`RecipesPurge`** removes any recipe for good it writes a verified
+  archive of the whole library to `<recipes_dir>/archives/purge/`, outside the
+  hourly rotation, kept 180 days, and logs how many recipes it removed. A
+  stored source shared by another recipe stays.
 - **`RecipesPurge`**, daily at 04:12, removes recipes trashed 30 days ago
   (keeping the pointer of a merged-away recipe), change-log entries and applied
   app-edit ids older than 30 days, inbox items discarded 30 days ago, uploads

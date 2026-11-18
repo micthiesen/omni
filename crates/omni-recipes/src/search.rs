@@ -8,7 +8,9 @@ use omni_recipe_format::tokens;
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, params_from_iter};
 
-use crate::api::{Card, CookedFilter, SearchInput, SearchOutput, SearchSort, StateFilter};
+use crate::api::{
+    Card, CookedFilter, SearchInput, SearchOutput, SearchSort, StateFilter, UnknownTag,
+};
 use crate::db::{self, RECIPE_COLUMNS, doc_at, images_of, recipe_from_row, tag_name, tags_of};
 use crate::error::{R, sql};
 use crate::library::state_of;
@@ -51,15 +53,43 @@ fn column_expression(column: &str, name: &str) -> Option<String> {
     })
 }
 
-fn tag_names(raw: Option<&Vec<String>>) -> Vec<String> {
-    raw.into_iter()
-        .flatten()
-        .filter_map(|name| tag_name(name).ok())
-        .collect()
+/// The normalised names of a tag filter. A name that cannot be a tag is an
+/// input error; one that is merely unregistered is noted in `unknown`.
+fn tag_names(
+    conn: &Connection,
+    raw: Option<&Vec<String>>,
+    unknown: &mut Vec<UnknownTag>,
+) -> R<Vec<String>> {
+    let mut names = Vec::new();
+    for name in raw.into_iter().flatten() {
+        let name = tag_name(name)?;
+        let registered: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM recipes_tag WHERE name = ?1",
+                rusqlite::params![name],
+                |row| row.get(0),
+            )
+            .map_err(sql)?;
+        if registered == 0 && !unknown.iter().any(|known| known.name == name) {
+            unknown.push(UnknownTag {
+                nearest: crate::tags::nearest(conn, &name)?,
+                name: name.clone(),
+            });
+        }
+        names.push(name);
+    }
+    Ok(names)
 }
 
 fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<SearchOutput> {
     let limit = input.limit.unwrap_or(25).clamp(1, 100);
+    let mut unknown_tags = Vec::new();
+    let all_tags = tag_names(conn, input.tags.as_ref(), &mut unknown_tags)?;
+    let no_tags = tag_names(conn, input.not_tags.as_ref(), &mut unknown_tags)?;
+    let some_tags = match &input.any_tags {
+        Some(any) => Some(tag_names(conn, Some(any), &mut unknown_tags)?),
+        None => None,
+    };
     let cursor = input.cursor.unwrap_or(0);
     let mut matches: Vec<String> = Vec::new();
     matches.extend(input.query.as_deref().and_then(match_expression));
@@ -72,6 +102,7 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
                     total: 0,
                     next_cursor: None,
                     recipes: Vec::new(),
+                    unknown_tags,
                 });
             }
         }
@@ -103,23 +134,20 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
             clauses.push(format!("r.state = {slot}"));
         }
     }
-    for tag in tag_names(input.tags.as_ref()) {
+    for tag in all_tags {
         let slot = bind(Sql::Text(tag));
         clauses.push(format!(
             "EXISTS (SELECT 1 FROM recipes_recipe_tag t WHERE t.recipe_id = r.id AND t.tag = {slot})"
         ));
     }
-    for tag in tag_names(input.not_tags.as_ref()) {
+    for tag in no_tags {
         let slot = bind(Sql::Text(tag));
         clauses.push(format!(
             "NOT EXISTS (SELECT 1 FROM recipes_recipe_tag t WHERE t.recipe_id = r.id AND t.tag = {slot})"
         ));
     }
-    if let Some(any) = &input.any_tags {
-        let slots: Vec<String> = tag_names(Some(any))
-            .into_iter()
-            .map(|tag| bind(Sql::Text(tag)))
-            .collect();
+    if let Some(any) = some_tags {
+        let slots: Vec<String> = any.into_iter().map(|tag| bind(Sql::Text(tag))).collect();
         if slots.is_empty() {
             clauses.push("0".to_owned());
         } else {
@@ -232,6 +260,7 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
         total,
         next_cursor: (cursor + limit < total).then_some(cursor + limit),
         recipes,
+        unknown_tags,
     })
 }
 

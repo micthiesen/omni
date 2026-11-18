@@ -98,7 +98,7 @@ rmcp = { version = "=3.9.0", default-features = false, features = ["base64", "se
 imap-proto = "=0.16.7"
 mail-parser = { version = "=0.11.9", features = ["full_encoding"] }
 mail-builder = "=1.0.0"
-lettre = { version = "=0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "builder"] }
+lettre = { version = "=0.11.24", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "builder"] }
 scraper = "=0.27.0"
 htmd = "=0.5.5"
 dom_smoothie = "=0.18.2"

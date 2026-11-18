@@ -298,6 +298,22 @@ impl Input {
     }
 }
 
+/// Whether `url` is a plain web address: `http://` or `https://`, a host,
+/// and no whitespace or control characters. Anything else (`javascript:`,
+/// `data:`, a bare path) is never stored as a source link nor rendered as one.
+pub fn is_web_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"));
+    rest.is_some_and(|rest| {
+        rest.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '[')
+    }) && url.len() <= 2000
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
 /// Whether `id` matches `^[a-z][a-z0-9_]{0,23}$`.
 pub fn is_valid_id(id: &str) -> bool {
     let mut bytes = id.bytes();
