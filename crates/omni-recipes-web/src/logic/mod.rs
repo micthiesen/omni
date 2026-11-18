@@ -165,33 +165,104 @@ pub fn gallery(record: &RecipeRecord) -> Vec<&omni_api::fond::ImageInfo> {
         .collect()
 }
 
-/// The whole-word columns of a chart step label set vertically in a cell
-/// spanning `rows` rows: one column when the cell is tall enough, more when
-/// not, and `None` when it would take more than three (the label then reads
-/// horizontally). A column never splits a word, so no text can be cut; a word
-/// longer than the cell makes the cell taller.
-pub fn label_columns(label: &str, rows: usize) -> Option<Vec<String>> {
-    // A row is at least one line of 14px text with its padding; a glyph of the
-    // 600-weight label is about 8px along the column.
-    const ROW_PX: usize = 32;
-    const CELL_PADDING_PX: usize = 16;
-    const GLYPH_PX: usize = 8;
-    const MAX_COLUMNS: usize = 3;
-    if rows < 3 {
-        return None;
+/// One chart cell as the column sizing sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChartLabel<'a> {
+    pub c0: usize,
+    pub c1: usize,
+    pub label: &'a str,
+}
+
+const STEP_MIN: f64 = 64.0;
+const STEP_MAX: f64 = 120.0;
+const LEAD_MIN: f64 = 130.0;
+const LEAD_MAX: f64 = 260.0;
+/// Cell padding and border.
+const CELL_PAD: f64 = 17.0;
+/// The advance of a 14px glyph, on average, for when text cannot be
+/// measured: the 600-weight step labels and the regular ingredient labels.
+const GLYPH_BOLD: f64 = 7.9;
+const GLYPH: f64 = 7.3;
+
+/// The width of chart text when it cannot be measured: step labels are bold.
+pub fn estimated_text_width(text: &str, bold: bool) -> f64 {
+    #[allow(clippy::cast_precision_loss)]
+    let chars = text.chars().count() as f64;
+    chars * if bold { GLYPH_BOLD } else { GLYPH }
+}
+
+/// The pixel width of every column of a chart block with `cols` columns
+/// shown in `avail` pixels; column 0 is the ingredient column. All text is
+/// horizontal. A step column is as wide as its label up to 120px, where the
+/// label wraps, and never narrower than 64px or its longest word. The
+/// ingredient column takes what is left, at least 130px. The columns add up
+/// to `avail` whenever they can; when even the narrowest columns do not fit,
+/// they add up to more and the chart scrolls sideways. `text_width` measures
+/// a label in pixels; its second argument says whether the text is bold.
+pub fn chart_widths(
+    cells: &[ChartLabel<'_>],
+    cols: usize,
+    avail: f64,
+    text_width: &dyn Fn(&str, bool) -> f64,
+) -> Vec<f64> {
+    if cols == 0 {
+        return Vec::new();
     }
-    let room = (rows * ROW_PX).saturating_sub(CELL_PADDING_PX) / GLYPH_PX;
-    let mut columns: Vec<String> = Vec::new();
-    for word in label.split_whitespace() {
-        match columns.last_mut() {
-            Some(column) if column.chars().count() + 1 + word.chars().count() <= room => {
-                column.push(' ');
-                column.push_str(word);
+    let steps = cols - 1;
+    let mut pref = vec![0.0_f64; cols];
+    let mut min = vec![0.0_f64; cols];
+    let wanted = |label: &str| {
+        // A pixel to spare, so rounding never pushes a word onto a new line.
+        let px = |text: &str| (text_width(text, true) + CELL_PAD + 1.0).ceil();
+        let pref = px(label).clamp(STEP_MIN, STEP_MAX);
+        let word = label.split_whitespace().map(px).fold(0.0, f64::max);
+        (pref, word.clamp(STEP_MIN, pref))
+    };
+    // Cells in one column first, then the ones that span several.
+    let mut by_span: Vec<&ChartLabel<'_>> = cells.iter().filter(|cell| cell.c0 >= 1).collect();
+    by_span.sort_by_key(|cell| cell.c1 - cell.c0);
+    for cell in by_span {
+        let (cell_pref, cell_min) = wanted(cell.label);
+        let span = cell.c0..=cell.c1.min(cols - 1);
+        #[allow(clippy::cast_precision_loss)]
+        let count = span.clone().count() as f64;
+        for (sizes, needed) in [(&mut pref, cell_pref), (&mut min, cell_min)] {
+            let short = needed - span.clone().map(|c| sizes[c]).sum::<f64>();
+            if short > 0.0 {
+                for c in span.clone() {
+                    sizes[c] += short / count;
+                }
             }
-            _ => columns.push(word.to_owned()),
         }
     }
-    (!columns.is_empty() && columns.len() <= MAX_COLUMNS).then_some(columns)
+    let lead_pref = cells
+        .iter()
+        .filter(|cell| cell.c0 == 0)
+        .map(|cell| (text_width(cell.label, false) + CELL_PAD + 1.0).ceil())
+        .fold(0.0, f64::max)
+        .clamp(LEAD_MIN, LEAD_MAX);
+    let (sum_pref, sum_min) = (pref.iter().sum::<f64>(), min.iter().sum::<f64>());
+    #[allow(clippy::cast_precision_loss)]
+    let count = steps.max(1) as f64;
+    let mut widths = if LEAD_MIN + sum_pref <= avail {
+        // Room to spare: the ingredient column grows to one line of its
+        // longest label, and what is still left widens the steps evenly.
+        let lead = (avail - sum_pref).min(if steps == 0 { avail } else { lead_pref });
+        let extra = (avail - sum_pref - lead) / count;
+        pref.iter().map(|width| width + extra).collect::<Vec<_>>()
+    } else if LEAD_MIN + sum_min <= avail {
+        // Step labels wrap onto more lines, all by the same share.
+        let share = (avail - LEAD_MIN - sum_min) / (sum_pref - sum_min);
+        pref.iter()
+            .zip(&min)
+            .map(|(pref, min)| min + (pref - min) * share)
+            .collect()
+    } else {
+        min
+    };
+    let rest: f64 = widths.iter().skip(1).sum();
+    widths[0] = (avail - rest).max(LEAD_MIN);
+    widths
 }
 
 #[cfg(test)]
@@ -297,27 +368,71 @@ mod tests {
         assert_eq!(countdown(-5), "0:00");
     }
 
+    fn labels<'a>(steps: &[&'a str]) -> Vec<ChartLabel<'a>> {
+        let mut cells = vec![ChartLabel {
+            c0: 0,
+            c1: 0,
+            label: "120 ml (½ cup) olive oil",
+        }];
+        cells.extend(steps.iter().enumerate().map(|(n, label)| ChartLabel {
+            c0: n + 1,
+            c1: n + 1,
+            label,
+        }));
+        cells
+    }
+
     #[test]
-    fn a_vertical_label_keeps_every_word() {
-        // Tall enough: one column.
-        assert_eq!(
-            label_columns("season, dredge 5 min", 8),
-            Some(vec!["season, dredge 5 min".to_owned()])
+    fn a_small_chart_fills_the_width_with_horizontal_columns() {
+        // The vinaigrette on a phone: three steps beside the ingredients.
+        let steps = ["soak shallot 10 min", "add", "shake"];
+        let widths = chart_widths(&labels(&steps), 4, 358.0, &estimated_text_width);
+        assert!(
+            (widths.iter().sum::<f64>() - 358.0).abs() < 0.01,
+            "{widths:?}"
         );
-        // Three rows: whole words, in order, nothing dropped.
-        let columns = label_columns("season, dredge 5 min", 3).unwrap();
-        assert_eq!(columns, ["season,", "dredge 5", "min"]);
-        assert_eq!(columns.join(" "), "season, dredge 5 min");
-        // A long word is never split; it gets a column of its own.
-        assert_eq!(
-            label_columns("caramelise 40 min", 3),
-            Some(vec!["caramelise".to_owned(), "40 min".to_owned()])
+        assert!(widths[0] >= 130.0, "{widths:?}");
+        // The long label wraps in a wide column; short ones stay narrow.
+        assert!(widths[1] > widths[2] && widths[1] <= 120.0, "{widths:?}");
+        assert!(widths[2] >= 64.0 && widths[3] >= 64.0, "{widths:?}");
+        // On a wide screen it still fills the width.
+        let wide = chart_widths(&labels(&steps), 4, 696.0, &estimated_text_width);
+        assert!((wide.iter().sum::<f64>() - 696.0).abs() < 0.01, "{wide:?}");
+        assert!(wide[0] <= 260.0);
+    }
+
+    #[test]
+    fn a_big_chart_scrolls_only_when_its_narrowest_columns_do_not_fit() {
+        let seven = [
+            "heat oven",
+            "whisk",
+            "cream 4 min",
+            "beat in",
+            "mix",
+            "fold",
+            "bake 11 min",
+        ];
+        let phone = chart_widths(&labels(&seven), 8, 358.0, &estimated_text_width);
+        assert!(phone.iter().sum::<f64>() > 358.0, "{phone:?}");
+        assert!((phone[0] - 130.0).abs() < 0.01);
+        assert!(
+            phone.iter().skip(1).all(|width| *width >= 64.0),
+            "{phone:?}"
         );
-        // Too short a cell, or too many columns, reads horizontally.
-        assert_eq!(label_columns("rest 5 min", 2), None);
-        assert_eq!(
-            label_columns("whisk, fold, pour, scrape and level 2 min", 3),
-            None
+        // The same chart fits a phone on its side.
+        let landscape = chart_widths(&labels(&seven), 8, 696.0, &estimated_text_width);
+        assert!(
+            (landscape.iter().sum::<f64>() - 696.0).abs() < 0.01,
+            "{landscape:?}"
         );
+        // A step that spans columns widens them only when they are too narrow.
+        let mut cells = labels(&["add", "shake"]);
+        cells.push(ChartLabel {
+            c0: 1,
+            c1: 2,
+            label: "refrigerate overnight",
+        });
+        let spanning = chart_widths(&cells, 3, 2000.0, &estimated_text_width);
+        assert!(spanning[1] + spanning[2] >= 120.0);
     }
 }

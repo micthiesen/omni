@@ -13,7 +13,7 @@ use crate::error::{R, sql};
 use crate::service::Recipes;
 use crate::tags;
 
-pub const VERSION: &str = "2";
+pub const VERSION: &str = "3";
 
 const TEMPLATE: &str = include_str!("guide.md");
 /// The worked example: chicken piccata as a stored document.
@@ -171,8 +171,8 @@ mod tests {
         assert_eq!(
             (VERSION, crate::db::sha256_hex(text().as_bytes()).as_str()),
             (
-                "2",
-                "e4fb5273a8c7a46b5afdd3b1daadf9508bffbf0a9909b38eb0f559721ab300d7"
+                "3",
+                "c25122acfcb7748c16d0ef27bac996d90e4ae65f205998318760990cb3fa5f0f"
             )
         );
     }

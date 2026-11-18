@@ -1,5 +1,6 @@
 //! Synthetic recipes for `--preview`, so the recipe app has a library to
-//! show when `RECIPES_APP_URL` is set: the four sample recipes of the format,
+//! show when `RECIPES_APP_URL` is set: the four sample recipes of the format
+//! and a small three-step one,
 //! created through the same service the tools use. The first also gets what
 //! the app's other screens need: notes, a stored source text, one finished
 //! cook with a photo and an adjustment, and there is one photo waiting in the
@@ -11,7 +12,7 @@ use omni_recipes::cook::{Append, Start};
 use omni_recipes::db::Actor;
 use omni_runtime::AppContext;
 
-const SAMPLES: [(&str, &[&str]); 4] = [
+const SAMPLES: [(&str, &[&str]); 5] = [
     (
         omni_recipes::guide::EXAMPLE,
         &["main", "italian", "chicken", "weeknight"],
@@ -27,6 +28,10 @@ const SAMPLES: [(&str, &[&str]); 4] = [
     (
         include_str!("preview_recipes/enchiladas.json"),
         &["main", "mexican", "chicken"],
+    ),
+    (
+        include_str!("preview_recipes/mustard-vinaigrette.json"),
+        &["vegetarian"],
     ),
 ];
 

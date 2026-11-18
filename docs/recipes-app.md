@@ -105,14 +105,35 @@ The Finish sheet also offers "Discard this cook", which asks once more and
 then appends an `abandon` event: the session leaves "Cooking now", nothing is
 logged and the recipe's cook count is unchanged.
 
-**Chart labels.** A step cell spanning three or more rows sets its label
-vertically, as whole-word columns (`logic::label_columns`): one column when
-the cell is tall enough, up to three otherwise, each a `nowrap` box so no
-text can be cut, and a label needing more reads horizontally. On a wide
-viewport (landscape, or at least 700 px) a chart block lies flat, with every
-label horizontal, unless that makes the block wider than the space it has.
-On a short landscape screen Cook moves into the top bar so it never covers
-the chart.
+Leaving cook mode with the close button asks what to do with the cook:
+"Keep for later" (the session stays under "Cooking now"), "Discard this cook"
+(one more confirmation, then `abandon`) or Cancel.
+
+**Amounts.** The one edit of a recipe the app makes is the amount of an
+ingredient (`ui/amount.rs`). Each ingredient line with an amount has a pencil;
+in cook mode the Adjust sheet of a Gather line or a step offers "Change
+amount of … in recipe…" below the session-only adjustment, and says which is
+which. The sheet takes a quantity ("2", "1.5", "1 1/2", "1½";
+`omni_recipe_format::parse_qty`), a unit from the known units, "(count)" or
+the ingredient's own, and the quick buttons ½×, ¾×, 1¼× and 2×; it previews
+the ingredient line and saves only what the format's validator accepts. The
+amount is always the recipe's as written: on a scaled page the sheet says so.
+Saving puts the new revision on screen at once (`outbox::with_amount`, the
+same `amount_ops` the server runs) and queues a `ClientOpKind::Amount`; a
+sync that lands first has the queued change laid over it. A ten-second Undo
+toast sends the old amount back as another op. A refusal from the server
+restores the recipe it sends and shows its reason.
+
+**Chart columns.** Every chart label is horizontal. `logic::chart_widths`
+sizes the columns of each block for the width the block really has (measured,
+and again on resize), with label widths measured on a canvas in the chart's
+font: a step column is as wide as its label up to 120px, where the label
+wraps, and never narrower than 64px or its longest word; the ingredient
+column takes what is left, at least 130px, and when there is still room the
+steps share it, so a small chart fills the width. Only when even the
+narrowest columns do not fit does the block get wider than the screen and
+scroll sideways under the sticky ingredient column. On a short landscape
+screen Cook moves into the top bar so it never covers the chart.
 
 **Images.** `/img/*` and `/src/*` are immutable and cached by the service
 worker, cache-first, in `fond-img-v1`. After each sync the page asks the
@@ -180,15 +201,18 @@ FOND_DIST=../dist npx playwright test
 ```
 
 The mock server (Python standard library only) implements the contract in
-memory, seeded with the four golden recipes of `omni-recipe-format`, and has
+memory, seeded with the four golden recipes of `omni-recipe-format` and the
+preview seed's small three-step recipe, and has
 `/__mock/*` helpers to play an agent (`adjust`, `revise`, `import`, `reset`).
 
 The browser tests run in WebKit at iPhone size and cover the library, search,
 the tag filter, both recipe views (asserting `rowspan`/`colspan` and that
-every chart table is tiled, and
-that no step label is cut, upright or in landscape), scaling, notes, archive
-and delete with undo, cook mode in all three tabs with adjust, timer, reload
-and finish, discarding a cook, the inbox
+every chart table is tiled), the chart of every recipe in the library in the
+recipe view and in cook mode (no vertical or rotated text, no label that does
+not fit or breaks inside a word, a table that fills its container unless it
+scrolls), scaling, notes, archive and delete with undo, cook mode in all three
+tabs with adjust, timer, reload and finish, leaving and discarding a cook,
+changing an amount (recipe view, scaled page, cook mode, offline), the inbox
 upload, the manifest and icons, and the app offline with writes sent on
 reconnect. `mock-only.spec.js` adds what needs the mock (it runs when
 `FOND_DIST` names the served dist directory): the update flow, a recipe revised
@@ -199,7 +223,7 @@ a real Omni:
 
 ```bash
 FOND_BASE_URL=https://recipes.syas.ca FOND_E2E_SKIP_FINISH=1 FOND_E2E_SKIP_INBOX=1 \
-  FOND_RECIPE_CHART="…" FOND_RECIPE_COOK="…" npx playwright test
+  FOND_E2E_SKIP_AMOUNT=1 FOND_RECIPE_CHART="…" FOND_RECIPE_COOK="…" npx playwright test
 ```
 
 Against the real server locally, use its preview (`docs/recipes.md`, "Running
@@ -212,6 +236,11 @@ another origin.
 
 Tests that change data put it back. Two cannot (a finished cook stays in the
 cook history; an uploaded photo waits for an agent) and are skipped with the
-two switches above. The offline test leaves one open session with nothing
-checked, which the server's idle close ends. `FOND_SHOTS=<dir>` writes light
+two switches above. Every session a test starts and does not finish is
+discarded (`abandon`), so no run leaves a cook open; the chart test skips cook
+mode for a recipe that already has an open session, which is not its to
+discard. The amount tests put the amount back, but each change and each undo
+is a revision in the recipe's history: `FOND_E2E_SKIP_AMOUNT=1` skips them,
+and `FOND_RECIPE_AMOUNT` and `FOND_AMOUNT_INGREDIENT` name the recipe and the
+ingredient id they edit (an ingredient whose amount the step text quotes). `FOND_SHOTS=<dir>` writes light
 and dark screenshots of each screen.

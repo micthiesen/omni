@@ -880,6 +880,71 @@ pub(crate) fn write_revision(
     Ok(revision)
 }
 
+/// The app's one content edit: a new amount for one ingredient, written as
+/// a revision through the same path as an agent's edit. `Ok(Err(text))` is a
+/// refusal to show the cook; nothing was written.
+pub(crate) fn app_amount(
+    conn: &Connection,
+    now: i64,
+    row: &RecipeRow,
+    ingredient: &str,
+    qty: f64,
+    unit: Option<&str>,
+    base_revision: u32,
+) -> R<Result<(), String>> {
+    const MOVED: &str = "the recipe changed; reload and try again";
+    let head = doc_at(conn, &row.id, row.head_rev)?;
+    // The cook saw an older revision: the change still stands when the
+    // amount they were looking at is the amount the recipe has now.
+    if base_revision < row.head_rev {
+        let amount = |doc: &RecipeDoc| {
+            omni_recipe_format::Index::build(doc)
+                .ingredient(ingredient)
+                .map(|found| (found.qty, found.unit.clone()))
+        };
+        let seen = match doc_at(conn, &row.id, base_revision) {
+            Ok(doc) => amount(&doc),
+            Err(RecipesError::Rejected { .. }) => None,
+            Err(other) => return Err(other),
+        };
+        if seen.is_none() || seen != amount(&head) {
+            return Ok(Err(MOVED.to_owned()));
+        }
+    }
+    let ops = match omni_recipe_format::amount_ops(&head, ingredient, qty, unit) {
+        Ok(ops) => ops,
+        Err(refused) => return Ok(Err(refused.to_string())),
+    };
+    if ops.is_empty() {
+        return Ok(Ok(()));
+    }
+    let write = ContentWrite {
+        id: row.id.clone(),
+        expected: row.head_rev,
+        summary: format!(
+            "App: {}",
+            omni_recipe_format::amount_summary(&head, ingredient, qty, unit)
+        ),
+        resolves: Vec::new(),
+        kind: ContentKind::Edit(ops),
+    };
+    // Everything `content_tx` refuses, it refuses before it writes.
+    match content_tx(conn, now, write, &Actor::app(), false) {
+        Ok(_) => Ok(Ok(())),
+        Err(RecipesError::Rejected { code, message }) => Ok(Err(if code == "invalid_recipe" {
+            // The first problem line, without its number.
+            message
+                .lines()
+                .nth(1)
+                .map_or(message.as_str(), |line| line.trim_start_matches("1. "))
+                .to_owned()
+        } else {
+            message
+        })),
+        Err(other) => Err(other),
+    }
+}
+
 fn content_tx(
     conn: &Connection,
     now: i64,

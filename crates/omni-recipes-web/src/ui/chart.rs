@@ -1,5 +1,6 @@
 //! The chart as an HTML table. The layout is `omni_recipe_format::chart_blocks`;
-//! this only turns cell rectangles into `rowspan`/`colspan` and adds taps.
+//! this turns cell rectangles into `rowspan`/`colspan`, sizes the columns for
+//! the width at hand and adds taps. All text is horizontal.
 
 use std::sync::Arc;
 
@@ -7,8 +8,9 @@ use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
 use omni_recipe_format::{Cell, CellKind, RecipeDoc, chart_blocks};
+use wasm_bindgen::JsCast;
 
-use crate::logic::label_columns;
+use crate::logic::{ChartLabel, chart_widths, estimated_text_width};
 use crate::platform::window;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,14 +20,39 @@ pub enum CellMark {
     Ready,
 }
 
-/// A viewport with room for charts to read horizontally: a phone on its side,
-/// or anything at least 700px wide.
-fn viewport_is_wide() -> bool {
-    let size = |value: Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue>| {
-        value.ok().and_then(|value| value.as_f64()).unwrap_or(0.0)
-    };
-    let (width, height) = (size(window().inner_width()), size(window().inner_height()));
-    width > height || width >= 700.0
+/// The width a chart most likely has before it is measured: the page column
+/// less its gutters.
+fn likely_width() -> f64 {
+    let width = window()
+        .inner_width()
+        .ok()
+        .and_then(|value| value.as_f64())
+        .unwrap_or(390.0);
+    width.min(760.0) - 32.0
+}
+
+/// Measures chart text with the font the chart is set in (`.chart` in
+/// app.css), so a column is exactly as wide as its longest word needs.
+fn text_measure() -> impl Fn(&str, bool) -> f64 {
+    const FAMILY: &str = "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif";
+    let context = crate::platform::document()
+        .create_element("canvas")
+        .ok()
+        .and_then(|canvas| canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+        .and_then(|canvas| canvas.get_context("2d").ok().flatten())
+        .and_then(|context| context.dyn_into::<web_sys::CanvasRenderingContext2d>().ok());
+    move |text, bold| {
+        let measured = context.as_ref().and_then(|context| {
+            context.set_font(&format!("{} 14px {FAMILY}", if bold { 600 } else { 400 }));
+            context
+                .measure_text(text)
+                .ok()
+                .map(|metrics| metrics.width())
+        });
+        measured
+            .filter(|width| *width > 0.0)
+            .unwrap_or_else(|| estimated_text_width(text, bold))
+    }
 }
 
 fn span(count: usize) -> Option<String> {
@@ -46,18 +73,13 @@ fn cell_view(
     // first column plus an empty stretch, so the label stays put while the
     // table scrolls sideways.
     let split = !is_step && cell.c0 == 0 && cols > 1;
-    // Tall step cells set their text vertically, as the original notation
-    // does, which keeps wide charts narrow.
-    let columns = is_step.then(|| label_columns(&cell.label, rows)).flatten();
-    let vertical = columns.is_some();
     let td = |lead: bool, filler: bool| {
         let class = format!(
-            "{}{}{}{}{}",
+            "{}{}{}{}",
             cell.kind.as_str(),
             if cell.optional { " optional" } else { "" },
             if lead { " lead" } else { "" },
             if filler { " fill" } else { "" },
-            if vertical { " vertical" } else { "" },
         );
         let (marked, tapped) = (cell.clone(), cell.clone());
         let state = move || mark.map_or(CellMark::None, |mark| mark.run(marked.clone()));
@@ -76,7 +98,6 @@ fn cell_view(
                 class:ready=move || ready() == CellMark::Ready
                 class:tap=tappable
                 data-key=cell.key.clone()
-                style=format!("--rows:{rows}")
                 rowspan=span(rows)
                 colspan=colspan
                 on:click=move |_| {
@@ -85,24 +106,7 @@ fn cell_view(
                     }
                 }
             >
-                {(!filler).then(|| match &columns {
-                    // The spaces between columns keep the cell's text equal to
-                    // its label, and separate the words when it lies flat.
-                    Some(columns) => view! {
-                        <span class="cols">
-                            {columns
-                                .iter()
-                                .enumerate()
-                                .map(|(n, column)| {
-                                    let gap = if n + 1 < columns.len() { " " } else { "" };
-                                    view! { <span>{format!("{column}{gap}")}</span> }
-                                })
-                                .collect_view()}
-                        </span>
-                    }
-                    .into_any(),
-                    None => view! { <span>{cell.label.clone()}</span> }.into_any(),
-                })}
+                {(!filler).then(|| view! { <span>{cell.label.clone()}</span> })}
             </td>
         }
         .into_any()
@@ -127,27 +131,39 @@ pub fn Chart(
     #[prop(optional)]
     leaf_taps: bool,
 ) -> impl IntoView {
-    let wide = RwSignal::new(viewport_is_wide());
-    let resized = window_event_listener(ev::resize, move |_| wide.set(viewport_is_wide()));
-    on_cleanup(move || resized.remove());
+    let resized = RwSignal::new(0_u32);
+    let listener = window_event_listener(ev::resize, move |_| resized.update(|n| *n += 1));
+    on_cleanup(move || listener.remove());
+    let measure = StoredValue::new_local(text_measure());
     chart_blocks(&doc, factor)
         .into_iter()
         .map(|block| {
-            // On a wide viewport a block lies flat (every label horizontal)
-            // unless that makes it wider than the space it has.
-            let flat = RwSignal::new(false);
-            let scroller = NodeRef::<html::Div>::new();
+            // The block is laid out for the width it really has: measured
+            // once it is in the page and again whenever the window changes.
+            let avail = RwSignal::new(likely_width());
+            let figure = NodeRef::<html::Figure>::new();
             Effect::new(move |_| {
-                flat.set(wide.get());
-                if wide.get() {
-                    request_animation_frame(move || {
-                        if let Some(node) = scroller.get_untracked()
-                            && node.scroll_width() > node.client_width() + 1
-                        {
-                            flat.set(false);
-                        }
-                    });
+                resized.track();
+                if let Some(node) = figure.get() {
+                    let width = f64::from(node.client_width());
+                    if width > 0.0 && (width - avail.get_untracked()).abs() > 0.5 {
+                        avail.set(width);
+                    }
                 }
+            });
+            let sized = StoredValue::new((block.cells.clone(), block.cols));
+            let widths = Memo::new(move |_| {
+                sized.with_value(|(cells, cols)| {
+                    let labels: Vec<ChartLabel<'_>> = cells
+                        .iter()
+                        .map(|cell| ChartLabel {
+                            c0: cell.c0,
+                            c1: cell.c1,
+                            label: &cell.label,
+                        })
+                        .collect();
+                    measure.with_value(|measure| chart_widths(&labels, *cols, avail.get(), measure))
+                })
             });
             let rows = (0..block.rows)
                 .map(|row| {
@@ -162,15 +178,24 @@ pub fn Chart(
                 })
                 .collect_view();
             view! {
-                <figure class="chart-block" class:flat=move || flat.get()>
+                <figure class="chart-block" node_ref=figure>
                     {(block.title.is_some() || block.note.is_some()).then(|| view! {
                         <figcaption>
                             {block.title.clone()}
                             {block.note.clone().map(|note| view! { <small>{note}</small> })}
                         </figcaption>
                     })}
-                    <div class="chart-scroll" node_ref=scroller>
-                        <table class="chart"><tbody>{rows}</tbody></table>
+                    <div class="chart-scroll">
+                        <table class="chart" style=move || format!("width:{:.1}px", widths.get().iter().sum::<f64>())>
+                            <colgroup>
+                                {move || widths
+                                    .get()
+                                    .into_iter()
+                                    .map(|width| view! { <col style=format!("width:{width:.1}px")/> })
+                                    .collect_view()}
+                            </colgroup>
+                            <tbody>{rows}</tbody>
+                        </table>
                     </div>
                 </figure>
             }

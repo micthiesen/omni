@@ -1,5 +1,6 @@
 //! The screens and the pieces they share.
 
+mod amount;
 mod chart;
 mod cook;
 mod inbox;

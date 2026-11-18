@@ -1,0 +1,33 @@
+{
+  "title": "Mustard Vinaigrette",
+  "summary": "A small jar dressing: the shallot soaks in the vinegar first, then everything is shaken together.",
+  "yield": { "qty": 6, "unit": "servings" },
+  "source": { "kind": "original", "name": "Test case: a small recipe with three steps" },
+  "components": [
+    {
+      "id": "vinaigrette",
+      "ingredients": [
+        { "id": "shallot", "qty": 1, "name": "shallot", "prep": "finely chopped" },
+        { "id": "vinegar", "qty": 3, "unit": "tbsp", "name": "red wine vinegar" },
+        { "id": "salt", "qty": 0.5, "unit": "tsp", "name": "kosher salt" },
+        { "id": "mustard", "qty": 1, "unit": "tbsp", "name": "Dijon mustard" },
+        { "id": "oil", "qty": 120, "unit": "ml", "name": "olive oil", "alt": { "qty": 0.5, "unit": "cup" } }
+      ],
+      "steps": [
+        { "id": "soak", "action": "soak shallot", "output": "soaked shallot",
+          "inputs": [ { "ref": "shallot" }, { "ref": "vinegar" }, { "ref": "salt" } ],
+          "time": { "min": 10, "attention": "passive" },
+          "text": "Put {shallot} in a jar with {vinegar} and {salt}. Leave it for {time} to soften." },
+        { "id": "add", "action": "add", "output": "jar of dressing",
+          "inputs": [ { "ref": "soak" }, { "ref": "mustard" }, { "ref": "oil" } ],
+          "time": { "min": 1, "attention": "active" },
+          "text": "Add {mustard} and {oil} to {soak}." },
+        { "id": "shake", "action": "shake", "output": "vinaigrette",
+          "inputs": [ { "ref": "add" } ],
+          "time": { "min": 1, "attention": "active" },
+          "until": "thick and creamy",
+          "text": "Close the jar and shake {add} hard until it comes together, about {time}." }
+      ]
+    }
+  ]
+}

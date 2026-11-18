@@ -153,7 +153,9 @@ fn apply_op(
 ) -> R<(bool, Option<String>, Option<String>)> {
     let refuse = |message: &str| Ok((false, Some(message.to_owned()), None));
     let target = match &op.kind {
-        ClientOpKind::Notes { recipe_id, .. } | ClientOpKind::State { recipe_id, .. } => recipe_id,
+        ClientOpKind::Notes { recipe_id, .. }
+        | ClientOpKind::State { recipe_id, .. }
+        | ClientOpKind::Amount { recipe_id, .. } => recipe_id,
     };
     // An op on a recipe that was merged away lands on the recipe it became.
     let Ok((row, redirected)) = recipe_for_read(conn, target) else {
@@ -161,7 +163,7 @@ fn apply_op(
     };
     // A note follows the recipe to where it lives now. A state change does
     // not: archiving or deleting the absorbed copy must never hit the kept one.
-    if redirected.is_some() && matches!(op.kind, ClientOpKind::State { .. }) {
+    if redirected.is_some() && !matches!(op.kind, ClientOpKind::Notes { .. }) {
         return refuse("[merged] the recipe was merged into another");
     }
     let ids = [row.id.clone()];
@@ -216,6 +218,27 @@ fn apply_op(
                     after,
                 },
             )?;
+        }
+        ClientOpKind::Amount {
+            ingredient_id,
+            qty,
+            unit,
+            base_revision,
+            ..
+        } => {
+            // A refusal answers with the recipe as it is, so the app can put
+            // back what it showed.
+            if let Err(message) = crate::library::app_amount(
+                conn,
+                now,
+                &row,
+                ingredient_id,
+                *qty,
+                unit.as_deref(),
+                *base_revision,
+            )? {
+                return Ok((false, Some(message), Some(row.id)));
+            }
         }
         ClientOpKind::State { state, .. } => {
             let wanted = match state {

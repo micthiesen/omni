@@ -12,6 +12,7 @@ use omni_recipe_format::{
     list_view, meanwhile, step_inputs,
 };
 
+use super::amount::{AmountSheet, AmountTarget};
 use super::chart::{CellMark, Chart};
 use super::recipe::segments_view;
 use super::{Connection, Link, Sheet, back, icon, remaining, replace};
@@ -33,6 +34,9 @@ struct Target {
     id: String,
     title: String,
     original: String,
+    /// Ingredients whose amount in the recipe itself can be changed from
+    /// here: id and name.
+    amounts: Vec<(String, String)>,
 }
 
 /// What every piece of the cook screen shares. The stored values belong to
@@ -69,6 +73,21 @@ impl Ctx {
     fn open_adjust(self, target: Target) {
         self.target.set(Some(target));
         self.adjusting.set(true);
+    }
+
+    /// Those of `ids` that are ingredients with an amount, with their names.
+    fn amounts(self, ids: &[String]) -> Vec<(String, String)> {
+        let doc = self.doc.get_value();
+        let ix = Index::build(&doc);
+        let mut found: Vec<(String, String)> = Vec::new();
+        for id in ids {
+            if let Some(ingredient) = ix.ingredient(id).filter(|i| i.qty.is_some())
+                && !found.iter().any(|(seen, _)| seen == id)
+            {
+                found.push((ingredient.id.clone(), ingredient.name.clone()));
+            }
+        }
+        found
     }
 
     /// "Ragù: simmer" in a recipe with several components, else "simmer".
@@ -172,6 +191,7 @@ fn gather(ctx: Ctx) -> impl IntoView {
                                     id: edit_id.clone(),
                                     title: "Adjust ingredient".to_owned(),
                                     original: edit_original.clone(),
+                                    amounts: ctx.amounts(std::slice::from_ref(&edit_id)),
                                 })>{icon("edit")}</button>
                             </div>
                             {adjust_notes(ctx, line.id.clone(), line.text.clone())}
@@ -316,6 +336,11 @@ fn step_card(ctx: Ctx) -> impl IntoView {
             }
         });
         let (done_id, edit_id, edit_text) = (current.clone(), current.clone(), listed.text.clone());
+        let edit_inputs: Vec<String> = step
+            .inputs
+            .iter()
+            .map(|input| input.r#ref.clone())
+            .collect();
         let go_next = next.clone();
         let next_line = next.as_ref().map(|id| ctx.step_label(id));
         Some(view! {
@@ -339,6 +364,7 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                         id: edit_id.clone(),
                         title: "Adjust step".to_owned(),
                         original: edit_text.clone(),
+                        amounts: ctx.amounts(&edit_inputs),
                     })>{icon("edit")}"Adjust"</button>
                     {if is_done {
                         view! {
@@ -393,6 +419,10 @@ pub fn CookPage(id: String) -> impl IntoView {
     let adjusting = RwSignal::new(false);
     let finishing = RwSignal::new(false);
     let discarding = RwSignal::new(false);
+    let leaving = RwSignal::new(false);
+    let leave_discarding = RwSignal::new(false);
+    let amount_open = RwSignal::new(false);
+    let amount_target = RwSignal::new(None::<AmountTarget>);
     let showing_original = RwSignal::new(None::<String>);
     let adjust_area = NodeRef::<html::Textarea>::new();
     let finish_note = NodeRef::<html::Input>::new();
@@ -472,6 +502,8 @@ pub fn CookPage(id: String) -> impl IntoView {
         send(CookEventKind::Abandon {});
         discarding.set(false);
         finishing.set(false);
+        leave_discarding.set(false);
+        leaving.set(false);
         replace(store, after);
         store.show_toast("Cook discarded", None);
     };
@@ -479,7 +511,15 @@ pub fn CookPage(id: String) -> impl IntoView {
     view! {
         <main class="page cook">
             <header class="bar">
-                <button class="icon-btn" aria-label="Leave cook mode" on:click=move |_| back(store, recipe_route())>{icon("close")}</button>
+                <button class="icon-btn" aria-label="Leave cook mode" data-testid="leave" on:click=move |_| {
+                    // Only a cook in progress has anything to keep or discard.
+                    if basis.with_untracked(Option::is_some) && !finished.get_untracked() {
+                        leave_discarding.set(false);
+                        leaving.set(true);
+                    } else {
+                        back(store, recipe_route());
+                    }
+                }>{icon("close")}</button>
                 <h1>{move || {
                     session
                         .with(|s| s.as_ref().and_then(|s| store.recipe(&s.recipe_id)))
@@ -592,7 +632,7 @@ pub fn CookPage(id: String) -> impl IntoView {
             }}
         </main>
         <Sheet open=adjusting title=Signal::derive(move || target.get().map(|t| t.title).unwrap_or_default())>
-            <p class="muted">"For this cook only. The recipe itself does not change."</p>
+            <p class="muted">"Adjust is for this cook only. The recipe itself does not change."</p>
             <textarea node_ref=adjust_area class="adjust-text" rows="5" aria-label="Adjusted text"></textarea>
             <div class="sheet-actions">
                 <button class="btn ghost" on:click=move |_| {
@@ -602,6 +642,61 @@ pub fn CookPage(id: String) -> impl IntoView {
                 }>"Reset to original"</button>
                 <button class="btn primary" data-testid="save-adjust" on:click=save_adjustment>"Save"</button>
             </div>
+            {move || {
+                let amounts = target.get().map(|target| target.amounts).unwrap_or_default();
+                let recipe = session.with(|s| s.as_ref().map(|s| s.recipe_id.clone()));
+                (!amounts.is_empty()).then(|| view! {
+                    <div class="recipe-change">
+                        <p class="muted">"Or change the recipe from now on:"</p>
+                        {amounts
+                            .into_iter()
+                            .map(|(ingredient, name)| {
+                                let recipe = recipe.clone();
+                                view! {
+                                    <button class="btn ghost" data-testid="change-amount" on:click=move |_| {
+                                        if let Some(recipe) = recipe.clone() {
+                                            amount_target.set(Some(AmountTarget {
+                                                recipe,
+                                                ingredient: ingredient.clone(),
+                                            }));
+                                            adjusting.set(false);
+                                            amount_open.set(true);
+                                        }
+                                    }>{format!("Change amount of {name} in recipe…")}</button>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                })
+            }}
+        </Sheet>
+        <AmountSheet open=amount_open target=amount_target/>
+        <Sheet open=leaving title="Leave this cook?">
+            <Show
+                when=move || leave_discarding.get()
+                fallback=move || view! {
+                    <div class="menu">
+                        <button data-testid="leave-keep" on:click=move |_| {
+                            leaving.set(false);
+                            back(store, recipe_route());
+                        }>
+                            "Keep for later"
+                            <small>"It stays under Cooking now."</small>
+                        </button>
+                        <button class="danger" data-testid="leave-discard" on:click=move |_| leave_discarding.set(true)>
+                            "Discard this cook"
+                            <small>"Nothing is logged."</small>
+                        </button>
+                        <button data-testid="leave-cancel" on:click=move |_| leaving.set(false)>"Cancel"</button>
+                    </div>
+                }
+            >
+                <p class="muted">"Nothing from this cook is kept, and it does not count as cooked."</p>
+                <div class="sheet-actions">
+                    <button class="btn" on:click=move |_| leave_discarding.set(false)>"Back"</button>
+                    <button class="btn danger" data-testid="leave-discard-confirm" on:click=discard>"Discard"</button>
+                </div>
+            </Show>
         </Sheet>
         <Sheet open=finishing title="Finish cooking">
             {move || {

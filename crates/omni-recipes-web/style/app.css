@@ -310,6 +310,101 @@ img {
   width: 100%;
 }
 
+.menu button small {
+  display: block;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+
+.recipe-change {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.recipe-change .btn {
+  justify-content: flex-start;
+  padding: 10px 16px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.ingredients .line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ingredients .line .txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.edit-amount {
+  width: 36px;
+  height: 36px;
+  margin: -6px -6px -6px 0;
+  color: var(--muted);
+}
+
+.edit-amount svg {
+  width: 18px;
+  height: 18px;
+}
+
+.amount-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.amount-fields select {
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+.amount-quick {
+  display: flex;
+  gap: 8px;
+}
+
+.amount-quick .chip {
+  flex: 1;
+  justify-content: center;
+}
+
+.amount-preview {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 17px;
+}
+
+.amount-preview.muted {
+  background: var(--bg);
+}
+
+.amount-refused {
+  color: var(--danger);
+}
+
+.amount-scaled {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 14.5px;
+}
+
 .make-ahead {
   color: var(--muted);
   font-size: 15px;
@@ -1227,14 +1322,19 @@ body:has(.cta) .stack {
   text-transform: uppercase;
 }
 
+/* It bleeds into the right gutter only: the sticky ingredient column must sit
+   on the scroller's own left edge, and padding there would show the steps
+   sliding past beside it. */
 .chart-scroll {
-  margin: 0 calc(-1 * var(--gutter));
-  padding: 0 var(--gutter) 6px;
+  margin: 0 calc(-1 * var(--gutter)) 0 0;
+  padding: 0 var(--gutter) 6px 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
+/* Column widths come from the <col> elements (logic::chart_widths). */
 .chart {
+  table-layout: fixed;
   border-spacing: 0;
   border-collapse: separate;
   font-size: 14px;
@@ -1247,6 +1347,7 @@ body:has(.cta) .stack {
   border-bottom: 1px solid var(--line-strong);
   background: var(--surface);
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 .chart tr:first-child td {
@@ -1257,14 +1358,10 @@ body:has(.cta) .stack {
   position: sticky;
   left: 0;
   z-index: 1;
-  width: 9.6rem;
-  min-width: 9.6rem;
-  max-width: 9.6rem;
   border-left: 1px solid var(--line-strong);
 }
 
 .chart td.fill {
-  min-width: 14px;
   padding: 0;
   border-left: 0;
 }
@@ -1274,51 +1371,9 @@ body:has(.cta) .stack {
 }
 
 .chart td.step {
-  min-width: 4.4rem;
-  max-width: 7.5rem;
   background: var(--raised);
   font-weight: 600;
   text-align: center;
-}
-
-.chart td.vertical {
-  min-width: 0;
-  max-width: none;
-  padding: 8px 5px;
-}
-
-/* One nowrap box per column of whole words: the cell is sized by boxes it can
-   measure, so a label can never be cut. */
-.chart td.vertical .cols {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-}
-
-.chart td.vertical .cols span {
-  writing-mode: vertical-rl;
-  white-space: nowrap;
-  transform: rotate(180deg);
-}
-
-/* A block with room to spare reads flat: every label horizontal. */
-.chart-block.flat .chart td.step {
-  max-width: 11rem;
-}
-
-.chart-block.flat .chart td.vertical {
-  min-width: 4.4rem;
-  padding: 7px 8px;
-}
-
-.chart-block.flat .chart td.vertical .cols {
-  display: inline;
-}
-
-.chart-block.flat .chart td.vertical .cols span {
-  writing-mode: horizontal-tb;
-  white-space: normal;
-  transform: none;
 }
 
 .chart td.setup {
@@ -1348,7 +1403,7 @@ body:has(.cta) .stack {
   text-decoration: line-through;
 }
 
-.chart td.step.done:not(.vertical) span::before,
+.chart td.step.done span::before,
 .chart td.setup.done span::before {
   content: "✓ ";
   color: var(--good);

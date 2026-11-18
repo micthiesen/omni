@@ -10,6 +10,7 @@ use omni_api::fond::{Adjustment, ImageVariant, Original, RecipeRecord, RecipeSta
 use omni_recipe_format::{Cell, Index, Kind, RecipeDoc, Segment, equipment, list_view};
 use wasm_bindgen::JsCast;
 
+use super::amount::{AmountSheet, AmountTarget};
 use super::chart::Chart;
 use super::{Connection, Link, Sheet, back, icon, navigate, replace};
 use crate::logic::session::is_open;
@@ -225,7 +226,13 @@ fn step_detail(
 }
 
 #[component]
-fn ListBody(recipe: Arc<Recipe>, doc: Arc<RecipeDoc>, factor: f64) -> impl IntoView {
+fn ListBody(
+    recipe: Arc<Recipe>,
+    doc: Arc<RecipeDoc>,
+    factor: f64,
+    /// Opens the amount sheet for an ingredient id.
+    on_amount: Callback<String>,
+) -> impl IntoView {
     let store = use_store();
     let list = list_view(&doc, factor);
     let ix = Index::build(&doc);
@@ -244,9 +251,21 @@ fn ListBody(recipe: Arc<Recipe>, doc: Arc<RecipeDoc>, factor: f64) -> impl IntoV
                         Some(linked) => view! { <Link to=Route::Recipe(linked) class="sub">{label}</Link> }.into_any(),
                         None => line.text.clone().into_any(),
                     };
+                    // Only an ingredient with an amount can have it changed.
+                    let editable = ix
+                        .ingredient(&line.id)
+                        .filter(|ingredient| ingredient.qty.is_some())
+                        .map(|ingredient| (ingredient.id.clone(), ingredient.name.clone()));
                     view! {
                         <li class:optional=line.optional data-ingredient=line.id.clone()>
-                            {text}
+                            <span class="line">
+                                <span class="txt">{text}</span>
+                                {editable.map(|(id, name)| view! {
+                                    <button class="icon-btn quiet edit-amount" data-testid="edit-amount"
+                                        aria-label=format!("Change amount of {name}")
+                                        on:click=move |_| on_amount.run(id.clone())>{icon("edit")}</button>
+                                })}
+                            </span>
                             {last_time(store, &recipe.rec, &line.id)}
                         </li>
                     }
@@ -330,6 +349,8 @@ pub fn RecipePage(id: String) -> impl IntoView {
     );
     let chart = RwSignal::new(false);
     let menu = RwSignal::new(false);
+    let amount_open = RwSignal::new(false);
+    let amount_target = RwSignal::new(None::<AmountTarget>);
     let step_sheet = RwSignal::new(false);
     let step = RwSignal::new(String::new());
     let slide = RwSignal::new(0usize);
@@ -474,12 +495,20 @@ pub fn RecipePage(id: String) -> impl IntoView {
                                             step.set(cell.step);
                                             step_sheet.set(true);
                                         })/>
-                                        <p class="hint">"Tap a step to read it in full. Turn the phone sideways for long charts."</p>
+                                        <p class="hint">"Tap a step to read it in full."</p>
                                     </section>
                                 }
                                 .into_any()
                             } else {
-                                view! { <ListBody recipe=body_recipe.clone() doc=body_doc.clone() factor=factor/> }.into_any()
+                                let recipe_id = body_id.clone();
+                                let on_amount = Callback::new(move |ingredient: String| {
+                                    amount_target.set(Some(AmountTarget {
+                                        recipe: recipe_id.clone(),
+                                        ingredient,
+                                    }));
+                                    amount_open.set(true);
+                                });
+                                view! { <ListBody recipe=body_recipe.clone() doc=body_doc.clone() factor=factor on_amount=on_amount/> }.into_any()
                             }
                         }}
 
@@ -501,6 +530,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         </button>
                     </footer>
                 </main>
+                <AmountSheet open=amount_open target=amount_target/>
                 <Sheet open=menu title="Recipe">
                     <div class="menu">
                         {if archived {

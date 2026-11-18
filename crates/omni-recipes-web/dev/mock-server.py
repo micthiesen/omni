@@ -29,6 +29,13 @@ from urllib.parse import parse_qs, unquote, urlsplit
 HERE = Path(__file__).resolve().parent
 GOLDEN = HERE / "../../omni-recipe-format/tests/golden"
 FIXTURES = HERE / "fixtures"
+# The small sample recipe lives with the preview seed.
+PREVIEW = HERE / "../../omni/src/preview_recipes"
+
+UNITS = [
+    "batch", "bunch", "can", "clove", "cup", "g", "kg", "l", "lb", "ml", "oz", "piece", "pinch",
+    "slice", "sprig", "stalk", "stick", "tbsp", "tsp",
+]
 
 # ---------------------------------------------------------------------------
 # SEEDED RECIPES: id, title (None = the golden doc's own), golden doc
@@ -39,6 +46,7 @@ SEED_RECIPES = [
     ("rcp_enchilada1", None, "enchiladas"),  # "Chicken Enchiladas"
     ("rcp_lasagne001", None, "lasagne-bolognese"),  # "Lasagne alla Bolognese"
     ("rcp_archived01", "Lemon Chicken (old)", "chicken-piccata"),  # archived
+    ("rcp_vinaigret1", None, "mustard-vinaigrette"),  # small: five ingredients, three steps
 ]
 # ---------------------------------------------------------------------------
 
@@ -155,7 +163,10 @@ class State:
         self.lock = threading.RLock()
         self.subscribers = []
         self.docs = {
-            name: json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
+            name: json.loads(
+                next(d / f"{name}.json" for d in (GOLDEN, PREVIEW) if (d / f"{name}.json").exists())
+                .read_text(encoding="utf-8")
+            )
             for name in {golden for _, _, golden in SEED_RECIPES}
         }
         self.fixtures = {name: (FIXTURES / name).read_bytes() for name in FIXTURE_COLORS}
@@ -242,6 +253,12 @@ class State:
                 activeMin=65,
                 totalMin=265,
                 age=9,
+            ),
+            "rcp_vinaigret1": dict(
+                tags=["side"],
+                activeMin=2,
+                totalMin=12,
+                age=3,
             ),
             "rcp_archived01": dict(
                 state="archived",
@@ -453,11 +470,54 @@ class State:
             if op.get("state") not in ("active", "archived", "trashed"):
                 return refuse("unknown state")
             recipe["state"] = op["state"]
+        elif kind == "amount":
+            error = self.set_amount(recipe, op)
+            if error:
+                # A refused amount carries the recipe as it is.
+                return {"id": op["id"], "ok": False, "error": error, "recipe": copy.deepcopy(recipe)}
         else:
             return refuse("unknown op")
         self.touch(recipe)
         after = None if recipe["state"] == "trashed" else copy.deepcopy(recipe)
         return {"id": op["id"], "ok": True, "error": None, "recipe": after}
+
+    def set_amount(self, recipe, op):
+        """One ingredient's quantity and unit, as a new revision. Returns a refusal or None."""
+        qty, unit = op.get("qty"), op.get("unit")
+        if recipe["state"] == "trashed":
+            return "the recipe is in the trash"
+        doc = recipe["doc"]
+        steps = [step for c in doc["components"] for step in c["steps"]]
+        found = [i for c in doc["components"] for i in c["ingredients"] if i["id"] == op.get("ingredientId")]
+        if not found:
+            return "the recipe no longer has this ingredient"
+        ingredient = found[0]
+        if ingredient.get("qty") is None:
+            return "this ingredient has no amount to change"
+        if isinstance(qty, bool) or not isinstance(qty, (int, float)) or not 0 < qty <= 100000:
+            return "the amount must be a number above 0, at most 100000"
+        if unit is not None and unit not in UNITS and unit != ingredient.get("unit"):
+            return "choose one of the listed units"
+        sized = [i for step in steps for i in step["inputs"] if i["ref"] == ingredient["id"] and "qty" in i]
+        if unit == ingredient.get("unit"):
+            if qty == ingredient["qty"]:
+                return None
+            ratio = qty / ingredient["qty"]
+            for used in sized:
+                used["qty"] = round(used["qty"] * ratio, 4)
+            if "alt" in ingredient:
+                ingredient["alt"]["qty"] = round(ingredient["alt"]["qty"] * ratio, 4)
+        else:
+            if sized:
+                return "this ingredient is divided between steps by amount; ask an agent to change its unit"
+            ingredient.pop("alt", None)
+            if unit is None:
+                ingredient.pop("unit", None)
+            else:
+                ingredient["unit"] = unit
+        ingredient["qty"] = qty
+        recipe["revision"] += 1
+        return None
 
     # -- cook sessions ------------------------------------------------------
 

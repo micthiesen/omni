@@ -7,6 +7,8 @@
 //
 //   FOND_E2E_SKIP_FINISH=1   do not finish a cook (it is logged in cook history)
 //   FOND_E2E_SKIP_INBOX=1    do not upload a photo (an agent would import it)
+//   FOND_E2E_SKIP_AMOUNT=1   do not change an amount (each change and its undo
+//                            is a revision in the recipe's history)
 //
 // The only assumptions about the library are named here.
 const RECIPES = {
@@ -16,6 +18,10 @@ const RECIPES = {
   cook: process.env.FOND_RECIPE_COOK || 'Chicken Piccata',
   // A recipe with a stored source snapshot, for the Original section.
   source: process.env.FOND_RECIPE_SOURCE || process.env.FOND_RECIPE_COOK || 'Chicken Piccata',
+  // A recipe and one of its ingredients (by id) whose amount the step text
+  // quotes, for the amount edits.
+  amount: process.env.FOND_RECIPE_AMOUNT || 'Mustard Vinaigrette',
+  ingredient: process.env.FOND_AMOUNT_INGREDIENT || 'salt',
 };
 
 const fs = require('fs');
@@ -53,37 +59,74 @@ async function openRecipe(page, title) {
 // Omni refuses writes that do not come from the app's own origin.
 const sameOrigin = (page) => ({ origin: new URL(page.url()).origin });
 
-// Every step cell of every chart shows its whole label: nothing overflows the
-// cell, and each piece of text lies inside it. Returns the labels that fail.
-const clippedLabels = (page) =>
-  page.locator('[data-testid=chart] td.step').evaluateAll((cells) =>
-    cells
-      .filter((cell) => {
-        const box = cell.getBoundingClientRect();
-        const pieces = [...cell.querySelectorAll('span')].filter((span) => !span.children.length);
-        const inside = pieces.every((piece) => {
-          const rect = piece.getBoundingClientRect();
-          return (
-            rect.width > 0 &&
-            rect.height > 0 &&
-            rect.left >= box.left - 0.5 &&
-            rect.right <= box.right + 0.5 &&
-            rect.top >= box.top - 0.5 &&
-            rect.bottom <= box.bottom + 0.5
-          );
-        });
-        const shown = cell.innerText.replace(/\s+/g, ' ').trim();
-        const label = cell.textContent.replace(/\s+/g, ' ').trim();
-        return (
-          !label ||
-          shown !== label ||
-          !inside ||
-          cell.scrollWidth > cell.clientWidth ||
-          cell.scrollHeight > cell.clientHeight
-        );
-      })
-      .map((cell) => cell.textContent),
-  );
+// What is wrong with the charts on screen, as a list of sentences: text that
+// is not horizontal, a step label that does not fit its cell, a table that
+// leaves its container half empty.
+const chartProblems = (page) =>
+  page.locator('[data-testid=chart]').evaluate((chart) => {
+    const problems = [];
+    for (const element of chart.querySelectorAll('*')) {
+      const style = getComputedStyle(element);
+      if (style.writingMode !== 'horizontal-tb') problems.push(`vertical text: ${element.textContent}`);
+      if (style.transform !== 'none' || (style.rotate && style.rotate !== 'none')) {
+        problems.push(`transformed: ${element.textContent}`);
+      }
+    }
+    for (const cell of chart.querySelectorAll('td.step, td.setup:not(.fill), td.lead')) {
+      const label = cell.textContent.trim();
+      const box = cell.getBoundingClientRect();
+      const text = cell.querySelector('span').getBoundingClientRect();
+      const inside =
+        text.width > 0 &&
+        text.height > 0 &&
+        text.left >= box.left - 0.5 &&
+        text.right <= box.right + 0.5 &&
+        text.top >= box.top - 0.5 &&
+        text.bottom <= box.bottom + 0.5;
+      // A word is never broken across lines, except at a hyphen (only one too
+      // long for any column may be).
+      const node = cell.querySelector('span').firstChild;
+      for (const word of label.matchAll(/[^\s\-–]+[\-–]?/g)) {
+        const range = document.createRange();
+        range.setStart(node, word.index);
+        range.setEnd(node, word.index + word[0].length);
+        const lines = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+        if (lines.size > 1 && word[0].length <= 12) problems.push(`broken word "${word[0]}" in: ${label}`);
+      }
+      if (!label || cell.innerText.trim() !== label) problems.push(`hidden text: ${label}`);
+      if (!inside || cell.scrollWidth > cell.clientWidth || cell.scrollHeight > cell.clientHeight) {
+        problems.push(`does not fit its cell: ${label}`);
+      }
+    }
+    for (const block of chart.querySelectorAll('.chart-block')) {
+      const table = block.querySelector('table.chart').getBoundingClientRect().width;
+      const room = block.clientWidth;
+      const scroller = block.querySelector('.chart-scroll');
+      const scrolls = scroller.scrollWidth > scroller.clientWidth + 1;
+      if (!scrolls && table < room * 0.95) problems.push(`table ${Math.round(table)}px in ${room}px`);
+      if (scrolls && table <= room) problems.push(`scrolls at ${Math.round(table)}px in ${room}px`);
+      const steps = [...block.querySelectorAll('td.step')].map((cell) => cell.getBoundingClientRect().width);
+      if (steps.some((width) => width < 60)) problems.push(`a step column under 60px: ${steps.map(Math.round)}`);
+    }
+    return problems;
+  });
+
+const slug = (title) =>
+  title
+    .normalize('NFD')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+// Leaves cook mode by discarding the session, which logs nothing.
+async function discardCook(page) {
+  await page.locator('[data-testid=leave]').click();
+  await page.locator('[data-testid=leave-discard]').click();
+  await page.locator('[data-testid=leave-discard-confirm]').click();
+  await expect(page.locator('main.recipe h1')).toBeVisible();
+}
+
+const library = async (page) => (await (await page.request.get('/api/sync')).json()).recipes;
 
 const cookCount = async (page, title) => {
   const sync = await (await page.request.get('/api/sync')).json();
@@ -262,11 +305,8 @@ test('a recipe reads as steps and as a chart with merged cells', async ({ page }
     }),
   );
   expect(tiled).toBe(true);
-  // Tall step cells are set vertically, in whole-word columns that are never
-  // cut; the ingredient column is sticky.
-  const vertical = chart.locator('td.step.vertical .cols span').first();
-  expect(await vertical.evaluate((span) => getComputedStyle(span).writingMode)).toBe('vertical-rl');
-  expect(await clippedLabels(page)).toEqual([]);
+  // Every label reads horizontally and fits; the ingredient column is sticky.
+  expect(await chartProblems(page)).toEqual([]);
   expect(await chart.locator('td.lead').first().evaluate((cell) => getComputedStyle(cell).position)).toBe('sticky');
   await chart.locator('table.chart').first().scrollIntoViewIfNeeded();
   await shot(page, 'recipe-chart');
@@ -302,27 +342,8 @@ test('a wide chart scrolls sideways under a pinned ingredient column, and turns 
   await scrollers.first().scrollIntoViewIfNeeded();
   await expect(page.locator('[data-testid=chart] td.step').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  // On its side a chart reads flat: step labels are horizontal unless the
-  // block would then be wider than the screen.
-  await expect(page.locator('[data-testid=chart] .chart-block.flat').first()).toBeVisible();
-  const layout = await page.locator('[data-testid=chart] .chart-block').evaluateAll((blocks) =>
-    blocks.map((block) => {
-      const scroller = block.querySelector('.chart-scroll');
-      const modes = [...block.querySelectorAll('td.step span')]
-        .filter((span) => !span.children.length)
-        .map((span) => getComputedStyle(span).writingMode);
-      return {
-        flat: block.classList.contains('flat'),
-        fits: scroller.scrollWidth <= scroller.clientWidth + 1,
-        horizontal: modes.every((mode) => mode === 'horizontal-tb'),
-      };
-    }),
-  );
-  for (const block of layout) {
-    expect(block.horizontal).toBe(block.flat);
-    if (block.flat) expect(block.fits).toBe(true);
-  }
-  expect(await clippedLabels(page)).toEqual([]);
+  // On its side there is more room and the same rules hold.
+  expect(await chartProblems(page)).toEqual([]);
   // Cook never covers a chart cell, wherever the page is scrolled.
   const cook = page.locator('[data-testid=cook]');
   await expect(cook).toBeVisible();
@@ -343,10 +364,44 @@ test('a wide chart scrolls sideways under a pinned ingredient column, and turns 
   }
   await scrollers.first().scrollIntoViewIfNeeded();
   await shot(page, 'recipe-chart-landscape');
-  // Upright again, tall cells go back to vertical labels.
+  // Upright again, the columns are sized for the narrow screen.
   await page.setViewportSize({ width: 390, height: 664 });
-  await expect(page.locator('[data-testid=chart] .chart-block.flat')).toHaveCount(0);
-  expect(await clippedLabels(page)).toEqual([]);
+  await expect.poll(() => chartProblems(page)).toEqual([]);
+});
+
+test('every recipe has a horizontal chart that fills the width, in the recipe and in cook mode', async ({ page }) => {
+  test.setTimeout(240_000);
+  await openLibrary(page);
+  const recipes = (await library(page)).filter((recipe) => recipe.state === 'active');
+  expect(recipes.length).toBeGreaterThan(0);
+  const openBefore = (await (await page.request.get('/api/sync')).json()).sessions.map((session) => session.id);
+  for (const recipe of recipes) {
+    const title = recipe.doc.title;
+    await page.goto(`/r/${recipe.id}`);
+    await expect(page.locator('main.recipe h1')).toHaveText(title);
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    await page.getByRole('tab', { name: 'Chart' }).click();
+    await expect(page.locator('[data-testid=chart] table.chart').first()).toBeVisible();
+    await expect.poll(() => chartProblems(page), { message: title }).toEqual([]);
+    await page.locator('[data-testid=chart]').scrollIntoViewIfNeeded();
+    await shot(page, `chart-${slug(title)}`);
+
+    // Cook mode draws the same chart. A session someone left open is not
+    // ours to discard, so that recipe is only checked in the recipe view.
+    const cook = page.locator('[data-testid=cook]');
+    if ((await cook.innerText()).trim() !== 'Cook') continue;
+    await cook.click();
+    await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+    await page.getByRole('tab', { name: 'Chart' }).click();
+    await expect(page.locator('[data-testid=chart] table.chart').first()).toBeVisible();
+    await expect.poll(() => chartProblems(page), { message: `${title} in cook mode` }).toEqual([]);
+    await shot(page, `cook-chart-${slug(title)}`);
+    await discardCook(page);
+    await flushed(page);
+  }
+  // Nothing was left cooking.
+  const after = (await (await page.request.get('/api/sync')).json()).sessions.map((session) => session.id);
+  expect(after.sort()).toEqual(openBefore.sort());
 });
 
 test('scaling changes every amount in both views and is remembered', async ({ page }) => {
@@ -596,27 +651,214 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   await expect(page.locator('.cooking-card').filter({ hasText: RECIPES.cook })).toHaveCount(0);
 });
 
-test('a cook started by mistake can be discarded', async ({ page }) => {
+test('a cook started by mistake can be discarded from the close button', async ({ page }) => {
   await openRecipe(page, RECIPES.cook);
   const before = await cookCount(page, RECIPES.cook);
   await page.locator('[data-testid=cook]').click();
   await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+  const cookUrl = page.url();
+  const sessionId = cookUrl.split('/').pop();
   await page.locator('[data-testid=done]').click();
-  await page.locator('[data-testid=finish]').click();
+
+  // The close button asks what to do with the cook. Cancel stays.
+  await page.locator('[data-testid=leave]').click();
   const sheet = page.locator('.sheet.open');
-  // Discarding asks once more before it throws the cook away.
-  await sheet.locator('[data-testid=discard]').click();
-  await expect(sheet).toContainText('does not count as cooked');
+  await expect(sheet).toContainText('Keep for later');
+  await expect(sheet).toContainText('Discard this cook');
+  await shot(page, 'cook-leave');
+  await sheet.locator('[data-testid=leave-cancel]').click();
+  await expect(page.locator('.sheet.open')).toHaveCount(0);
+  await expect(page).toHaveURL(cookUrl);
+  // Keep for later leaves the session open.
+  await page.locator('[data-testid=leave]').click();
+  await page.locator('[data-testid=leave-keep]').click();
+  await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.cook);
+  await expect(page.locator('[data-testid=cook]')).toHaveText('Resume cooking');
+  await page.locator('[data-testid=cook]').click();
+  await expect(page).toHaveURL(cookUrl);
+  // The Finish sheet offers the same discard.
+  await page.locator('[data-testid=finish]').click();
+  await expect(page.locator('.sheet.open [data-testid=discard]')).toBeVisible();
+  await page.locator('.sheet.open').getByRole('button', { name: 'Close' }).click();
+
+  // Discard asks once more, then throws the cook away.
+  await page.locator('[data-testid=leave]').click();
+  await page.locator('[data-testid=leave-discard]').click();
+  await expect(page.locator('.sheet.open')).toContainText('does not count as cooked');
   await shot(page, 'cook-discard');
-  await sheet.locator('[data-testid=discard-confirm]').click();
+  await page.locator('[data-testid=leave-discard-confirm]').click();
   await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.cook);
   await expect(page.locator('[data-testid=cook]')).toHaveText('Cook');
   await flushed(page);
   // Nothing is cooking, and nothing was cooked.
   await page.goto('/');
   await expect(page.locator('[data-testid=grid] a.card').first()).toBeVisible();
-  await expect(page.locator('.cooking-card').filter({ hasText: RECIPES.cook })).toHaveCount(0);
+  await expect(page.locator(`.cooking-card[href$="${sessionId}"]`)).toHaveCount(0);
   expect(await cookCount(page, RECIPES.cook)).toBe(before);
+  const stored = await (await page.request.get(`/api/cook/${sessionId}`)).json();
+  expect(stored.state).toBe('abandoned');
+  expect(stored.events.some((event) => event.type === 'finish')).toBe(false);
+  const sync = await (await page.request.get('/api/sync')).json();
+  expect(sync.sessions.some((session) => session.id === sessionId)).toBe(false);
+});
+
+// The amount tests read one ingredient of one recipe from the server.
+async function amountOf(page, title, ingredientId) {
+  const recipe = (await library(page)).find((found) => found.doc.title === title);
+  const ingredient = recipe.doc.components
+    .flatMap((component) => component.ingredients)
+    .find((found) => found.id === ingredientId);
+  return { id: recipe.id, revision: recipe.revision, qty: ingredient.qty, unit: ingredient.unit ?? null };
+}
+
+test.describe('changing an amount', () => {
+  test.skip(!!process.env.FOND_E2E_SKIP_AMOUNT, 'changing an amount is switched off');
+
+  test('in the recipe: the line and the step change, it survives a reload, and Undo restores it', async ({ page }) => {
+    await openRecipe(page, RECIPES.amount);
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    const before = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    const line = page.locator(`.list .ingredients li[data-ingredient="${RECIPES.ingredient}"] .txt`);
+    const steps = page.locator('.list .step');
+    const lineBefore = await line.innerText();
+    const stepsBefore = (await steps.allInnerTexts()).join('\n');
+
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    const sheet = page.locator('.sheet.open');
+    await expect(sheet).toContainText('This changes the recipe from now on');
+    const field = sheet.locator('[data-testid=amount-qty]');
+    await expect(field).toHaveValue(String(before.qty));
+    await expect(sheet.locator('[data-testid=amount-unit]')).toHaveValue(before.unit ?? '');
+    // Typing nonsense refuses to save and says why.
+    await field.fill('lots');
+    await expect(sheet.locator('[data-testid=amount-refused]')).toBeVisible();
+    await expect(sheet.locator('[data-testid=amount-save]')).toBeDisabled();
+    // Fractions are read, and the quick buttons multiply what is typed.
+    await field.fill('1 1/2');
+    await expect(sheet.locator('[data-testid=amount-preview]')).toContainText('1½');
+    await field.fill(String(before.qty));
+    await sheet.getByRole('button', { name: '2×' }).click();
+    await expect(field).toHaveValue(String(before.qty * 2));
+    await expect(sheet.locator('[data-testid=amount-preview]')).not.toHaveText(lineBefore);
+    await shot(page, 'amount-sheet');
+    await sheet.locator('[data-testid=amount-save]').click();
+
+    // The ingredient line and the step that quotes it both changed.
+    await expect(line).not.toHaveText(lineBefore);
+    const lineAfter = await line.innerText();
+    await expect.poll(async () => (await steps.allInnerTexts()).join('\n')).not.toBe(stepsBefore);
+    const toast = page.locator('[data-testid=toast]');
+    await expect(toast).toContainText('Amount changed');
+    await shot(page, 'amount-changed');
+    await flushed(page);
+    const saved = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(saved.qty).toBe(before.qty * 2);
+    expect(saved.revision).toBe(before.revision + 1);
+    await page.reload();
+    await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.amount);
+    await expect(line).toHaveText(lineAfter);
+
+    // Change it again and take it back with the toast's Undo.
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    await page.locator('.sheet.open [data-testid=amount-qty]').fill(String(before.qty));
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(line).toHaveText(lineBefore);
+    await flushed(page);
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    await page.locator('.sheet.open').getByRole('button', { name: '½×' }).click();
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(line).not.toHaveText(lineBefore);
+    await page.locator('[data-testid=toast]').getByRole('button', { name: 'Undo' }).click();
+    await expect(line).toHaveText(lineBefore);
+    expect((await steps.allInnerTexts()).join('\n')).toBe(stepsBefore);
+    await flushed(page);
+    const restored = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(restored.qty).toBe(before.qty);
+    expect(restored.unit).toBe(before.unit);
+    expect(restored.revision).toBe(before.revision + 4);
+  });
+
+  test('a scaled page edits the amount as written, and says so', async ({ page }) => {
+    await openRecipe(page, RECIPES.amount);
+    const before = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    await page.locator('.scale .seg button', { hasText: /^2$/ }).click();
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    const sheet = page.locator('.sheet.open');
+    await expect(sheet.locator('[data-testid=amount-scaled]')).toContainText('as written');
+    await expect(sheet.locator('[data-testid=amount-qty]')).toHaveValue(String(before.qty));
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    expect((await amountOf(page, RECIPES.amount, RECIPES.ingredient)).revision).toBe(before.revision);
+  });
+
+  test('from cook mode: Adjust is this cook, Change amount is the recipe', async ({ page }) => {
+    await openRecipe(page, RECIPES.amount);
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    const before = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    test.skip((await page.locator('[data-testid=cook]').innerText()).trim() !== 'Cook', 'a cook of this recipe is open');
+    await page.locator('[data-testid=cook]').click();
+    await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+    await page.getByRole('tab', { name: 'Gather' }).click();
+    const row = page.locator('.gather li').filter({ has: page.locator(`.check[data-target="${RECIPES.ingredient}"]`) });
+    await row.getByRole('button', { name: 'Adjust' }).click();
+    const adjust = page.locator('.sheet.open');
+    await expect(adjust).toContainText('Adjust is for this cook only');
+    await expect(adjust).toContainText('Or change the recipe from now on');
+    await shot(page, 'cook-adjust-or-change');
+    await adjust.locator('[data-testid=change-amount]').click();
+    const sheet = page.locator('.sheet.open');
+    await expect(sheet.locator('[data-testid=amount-qty]')).toHaveValue(String(before.qty));
+    await sheet.getByRole('button', { name: '2×' }).click();
+    await sheet.locator('[data-testid=amount-save]').click();
+    await expect(page.locator('[data-testid=toast]')).toContainText('Amount changed');
+    await flushed(page);
+    const saved = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(saved.qty).toBe(before.qty * 2);
+    // The cook keeps the revision it started on and is told there is a newer one.
+    await expect(page.locator('.cook')).toContainText(/updated since you started/i);
+    // Put the amount back and leave nothing cooking.
+    await page.locator('[data-testid=toast]').getByRole('button', { name: 'Undo' }).click();
+    await flushed(page);
+    expect((await amountOf(page, RECIPES.amount, RECIPES.ingredient)).qty).toBe(before.qty);
+    await discardCook(page);
+    await flushed(page);
+  });
+
+  test('offline: the change shows at once and reaches the server on reconnect', async ({ page, context }) => {
+    await openLibrary(page);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+    await openRecipe(page, RECIPES.amount);
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    const before = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    const line = page.locator(`.list .ingredients li[data-ingredient="${RECIPES.ingredient}"] .txt`);
+    const lineBefore = await line.innerText();
+
+    await context.setOffline(true);
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    await page.locator('.sheet.open').getByRole('button', { name: '2×' }).click();
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(line).not.toHaveText(lineBefore);
+    const lineAfter = await line.innerText();
+    await expect(page.locator('[data-testid=connection]')).toContainText(/Offline · \d+ to send/);
+    // The change is stored with its outbox entry: a reload keeps both.
+    await page.reload();
+    await expect(line).toHaveText(lineAfter);
+
+    await context.setOffline(false);
+    await flushed(page);
+    const saved = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(saved.qty).toBe(before.qty * 2);
+    expect(saved.revision).toBe(before.revision + 1);
+    // Put it back.
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    await page.locator('.sheet.open [data-testid=amount-qty]').fill(String(before.qty));
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(line).toHaveText(lineBefore);
+    await flushed(page);
+    expect((await amountOf(page, RECIPES.amount, RECIPES.ingredient)).qty).toBe(before.qty);
+  });
 });
 
 test('the inbox uploads photos as one item', async ({ page }) => {
@@ -704,8 +946,9 @@ test('offline: the app loads, reads and cooks, and sends on reconnect', async ({
   await flushed(page);
   await page.goto(cookUrl);
 
-  // Leave nothing half-cooked behind: undo the check; the idle close ends the session.
-  await page.getByRole('button', { name: 'Previous step' }).click();
-  await page.getByRole('button', { name: 'Not done' }).click();
+  // Leave nothing half-cooked behind: the session is discarded.
+  await discardCook(page);
   await flushed(page);
+  const gone = await (await request.get(`/api/cook/${sessionId}`)).json();
+  expect(gone.state).toBe('abandoned');
 });

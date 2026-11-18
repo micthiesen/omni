@@ -3,6 +3,7 @@
 //! tokeniser. Pure: no I/O and no clock, so the server and the wasm app run
 //! the same code.
 
+pub mod amount;
 pub mod chart;
 pub mod cook;
 pub mod format;
@@ -16,6 +17,9 @@ pub mod text;
 pub mod timeline;
 pub mod validate;
 
+pub use amount::{
+    AmountError, MAX_QTY, amount_ops, amount_summary, parse_qty, qty_text, unit_choices,
+};
 pub use chart::{
     Block, Cell, CellKind, Mark, Marks, chart_ascii, chart_blocks, chart_html, cook_marks,
 };

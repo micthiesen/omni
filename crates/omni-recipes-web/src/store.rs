@@ -505,6 +505,44 @@ impl Store {
         spawn_local(async move { self.pump().await });
     }
 
+    /// Changes one ingredient's amount in the recipe itself. The new revision
+    /// is on screen at once and the server writes the same change from the
+    /// outbox. Returns the amount it replaced, for an undo.
+    pub fn change_amount(
+        self,
+        recipe: &str,
+        ingredient: &str,
+        qty: f64,
+        unit: Option<String>,
+    ) -> Option<(f64, Option<String>)> {
+        let current = self
+            .recipes
+            .with_untracked(|recipes| recipes.get(recipe).cloned())?;
+        let before = current.doc.as_ref().and_then(|doc| {
+            omni_recipe_format::Index::build(doc)
+                .ingredient(ingredient)
+                .and_then(|found| found.qty.map(|qty| (qty, found.unit.clone())))
+        })?;
+        let changed = outbox::with_amount(&current.rec, ingredient, qty, unit.as_deref())?;
+        idb::atomic(|| {
+            self.put_recipe(changed);
+            self.enqueue(Job::Op {
+                op: ClientOp {
+                    id: random_id("op_", 12),
+                    at: now_ms(),
+                    kind: ClientOpKind::Amount {
+                        recipe_id: recipe.to_owned(),
+                        ingredient_id: ingredient.to_owned(),
+                        qty,
+                        unit,
+                        base_revision: current.rec.revision,
+                    },
+                },
+            });
+        });
+        Some(before)
+    }
+
     /// Archives, deletes or brings back. A deleted recipe stays in memory,
     /// hidden, until the next sync drops it, so an undo can show it again.
     pub fn set_state(self, recipe: &RecipeRecord, state: RecipeState) {
@@ -765,7 +803,24 @@ impl Store {
                 let result = net::post_json::<_, OpsResponse>(paths::OPS, &request).await;
                 if let Ok(response) = &result {
                     for (op, answer) in request.ops.iter().zip(&response.results) {
-                        let Some(stored) = answer.recipe.clone().filter(|_| answer.ok) else {
+                        // A refused amount comes back with the recipe as it
+                        // is, which replaces what the app showed ahead of it.
+                        let refused_amount =
+                            !answer.ok && matches!(op.kind, ClientOpKind::Amount { .. });
+                        if refused_amount {
+                            self.show_toast(
+                                format!(
+                                    "The amount was not changed: {}",
+                                    answer.error.as_deref().unwrap_or("the server refused it")
+                                ),
+                                None,
+                            );
+                        }
+                        let Some(stored) = answer
+                            .recipe
+                            .clone()
+                            .filter(|_| answer.ok || refused_amount)
+                        else {
                             continue;
                         };
                         if let ClientOpKind::Notes {

@@ -165,6 +165,11 @@ adjusting change the session. When a cook finishes, each adjustment becomes an o
 the recipe (`recipes_get` lists them). Help during a cook is a session adjustment
 (`recipes_cook_update`), not a recipe edit.
 
+The owner can change one thing in a recipe from the app: the amount (quantity and unit) of one
+ingredient. It arrives as an ordinary revision whose tool is `app` and whose summary reads
+"App: kosher salt 2 tsp → 1 tsp". That is the owner's own decision: build on it, and never revert
+or undo an `app` revision unless the owner asks.
+
 Fold an adjustment into the recipe with `recipes_edit(..., resolves: [adjustmentId])` when the
 owner asks, or when the same adjustment has been made in two separate cooks. One cook may be a
 one-off; the same change made twice is a preference. Dismiss one with a `dismissAdjustment` event.

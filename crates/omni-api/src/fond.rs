@@ -394,13 +394,13 @@ pub struct AppendCookEventsRequest {
 }
 
 /// `POST /api/ops`: the app's record edits, each applied once by `id`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpsRequest {
     pub ops: Vec<ClientOp>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientOp {
     /// Chosen by the client (`op_` plus 12 lowercase letters or digits).
@@ -410,7 +410,7 @@ pub struct ClientOp {
     pub kind: ClientOpKind,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ClientOpKind {
     /// Sets the notes field. When `base_rev` is stale both texts are kept,
@@ -427,6 +427,20 @@ pub enum ClientOpKind {
         recipe_id: String,
         state: RecipeState,
     },
+    /// Changes one ingredient's amount: quantity and unit, nothing else. It
+    /// is written as a new revision. `base_revision` is the revision the
+    /// cook was looking at; when the recipe has moved on, the change still
+    /// applies if that ingredient's amount has not.
+    #[serde(rename_all = "camelCase")]
+    Amount {
+        recipe_id: String,
+        ingredient_id: String,
+        qty: f64,
+        /// Absent for a plain count.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unit: Option<String>,
+        base_revision: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -441,10 +455,12 @@ pub struct OpsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct OpResult {
     pub id: String,
-    /// False when the op can never apply (unknown recipe); the client drops it.
+    /// False when the op can never apply (unknown recipe, a refused amount);
+    /// the client drops it.
     pub ok: bool,
     pub error: Option<String>,
-    /// The recipe after the op, unless it is now trashed.
+    /// The recipe after the op, unless it is now trashed. A refused amount
+    /// change carries the recipe as it is, so the app can show it again.
     pub recipe: Option<RecipeRecord>,
 }
 

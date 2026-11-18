@@ -263,6 +263,27 @@ pub fn pending_state(entries: &[Entry], recipe: &str) -> Option<RecipeState> {
 /// A server copy of a recipe with the app's unsent edits on top, so a sync
 /// that lands before the outbox drains does not undo them on screen.
 pub fn overlay_pending(mut record: RecipeRecord, entries: &[Entry]) -> RecipeRecord {
+    for entry in entries {
+        if let Job::Op {
+            op:
+                ClientOp {
+                    kind:
+                        ClientOpKind::Amount {
+                            recipe_id,
+                            ingredient_id,
+                            qty,
+                            unit,
+                            ..
+                        },
+                    ..
+                },
+        } = &entry.job
+            && *recipe_id == record.id
+            && let Some(changed) = with_amount(&record, ingredient_id, *qty, unit.as_deref())
+        {
+            record = changed;
+        }
+    }
     if let Some(text) = pending_notes(entries, &record.id) {
         record.notes = text.to_owned();
     }
@@ -270,6 +291,31 @@ pub fn overlay_pending(mut record: RecipeRecord, entries: &[Entry]) -> RecipeRec
         record.state = state;
     }
     record
+}
+
+/// `record` with one ingredient's amount changed, as the server will write
+/// it: a new revision of the document. `None` when the change does not apply
+/// or changes nothing.
+pub fn with_amount(
+    record: &RecipeRecord,
+    ingredient: &str,
+    qty: f64,
+    unit: Option<&str>,
+) -> Option<RecipeRecord> {
+    let doc = omni_recipe_format::upgrade(record.format, record.doc.clone()).ok()?;
+    let ops = omni_recipe_format::amount_ops(&doc, ingredient, qty, unit).ok()?;
+    if ops.is_empty() {
+        return None;
+    }
+    let changed = omni_recipe_format::apply_ops(&doc, &ops).ok()?;
+    if !omni_recipe_format::validate(&changed).is_valid() {
+        return None;
+    }
+    let mut record = record.clone();
+    record.doc = serde_json::to_value(&changed).ok()?;
+    record.format = omni_recipe_format::FORMAT;
+    record.revision += 1;
+    Some(record)
 }
 
 /// Client event ids of cook events not yet sent.
@@ -592,6 +638,69 @@ mod tests {
         assert_eq!(shown.notes_rev, 3);
         assert_eq!(pending_state(&queue, "r2"), None);
         assert_eq!(overlay_pending(record("server", 3), &[]).notes, "server");
+    }
+
+    fn amount(id: &str, ingredient: &str, qty: f64, unit: Option<&str>, base: u32) -> ClientOp {
+        ClientOp {
+            id: id.into(),
+            at: 1,
+            kind: ClientOpKind::Amount {
+                recipe_id: "r1".into(),
+                ingredient_id: ingredient.into(),
+                qty,
+                unit: unit.map(str::to_owned),
+                base_revision: base,
+            },
+        }
+    }
+
+    #[test]
+    fn an_unsent_amount_is_a_new_revision_over_a_synced_record() {
+        let mut server = record("", 0);
+        server.doc = serde_json::from_str(include_str!(
+            "../../../omni/src/preview_recipes/mustard-vinaigrette.json"
+        ))
+        .unwrap();
+        let qty = |record: &RecipeRecord, id: &str| {
+            record.doc["components"][0]["ingredients"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|ingredient| ingredient["id"] == id)
+                .unwrap()
+                .clone()
+        };
+        // The edit and its undo are both queued: the record shows the last.
+        let queue = vec![
+            op(1, amount("a", "salt", 1.0, Some("tsp"), 1)),
+            op(2, amount("b", "oil", 60.0, Some("ml"), 2)),
+        ];
+        let shown = overlay_pending(server.clone(), &queue);
+        assert_eq!(shown.revision, 3);
+        assert_eq!(qty(&shown, "salt")["qty"], 1);
+        assert_eq!(qty(&shown, "oil")["qty"], 60);
+        assert_eq!(
+            qty(&shown, "oil")["alt"]["qty"],
+            0.25,
+            "the other measure follows"
+        );
+        // The wire form is what the server reads.
+        assert_eq!(
+            serde_json::to_value(amount("a", "salt", 1.0, Some("tsp"), 1)).unwrap(),
+            serde_json::json!({ "id": "a", "at": 1, "type": "amount", "recipeId": "r1",
+                "ingredientId": "salt", "qty": 1.0, "unit": "tsp", "baseRevision": 1 })
+        );
+        // What cannot apply changes nothing: no amount, no such ingredient,
+        // the same amount, a unit that is not offered.
+        for refused in [
+            amount("c", "nothing", 1.0, None, 1),
+            amount("d", "salt", 0.5, Some("tsp"), 1),
+            amount("e", "salt", 1.0, Some("glug"), 1),
+            amount("f", "salt", 0.0, Some("tsp"), 1),
+        ] {
+            assert_eq!(overlay_pending(server.clone(), &[op(1, refused)]), server);
+        }
+        assert!(with_amount(&server, "salt", 1.0, Some("tsp")).is_some());
     }
 
     #[test]

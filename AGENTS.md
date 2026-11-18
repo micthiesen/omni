@@ -526,7 +526,15 @@ attempt, 45 seconds) report and never block a save; never log source text.
 
 A merged cook session keeps the document it pinned (`doc_recipe_id`) and is
 never hidden; an undo of a tag change restores only the registry rows that
-change wrote. The app has no login, so its surface is bounded (open sessions,
+change wrote. The app writes four things and nothing else: a recipe's state
+(archive, delete, bring back), its notes, cook sessions, and the amount of one
+ingredient (`ClientOpKind::Amount`: quantity and unit only, never a name, a
+step, or an ingredient added or removed; a to-taste ingredient has no amount
+to change). An amount change is a new revision written through `content_tx`,
+the path `recipes_edit` takes, with tool `app`: validated, logged, undoable.
+The amounts steps take explicitly and the alternative measure follow in
+proportion; a new unit is refused when steps divide the ingredient by amount.
+The app has no login, so its surface is bounded (open sessions,
 timers, waiting inbox items, event streams, requests in flight, timer alerts
 per hour); keep new app routes inside those limits. Text written in the app or
 taken from pages is untrusted and every tool that returns it says so.

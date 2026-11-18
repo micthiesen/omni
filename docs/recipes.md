@@ -247,6 +247,37 @@ and notes.
 - `recipes_cook_get` with a `recipeId` lists each cook with the notes taken
   during it (`notes`) as well as the finish note.
 - `rebase` moves a session to a newer revision; state carries over by id.
+
+### Amounts changed in the app
+
+The app makes one content edit: the amount of one ingredient
+(`ClientOpKind::Amount` through `POST /api/ops`, applied once by op id). It
+carries a quantity (finite, above 0, at most 100000) and a unit (one of the
+known units, the ingredient's current unit, or none for a plain count), and
+nothing else: no names, no steps, no ingredients added or removed, and an
+ingredient without a quantity (to taste) cannot be given one.
+
+- The change is built as ordinary edit operations
+  (`omni_recipe_format::amount_ops`) on the head revision and written by the
+  function `recipes_edit` uses: validated, a new revision with tool `app` and
+  a summary such as "App: kosher salt 2 tsp → 1 tsp", the search index, the
+  library sequence and a change-log entry, so `recipes_history` shows it and
+  `recipes_undo` takes it back.
+- With the unit unchanged, the amounts steps take explicitly (`qty` on an
+  input) and the `alt` measure are multiplied by the same ratio, so a split
+  still adds up; `fraction` and `rest` uses need nothing. A new unit drops
+  `alt`, and is refused when any step takes the ingredient by amount.
+- `baseRevision` is the revision the cook was looking at. When the recipe has
+  moved on, the change still applies if that ingredient's quantity and unit
+  are what they were in the base revision; otherwise it is refused with "the
+  recipe changed; reload and try again".
+- A refusal is `ok: false` with one line to show the cook (for a document the
+  validator refuses, its first problem) and the recipe as it is, so the app
+  can put back what it showed. Nothing is written.
+- Open cook sessions keep the revision they pinned, and open adjustments are
+  untouched.
+- The guide tells agents that an `app` revision is the owner's own decision:
+  build on it, and do not revert it unless asked.
 - A finished session refuses an agent's events with `[session_closed]`. The
   app's late events are dropped instead, because its outbox cannot send them
   again differently.
@@ -420,8 +451,9 @@ the app closes instead of answering the world. Boot also refuses a
 local runs.
 
 There is no login. Anyone on the LAN or the VPN can read the recipes and do
-what the app can do: change a recipe's state and notes, run cook sessions and
-upload to the inbox. Those writes are logged and reversible.
+what the app can do: change a recipe's state and notes, change the amount of
+one ingredient, run cook sessions and upload to the inbox. Those writes are
+logged and reversible.
 
 ### Running it locally
 
@@ -431,7 +463,7 @@ RECIPES_APP_URL=http://fond.localhost:8099 cargo run -p omni -- --preview --port
 ```
 
 Open `http://fond.localhost:8099/`. The preview uses a throwaway database and
-recipes directory and seeds the four sample recipes and ten tags. The first
+recipes directory and seeds the four sample recipes, a small three-step one and ten tags. The first
 (Chicken Piccata) also has notes, a stored source text, and one finished cook
 with a drawn placeholder photo and an open adjustment, and one photo waits in
 the inbox, so every screen of the app has something to show
