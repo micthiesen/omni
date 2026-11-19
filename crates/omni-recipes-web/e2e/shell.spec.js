@@ -240,6 +240,28 @@ test.describe('with the keyboard up', () => {
     await sheet.getByRole('button', { name: 'Cancel' }).click();
   });
 
+  test('the Ask Kitchen sheet sits on the keyboard with its field and Submit in view', async ({ page }) => {
+    await page.goto('/requests');
+    await expect(page.locator('main.requests h1')).toHaveText('Requests');
+    // The Requests page is a screen like the others: one area that scrolls.
+    expect(await page.locator('.scroller').count()).toBe(1);
+    expect((await area(page)).max).toBeGreaterThanOrEqual(1);
+    await pullPastBothEnds(page, ['main.requests .bar']);
+    await page.locator('main.requests [data-testid=ask-kitchen]').click();
+    const sheet = page.locator('.sheet.open');
+    await sheet.locator('[data-testid=ask-text]').focus();
+    await keyboard(page, KEYBOARD);
+    const size = page.viewportSize();
+    await expect.poll(async () => Math.round((await sheet.boundingBox()).y + (await sheet.boundingBox()).height)).toBe(
+      size.height - KEYBOARD,
+    );
+    expect((await sheet.boundingBox()).y).toBeGreaterThanOrEqual(0);
+    expect(await fieldAboveKeyboard(page)).toBe(true);
+    await expect(sheet.locator('[data-testid=ask-submit]')).toBeVisible();
+    await keyboard(page, 0);
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
+  });
+
   test('the amount sheet and the recipe notes in cook mode do the same', async ({ page }) => {
     await openRecipe(page, RECIPES.amount);
     test.skip((await page.locator('[data-testid=cook]').innerText()).trim() !== 'Cook', 'a cook of this recipe is open');

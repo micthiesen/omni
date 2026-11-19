@@ -8,13 +8,14 @@ pub mod session;
 use omni_api::common::Ms;
 use omni_api::fond::{RecipeRecord, Tag};
 
-/// The four screens.
+/// The five screens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
     Library,
     Recipe(String),
     Cook(String),
     Inbox,
+    Requests,
     NotFound,
 }
 
@@ -25,6 +26,7 @@ impl Route {
         match parts.as_slice() {
             [] | ["index.html"] => Route::Library,
             ["inbox"] => Route::Inbox,
+            ["requests"] => Route::Requests,
             ["r", id] => Route::Recipe((*id).to_owned()),
             ["cook", id] => Route::Cook((*id).to_owned()),
             _ => Route::NotFound,
@@ -37,6 +39,7 @@ impl Route {
             Route::Recipe(id) => format!("/r/{id}"),
             Route::Cook(id) => format!("/cook/{id}"),
             Route::Inbox => "/inbox".to_owned(),
+            Route::Requests => "/requests".to_owned(),
         }
     }
 }

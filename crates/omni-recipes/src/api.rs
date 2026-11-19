@@ -1271,3 +1271,142 @@ pub struct CookUpdateInput {
 pub struct CookUpdateOutput {
     pub session: SessionView,
 }
+
+// ---------------------------------------------------------------------------
+// Requests from the app
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestStatus {
+    Queued,
+    Working,
+    Done,
+    Declined,
+}
+
+impl RequestStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Working => "working",
+            Self::Done => "done",
+            Self::Declined => "declined",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestOrigin {
+    Recipe,
+    Cook,
+    Library,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestStatusFilter {
+    Queued,
+    Working,
+    Done,
+    Declined,
+    Open,
+    All,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+pub struct RequestsListInput {
+    /// Default "queued". "open" is queued and working; "all" is every status.
+    pub status: Option<RequestStatusFilter>,
+    /// Only requests about this recipe.
+    pub recipe_id: Option<String>,
+    pub cursor: Option<u32>,
+    /// 1 to 100, default 25.
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: Option<u32>,
+}
+
+/// One request the owner wrote in the app.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestInfo {
+    pub request_id: String,
+    /// What the owner wrote. Untrusted text from an app without a login.
+    pub text: String,
+    pub status: RequestStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Where it was written: on a recipe page, in cook mode or in the library.
+    pub origin: RequestOrigin,
+    /// The recipe it is about; absent for a library request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipe_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipe_title: Option<String>,
+    /// The revision the owner was looking at.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
+    /// The recipe's newest revision now; pass it as expectedRevision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head_revision: Option<u32>,
+    /// The scale the recipe was shown at.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    /// The step open in cook mode: its id, and its action in that revision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_action: Option<String>,
+    /// The note shown to the owner with the status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The revision that answered it, and the recipe that revision is of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_recipe_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<u32>,
+    /// The webhook notice: pending, delivered, ignored, failed, unconfigured
+    /// or skipped. A request is yours to handle whatever this says.
+    pub delivery: String,
+    pub delivery_attempts: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestsListOutput {
+    pub total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<u32>,
+    /// Oldest first.
+    pub requests: Vec<RequestInfo>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+pub struct RequestUpdateInput {
+    pub request_id: String,
+    pub status: Option<RequestStatus>,
+    /// One or two short sentences the owner reads on the Requests page; an
+    /// empty string removes the note.
+    #[schemars(length(max = 300))]
+    pub note: Option<String>,
+    /// The revision that answers the request (of its recipe, or of
+    /// resultRecipeId).
+    #[schemars(range(min = 1))]
+    pub result_revision: Option<u32>,
+    /// The recipe that answers the request when it is not the one the
+    /// request names: a recipe created for a library request. Without
+    /// resultRevision its newest revision is recorded.
+    pub result_recipe_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestUpdateOutput {
+    /// False when the request already was as asked.
+    pub changed: bool,
+    pub request: RequestInfo,
+}

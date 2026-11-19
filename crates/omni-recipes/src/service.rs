@@ -17,6 +17,7 @@ use omni_store::Store;
 use crate::error::{R, io};
 use crate::files::ImageFiles;
 use crate::hub::Hub;
+use crate::requests::{LiveTransport, RequestDelivery};
 use crate::schema;
 
 /// What only the running app has; absent in the operator commands.
@@ -40,6 +41,8 @@ pub struct Recipes {
     pub(crate) online: Option<Online>,
     /// The app's origin when it is served (`RECIPES_APP_URL`).
     pub(crate) app_url: Option<String>,
+    /// Where requests written in the app are announced.
+    pub(crate) requests: RequestDelivery,
     /// Held while an uploaded photo is stored and its row committed, and
     /// while the purge deletes unreferenced files, so the purge never runs
     /// between those two. Images added through the tools hold it only while
@@ -65,6 +68,7 @@ impl Recipes {
             ports: Ports::default(),
             online: None,
             app_url: None,
+            requests: RequestDelivery::none(),
             files_lock: Arc::new(tokio::sync::Mutex::new(())),
             file_grace: crate::tasks::FILE_GRACE,
             ready: Arc::new(tokio::sync::OnceCell::new()),
@@ -83,6 +87,10 @@ impl Recipes {
                 public_http: ctx.public_http.clone(),
             }),
             app_url: ctx.config.recipes_app_url.clone(),
+            requests: RequestDelivery::new(
+                ctx.config.recipes_request_webhook(),
+                Arc::new(LiveTransport::new(ctx.http.clone(), ctx.side_effects)),
+            ),
             ..Self::new(
                 ctx.store.clone(),
                 ctx.clock.clone(),
@@ -116,6 +124,19 @@ impl Recipes {
     /// files (tests purge without waiting a day).
     pub fn with_file_grace(mut self, grace: std::time::Duration) -> Self {
         self.file_grace = grace;
+        self
+    }
+
+    /// The same service announcing requests through `delivery` (tests).
+    pub fn with_request_delivery(mut self, delivery: RequestDelivery) -> Self {
+        self.requests = delivery;
+        self
+    }
+
+    /// The same service as the app served at `origin`, for the links in
+    /// request notices (tests).
+    pub fn with_app_url(mut self, origin: &str) -> Self {
+        self.app_url = Some(origin.to_owned());
         self
     }
 

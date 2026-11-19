@@ -9,6 +9,8 @@ pub enum HubEvent {
     Library { seq: u64 },
     /// A cook session changed; `seq` is its newest event number.
     Session { id: String, seq: u32 },
+    /// A request was added or changed.
+    Requests,
 }
 
 #[derive(Clone)]
@@ -36,6 +38,10 @@ impl Hub {
     pub fn library(&self, seq: u64) {
         // No receiver is not a failure: nobody is watching.
         let _ = self.sender.send(HubEvent::Library { seq });
+    }
+
+    pub fn requests(&self) {
+        let _ = self.sender.send(HubEvent::Requests);
     }
 
     pub fn session(&self, id: &str, seq: u32) {

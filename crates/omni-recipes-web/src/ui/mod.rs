@@ -6,6 +6,7 @@ mod cook;
 mod inbox;
 mod library;
 mod recipe;
+mod requests;
 
 use leptos::prelude::*;
 use omni_api::fond::CookEventKind;
@@ -51,6 +52,53 @@ pub fn back(store: Store, fallback: Route) {
     } else {
         replace(store, fallback);
     }
+}
+
+/// A copy of `source` for a screen to draw from. It follows `source` while
+/// nothing is open over the screen. While `busy` (a sheet or an editor is
+/// open) it keeps what it has, so nothing is swapped underneath, and offers
+/// "`label` · Reload" instead; the new content also arrives by itself once
+/// the screen is no longer busy.
+pub fn settled<T>(
+    store: Store,
+    label: &'static str,
+    source: Signal<T>,
+    same: fn(&T, &T) -> bool,
+    busy: Signal<bool>,
+) -> ReadSignal<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    let shown = RwSignal::new(source.get_untracked());
+    let offer = StoredValue::new(None::<u64>);
+    let withdraw = move || {
+        if let Some(id) = offer.get_value() {
+            offer.set_value(None);
+            store.withdraw_reload(id);
+        }
+    };
+    Effect::new(move |_| {
+        let latest = source.get();
+        let busy = busy.get();
+        if shown.with_untracked(|shown| same(shown, &latest)) {
+            withdraw();
+        } else if busy {
+            if offer.get_value().is_none() {
+                // The notice takes itself down when it is used, so the next
+                // change under the same open sheet raises a new one.
+                let reload: crate::store::Undo = std::sync::Arc::new(move || {
+                    offer.set_value(None);
+                    shown.set(source.get_untracked());
+                });
+                offer.set_value(Some(store.offer_reload(label, reload)));
+            }
+        } else {
+            shown.set(latest);
+            withdraw();
+        }
+    });
+    on_cleanup(withdraw);
+    shown.read_only()
 }
 
 /// An in-app link: a real `<a href>` that navigates without a page load.
@@ -185,6 +233,21 @@ fn Overlays() -> impl IntoView {
                     })
                     .collect_view()
             }}
+            // Same notice as the app update below, and placed like it: above
+            // the screen, or at the top while a sheet is open.
+            {move || {
+                store.stale.get().map(|stale| {
+                    view! {
+                        <div class="notice" role="status" data-testid="stale">
+                            <span class="notice-main">{stale.text}</span>
+                            <button class="notice-act" on:click=move |_| {
+                                (stale.reload)();
+                                store.withdraw_reload(stale.id);
+                            }>"Reload"</button>
+                        </div>
+                    }
+                })
+            }}
             <Show when=move || store.update_available.get()>
                 <div class="notice">
                     <span class="notice-main">"A new version of Fond is ready."</span>
@@ -275,6 +338,7 @@ pub fn App() -> impl IntoView {
                 Route::Recipe(id) => view! { <recipe::RecipePage id=id/> }.into_any(),
                 Route::Cook(id) => view! { <cook::CookPage id=id/> }.into_any(),
                 Route::Inbox => view! { <inbox::InboxPage/> }.into_any(),
+                Route::Requests => view! { <requests::RequestsPage/> }.into_any(),
                 Route::NotFound => view! {
                     <main class="page empty">
                         <p>"There is nothing at this address."</p>

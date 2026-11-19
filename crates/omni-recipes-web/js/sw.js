@@ -9,7 +9,13 @@
 const SHELL_PREFIX = 'fond-shell-';
 const SHELL_CACHE = SHELL_PREFIX + BUILD;
 const IMAGE_CACHE = 'fond-img-v1';
-const APP_ROUTES = [/^\/$/, /^\/r\/[^/]+\/?$/, /^\/cook\/[^/]+\/?$/, /^\/inbox\/?$/];
+const APP_ROUTES = [
+  /^\/$/,
+  /^\/r\/[^/]+\/?$/,
+  /^\/cook\/[^/]+\/?$/,
+  /^\/inbox\/?$/,
+  /^\/requests\/?$/,
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -12,8 +12,9 @@ use leptos::task::spawn_local;
 use omni_api::common::Ms;
 use omni_api::fond::{
     AppendCookEventsRequest, ClientOp, ClientOpKind, CookEventKind, CookSession, CookState, Hello,
-    ImageVariant, InboxItem, InboxList, OpsResponse, Original, RecipeRecord, RecipeState,
-    SessionChanged, StartCookRequest, SyncResponse, Tag, paths, sse,
+    ImageVariant, InboxItem, InboxList, KitchenRequest, OpsResponse, Original, RecipeRecord,
+    RecipeState, RequestList, RequestOrigin, SessionChanged, StartCookRequest, SyncResponse, Tag,
+    paths, sse,
 };
 use omni_recipe_format::RecipeDoc;
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,41 @@ pub struct Toast {
     pub undo: Option<Undo>,
 }
 
+/// The notice a screen raises when what it shows has changed elsewhere and
+/// it will not swap the content by itself (a sheet or an editor is open, or a
+/// cook is under way). `reload` shows the new content.
+#[derive(Clone)]
+pub struct Stale {
+    pub id: u64,
+    pub text: &'static str,
+    pub reload: Undo,
+}
+
+/// What a request for the kitchen agent is about.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ask {
+    pub origin: RequestOrigin,
+    pub recipe_id: Option<String>,
+    pub revision: Option<u32>,
+    pub scale: Option<f64>,
+    pub step: Option<String>,
+    /// The line the sheet shows: "About Dad's Mustard Vinaigrette".
+    pub about: String,
+}
+
+impl Ask {
+    pub fn library() -> Ask {
+        Ask {
+            origin: RequestOrigin::Library,
+            recipe_id: None,
+            revision: None,
+            scale: None,
+            step: None,
+            about: "About your library, or a recipe to add.".to_owned(),
+        }
+    }
+}
+
 /// A timer that has run out and not been acknowledged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alert {
@@ -101,6 +137,14 @@ pub struct Store {
     pub outbox: RwSignal<Vec<Entry>>,
     pub inbox: RwSignal<Vec<InboxItem>>,
     pub inbox_pending: RwSignal<u32>,
+    /// The requests the server has, newest first.
+    pub requests: RwSignal<Vec<KitchenRequest>>,
+    pub stale: RwSignal<Option<Stale>>,
+    /// A notes field has the keyboard.
+    pub editing: RwSignal<bool>,
+    /// The request being written. It is here, not in the sheet, so a screen
+    /// that is redrawn under the sheet does not lose it.
+    pub draft: RwSignal<String>,
     /// Photos being prepared for upload: `(done, total)`.
     pub preparing: RwSignal<Option<(usize, usize)>>,
     pub online: RwSignal<bool>,
@@ -123,6 +167,9 @@ pub struct Store {
     next_key: StoredValue<u64>,
     notes_timer: StoredValue<Option<TimeoutHandle>>,
     toast_seq: StoredValue<u64>,
+    requests_asked: StoredValue<u64>,
+    stale_seq: StoredValue<u64>,
+    last_wake: StoredValue<Ms>,
 }
 
 thread_local! {
@@ -152,6 +199,10 @@ impl Store {
             outbox: RwSignal::new(Vec::new()),
             inbox: RwSignal::new(Vec::new()),
             inbox_pending: RwSignal::new(0),
+            requests: RwSignal::new(Vec::new()),
+            stale: RwSignal::new(None),
+            editing: RwSignal::new(false),
+            draft: RwSignal::new(String::new()),
             preparing: RwSignal::new(None),
             online: RwSignal::new(window().navigator().on_line()),
             update_available: RwSignal::new(false),
@@ -172,6 +223,9 @@ impl Store {
             next_key: StoredValue::new(1),
             notes_timer: StoredValue::new(None),
             toast_seq: StoredValue::new(0),
+            requests_asked: StoredValue::new(0),
+            stale_seq: StoredValue::new(0),
+            last_wake: StoredValue::new(0),
         }
     }
 
@@ -186,6 +240,8 @@ impl Store {
             let scales: BTreeMap<String, f64> =
                 idb::get(idb::KV, "scales").await.unwrap_or_default();
             let inbox: Vec<InboxItem> = idb::get(idb::KV, "inbox").await.unwrap_or_default();
+            let requests: Vec<KitchenRequest> =
+                idb::get(idb::KV, "requests").await.unwrap_or_default();
             let pinned = sessions
                 .iter()
                 .filter_map(|session| {
@@ -225,6 +281,7 @@ impl Store {
             self.tags.set(tags);
             self.scales.set(scales);
             self.inbox.set(inbox);
+            self.requests.set(requests);
             self.inbox_pending.set(meta.inbox_pending);
             self.sort
                 .set(Sort::parse(meta.sort.as_deref().unwrap_or_default()));
@@ -236,14 +293,17 @@ impl Store {
         });
 
         let window = window();
-        listen(&window, "online", move |_| self.wake());
+        listen(&window, "online", move |_| self.wake(true));
+        // A window that gets the focus back without having been hidden
+        // (another window was in front) may have missed changes too.
+        listen(&window, "focus", move |_| self.wake(false));
         listen(&window, "offline", move |_| self.online.set(false));
         listen(
             &crate::platform::document(),
             "visibilitychange",
             move |_| {
                 if visible() {
-                    self.wake();
+                    self.wake(false);
                     device::check_for_update();
                 }
             },
@@ -252,9 +312,17 @@ impl Store {
         let _ = set_interval_with_handle(move || self.tick(), Duration::from_secs(1));
     }
 
-    /// The app came back (to the foreground or to the network).
-    fn wake(self) {
-        self.now.set(now_ms());
+    /// The app came back (to the foreground or to the network). Coming to
+    /// the front fires several of the events that lead here at once, and one
+    /// sync answers them all; the network coming back (`reconnected`) always
+    /// syncs, since the sync before it may have failed.
+    fn wake(self, reconnected: bool) {
+        let now = now_ms();
+        if !reconnected && now - self.last_wake.get_value() < 1000 {
+            return;
+        }
+        self.last_wake.set_value(now);
+        self.now.set(now);
         let closed = EVENTS.with_borrow(|slot| {
             slot.as_ref()
                 .is_none_or(|events| events.ready_state() == web_sys::EventSource::CLOSED)
@@ -375,6 +443,24 @@ impl Store {
             },
             lasts,
         );
+    }
+
+    /// Offers "`text` · Reload" and returns the offer's id.
+    pub fn offer_reload(self, text: &'static str, reload: Undo) -> u64 {
+        let id = self.stale_seq.get_value() + 1;
+        self.stale_seq.set_value(id);
+        self.stale.set(Some(Stale { id, text, reload }));
+        id
+    }
+
+    /// Takes offer `id` back, unless another screen has made its own since.
+    pub fn withdraw_reload(self, id: u64) {
+        if self
+            .stale
+            .with_untracked(|stale| stale.as_ref().is_some_and(|stale| stale.id == id))
+        {
+            self.stale.set(None);
+        }
     }
 
     // --- Local writes ----------------------------------------------------
@@ -577,6 +663,38 @@ impl Store {
                 },
             });
         })
+    }
+
+    /// Stores a request for the kitchen agent. It is in the outbox at once,
+    /// so it is sent when the server can be reached, however long that takes.
+    pub fn ask(self, text: &str, ask: Ask) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        self.enqueue(Job::Op {
+            op: ClientOp {
+                id: random_id("op_", 12),
+                at: now_ms(),
+                kind: ClientOpKind::Request {
+                    request_id: random_id("req_", 8),
+                    text: text.to_owned(),
+                    origin: ask.origin,
+                    recipe_id: ask.recipe_id,
+                    revision: ask.revision,
+                    scale: ask.scale,
+                    step: ask.step,
+                },
+            },
+        });
+        self.show_toast(
+            if self.online.get_untracked() {
+                "Sent to Kitchen"
+            } else {
+                "Saved. Kitchen gets it when Fond is back online."
+            },
+            None,
+        );
     }
 
     /// Starts a session on the phone; the server learns of it from the outbox.
@@ -799,7 +917,21 @@ impl Store {
             Batch::Ops { request, .. } => {
                 let result = net::post_json::<_, OpsResponse>(paths::OPS, &request).await;
                 if let Ok(response) = &result {
+                    let mut asked = false;
                     for (op, answer) in request.ops.iter().zip(&response.results) {
+                        if matches!(op.kind, ClientOpKind::Request { .. }) {
+                            asked = true;
+                            if !answer.ok {
+                                self.show_toast(
+                                    format!(
+                                        "The request was not sent: {}",
+                                        answer.error.as_deref().unwrap_or("the server refused it")
+                                    ),
+                                    None,
+                                );
+                            }
+                            continue;
+                        }
                         // A refused amount comes back with the recipe as it
                         // is, which replaces what the app showed ahead of it.
                         let refused_amount =
@@ -840,6 +972,9 @@ impl Store {
                                 .collect()
                         });
                         self.put_recipe(outbox::overlay_pending(stored, &behind));
+                    }
+                    if asked {
+                        spawn_local(async move { self.load_requests().await });
                     }
                 }
                 status(&result)
@@ -975,6 +1110,7 @@ impl Store {
                 if !complete && let Some(full) = self.fetch_sync(None).await {
                     self.apply_sync(full);
                 }
+                self.load_requests().await;
             }
             if !self.sync_again.get_value() {
                 break;
@@ -1122,6 +1258,9 @@ impl Store {
                 spawn_local(async move { self.refresh_session(changed.id).await });
             }
         });
+        listen(&events, sse::REQUESTS, move |_| {
+            spawn_local(async move { self.load_requests().await });
+        });
         EVENTS.with_borrow_mut(|slot| {
             if let Some(old) = slot.replace(events) {
                 old.close();
@@ -1133,6 +1272,20 @@ impl Store {
         if let Ok(list) = net::get_json::<InboxList>(paths::INBOX).await {
             idb::put(idb::KV, "inbox", &list.items);
             self.inbox.set(list.items);
+        }
+    }
+
+    pub async fn load_requests(self) {
+        let asked = self.requests_asked.get_value() + 1;
+        self.requests_asked.set_value(asked);
+        if let Ok(list) = net::get_json::<RequestList>(paths::REQUESTS).await
+            // Two fetches can answer out of order; only the newest counts.
+            && self.requests_asked.get_value() == asked
+            // An unchanged list leaves the signal alone, so nothing redraws.
+            && self.requests.with_untracked(|held| *held != list.items)
+        {
+            idb::put(idb::KV, "requests", &list.items);
+            self.requests.set(list.items);
         }
     }
 

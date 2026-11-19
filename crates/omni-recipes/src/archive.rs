@@ -218,10 +218,12 @@ pub fn read(path: &Path) -> R<Archive> {
         )));
     }
     for table in TABLES {
-        let rows = archive
-            .tables
-            .get(*table)
-            .ok_or_else(|| archive_error(format!("the archive has no table {table}")))?;
+        let Some(rows) = archive.tables.get(*table) else {
+            if archive.schema_version < schema::table_since(table) {
+                continue;
+            }
+            return Err(archive_error(format!("the archive has no table {table}")));
+        };
         let expected = archive.checksums.get(*table).and_then(Value::as_str);
         if expected != Some(checksum(rows).as_str()) {
             return Err(archive_error(format!(
@@ -353,7 +355,13 @@ fn restore_tx(conn: &Connection, archive: &Archive) -> R<Restored> {
     }
     // The restored tables must read back exactly as the archive holds them.
     for (table, rows) in dump(conn)? {
-        if archive.checksums.get(&table).and_then(Value::as_str) != Some(checksum(&rows).as_str()) {
+        let expected = match archive.checksums.get(&table).and_then(Value::as_str) {
+            Some(expected) => expected.to_owned(),
+            // A table newer than the archive stays empty.
+            None if archive.schema_version < schema::table_since(&table) => checksum(&json!([])),
+            None => String::new(),
+        };
+        if expected != checksum(&rows) {
             return Err(corrupt(format!(
                 "restored table {table} does not match the archive; nothing was restored"
             )));

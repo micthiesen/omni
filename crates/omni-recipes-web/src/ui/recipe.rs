@@ -12,11 +12,13 @@ use wasm_bindgen::JsCast;
 
 use super::amount::{AmountSheet, AmountTarget};
 use super::chart::Chart;
-use super::{Connection, Link, Sheet, back, icon, navigate, replace};
+use super::requests::{AskSheet, kitchen_items};
+use super::{Connection, Link, Sheet, back, icon, navigate, replace, settled};
 use crate::logic::session::is_open;
 use crate::logic::{Route, SCALES, gallery, same_scale, step_servings, tile_color};
 use crate::platform::prefs::{self, RecipeView};
-use crate::store::{Recipe, Undo, use_store};
+use crate::platform::shell;
+use crate::store::{Ask, Recipe, Undo, use_store};
 
 /// Step text with ingredient amounts, times and temperatures in bold.
 pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
@@ -52,17 +54,23 @@ pub fn Notes(id: String, #[prop(default = true)] heading: bool) -> impl IntoView
     // The field is not bound to the record, so typing never re-renders it;
     // it is only overwritten when the stored text differs from what it
     // shows (another device or an agent wrote, or the server kept both texts).
-    Effect::new(move |_| {
+    // While the field has the keyboard it is left alone; it catches up when
+    // the keyboard goes.
+    let follow = move |focused: bool| {
         let stored = store
             .recipes
             .with(|recipes| recipes.get(&recipe).map(|recipe| recipe.rec.notes.clone()));
         if let (Some(stored), Some(area)) = (stored, area.get())
+            && !focused
             && area.value() != stored
         {
             area.set_value(&stored);
             fit(&area);
         }
-    });
+    };
+    let on_change = follow.clone();
+    Effect::new(move |_| on_change(store.editing.get()));
+    on_cleanup(move || store.editing.set(false));
     view! {
         <section class="notes">
             {heading.then(|| view! { <h2>"Notes"</h2> })}
@@ -77,7 +85,11 @@ pub fn Notes(id: String, #[prop(default = true)] heading: bool) -> impl IntoView
                         fit(&area);
                     }
                 }
-                on:blur=move |_| store.flush()
+                on:focus=move |_| store.editing.set(true)
+                on:blur=move |_| {
+                    store.flush();
+                    store.editing.set(false);
+                }
             ></textarea>
         </section>
     }
@@ -291,6 +303,19 @@ fn ListBody(
     }
 }
 
+/// What a request written on a recipe's page is about.
+fn ask_about(recipe: &Recipe, scale: f64) -> Ask {
+    Ask {
+        origin: omni_api::fond::RequestOrigin::Recipe,
+        recipe_id: Some(recipe.rec.id.clone()),
+        revision: Some(recipe.rec.revision),
+        scale: Some(scale),
+        step: None,
+        about: format!("About {}.", recipe.title),
+    }
+}
+
+#[allow(clippy::ref_option)]
 fn same_page(a: &Option<Arc<Recipe>>, b: &Option<Arc<Recipe>>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => {
@@ -313,7 +338,8 @@ fn same_page(a: &Option<Arc<Recipe>>, b: &Option<Arc<Recipe>>) -> bool {
 pub fn RecipePage(id: String) -> impl IntoView {
     let store = use_store();
     let page_id = id.clone();
-    let page = Memo::new_with_compare(
+    // The recipe as the library has it now.
+    let latest = Memo::new_with_compare(
         move |_| {
             store
                 .recipe(&page_id)
@@ -327,14 +353,32 @@ pub fn RecipePage(id: String) -> impl IntoView {
         prefs::set_recipe_view(view);
     };
     let menu = RwSignal::new(false);
+    let asking = RwSignal::new(false);
     let amount_open = RwSignal::new(false);
     let amount_target = RwSignal::new(None::<AmountTarget>);
     let step_sheet = RwSignal::new(false);
     let step = RwSignal::new(String::new());
     let slide = RwSignal::new(0usize);
+    // The recipe on screen. A change made elsewhere (an agent, another
+    // device) shows by itself, but never under an open sheet or while the
+    // notes are being typed: then it waits behind "Recipe updated · Reload".
+    let page = settled(
+        store,
+        "Recipe updated",
+        latest.into(),
+        same_page,
+        Signal::derive(move || {
+            menu.get()
+                || asking.get()
+                || amount_open.get()
+                || step_sheet.get()
+                || store.editing.get()
+        }),
+    );
+    let drawn = StoredValue::new(false);
 
     let change_state = move |state: RecipeState, done: &'static str| {
-        let Some(recipe) = page.get_untracked() else {
+        let Some(recipe) = latest.get_untracked() else {
             return;
         };
         let before = recipe.rec.clone();
@@ -359,7 +403,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
     let resume = open_session.clone();
     let scale_id = id.clone();
     let cook = move |_| {
-        let Some(recipe) = page.get_untracked() else {
+        let Some(recipe) = latest.get_untracked() else {
             return;
         };
         let session = open_session.clone()()
@@ -378,6 +422,12 @@ pub fn RecipePage(id: String) -> impl IntoView {
                 }
                 .into_any();
             };
+            // A redraw for a newer revision keeps the reader's place.
+            if drawn.get_value() {
+                let top = shell::scroll_top();
+                request_animation_frame(move || shell::set_scroll_top(top));
+            }
+            drawn.set_value(true);
             let rec = recipe.rec.clone();
             let images = gallery(&rec);
             let count = images.len();
@@ -512,8 +562,13 @@ pub fn RecipePage(id: String) -> impl IntoView {
                     </footer>
                 </main>
                 <AmountSheet open=amount_open target=amount_target/>
+                <AskSheet open=asking about=Callback::new({
+                    let recipe = recipe.clone();
+                    move |()| ask_about(&recipe, store.scale(&recipe.rec.id))
+                })/>
                 <Sheet open=menu title="Recipe">
                     <div class="menu">
+                        {kitchen_items(menu, asking)}
                         {if archived {
                             view! { <button on:click=move |_| change_state(RecipeState::Active, "Back in the library")>"Unarchive"</button> }.into_any()
                         } else {

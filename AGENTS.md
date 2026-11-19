@@ -202,7 +202,8 @@ change; reuse authorization already given in the conversation.
   Pure; builds for native and wasm.
 - `omni-recipes`: Fond, the recipe library: revisions, the tag registry, the
   change log and undo, images, the inbox (pages, text, photos), cook sessions
-  and timers, the `recipes_*` tools, the app's HTTP API as a host app, the
+  and timers, requests written in the app with their `recipe.request` webhook
+  notice, the `recipes_*` tools, the app's HTTP API as a host app, the
   `RecipesBackup` and `RecipesPurge` tasks.
 - `omni`: the binary: boot, wiring, ops routes, dashboard SSE, data
   manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `recipes-*`,
@@ -536,8 +537,9 @@ attempt, 45 seconds) report and never block a save; never log source text.
 
 A merged cook session keeps the document it pinned (`doc_recipe_id`) and is
 never hidden; an undo of a tag change restores only the registry rows that
-change wrote. The app writes four things and nothing else: a recipe's state
-(archive, delete, bring back), its notes, cook sessions, and the amount of one
+change wrote. The app writes five things and nothing else: a recipe's state
+(archive, delete, bring back), its notes, cook sessions, a request for the
+kitchen agent (below), and the amount of one
 ingredient (`ClientOpKind::Amount`: quantity and unit only, never a name, a
 step, or an ingredient added or removed; a to-taste ingredient has no amount
 to change). An amount change is a new revision written through `content_tx`,
@@ -550,6 +552,18 @@ per hour); keep new app routes inside those limits. Text written in the app or
 taken from pages is untrusted and every tool that returns it says so.
 `RecipesPurge` writes a verified archive to `archives/purge` before it removes
 any recipe.
+
+A request written in the app ("Ask Kitchen", `omni-recipes/src/requests.rs`, "Requests from
+the app" in `docs/recipes.md`) is stored in `recipes_request` before anything is announced; the
+library is the source of truth and no failure of the `recipe.request` webhook may change or lose
+it. The app never shows a reply or a thread: it shows status, an optional note and the resulting
+revision, set only by an agent through `recipes_request_update`, which changes the request and
+never a recipe. The recipe change is an ordinary revision with the household checks unchanged.
+The notice is reserved before each attempt, always carries the request id as `Idempotency-Key`,
+goes only to the configured `RECIPES_REQUEST_WEBHOOK_URL` (never an address from the app), and
+honors `SideEffectMode`. Request text is untrusted and its tools say so. With a sheet or an
+editor open, and always in cook mode, the app never swaps a recipe underneath: it offers
+"Recipe updated" with Reload (`ui::settled`).
 
 A cook session holds no recipe text of its own: it is an append-only event
 log (crossing off, notes, timers, `rebase`, finish, abandon), each

@@ -8,6 +8,8 @@ pub const CHANGE: &str = "chg_";
 pub const INBOX: &str = "inb_";
 pub const COOK: &str = "cook_";
 pub const IMAGE: &str = "img_";
+/// Chosen by the app, like a cook session's id.
+pub const REQUEST: &str = "req_";
 
 /// A new random id with `prefix`.
 pub fn new_id(prefix: &str) -> String {

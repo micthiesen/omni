@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 
 use omni_api::fond::{
-    ClientOp, ClientOpKind, CookEvent, CookSession, OpsRequest, RecipeRecord, RecipeState,
-    StartCookRequest,
+    ClientOp, ClientOpKind, CookEvent, CookSession, KitchenRequest, OpsRequest, RecipeRecord,
+    RecipeState, RequestStatus, StartCookRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -366,6 +366,45 @@ pub fn drop_session(entries: &mut Vec<Entry>, session: &str) -> Vec<Entry> {
     gone
 }
 
+/// Requests written here and not yet sent, newest first, as the Requests
+/// page lists them until the server has them.
+pub fn pending_requests(entries: &[Entry]) -> Vec<KitchenRequest> {
+    entries
+        .iter()
+        .rev()
+        .filter_map(|entry| match &entry.job {
+            Job::Op {
+                op:
+                    ClientOp {
+                        at,
+                        kind:
+                            ClientOpKind::Request {
+                                request_id,
+                                text,
+                                origin,
+                                recipe_id,
+                                ..
+                            },
+                        ..
+                    },
+            } => Some(KitchenRequest {
+                id: request_id.clone(),
+                text: text.clone(),
+                at: *at,
+                updated_at: *at,
+                origin: *origin,
+                status: RequestStatus::Queued,
+                recipe_id: recipe_id.clone(),
+                recipe_title: None,
+                note: None,
+                result_recipe_id: None,
+                result_revision: None,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Photos of inbox `item` still to upload.
 pub fn inbox_remaining(entries: &[Entry], item: &str) -> u32 {
     let count = entries
@@ -408,6 +447,66 @@ mod tests {
                 base_rev,
             },
         }
+    }
+
+    #[test]
+    fn unsent_requests_are_listed_newest_first_and_travel_with_other_ops() {
+        use omni_api::fond::RequestOrigin;
+        let ask = |id: &str, request: &str, at: i64, recipe: Option<&str>| ClientOp {
+            id: id.into(),
+            at,
+            kind: ClientOpKind::Request {
+                request_id: request.into(),
+                text: format!("text of {request}"),
+                origin: if recipe.is_some() {
+                    RequestOrigin::Recipe
+                } else {
+                    RequestOrigin::Library
+                },
+                recipe_id: recipe.map(str::to_owned),
+                revision: recipe.map(|_| 3),
+                scale: None,
+                step: None,
+            },
+        };
+        let entries = vec![
+            Entry {
+                key: 1,
+                job: Job::Op {
+                    op: ask("op_a", "req_aaaaaaaa", 10, Some("rcp_a")),
+                },
+            },
+            Entry {
+                key: 2,
+                job: Job::Op {
+                    op: notes("op_n", "rcp_a", "salt", 0),
+                },
+            },
+            Entry {
+                key: 3,
+                job: Job::Op {
+                    op: ask("op_b", "req_bbbbbbbb", 20, None),
+                },
+            },
+        ];
+        let pending = pending_requests(&entries);
+        let ids: Vec<&str> = pending.iter().map(|request| request.id.as_str()).collect();
+        assert_eq!(ids, ["req_bbbbbbbb", "req_aaaaaaaa"]);
+        assert_eq!(pending[1].recipe_id.as_deref(), Some("rcp_a"));
+        assert_eq!(pending[1].status, RequestStatus::Queued);
+        // One request to the server carries the requests and the note between them.
+        let Some(Batch::Ops { keys, request }) = next_batch(&entries) else {
+            panic!("expected an ops batch");
+        };
+        assert_eq!(keys, [1, 2, 3]);
+        let sent = serde_json::to_value(&request).unwrap();
+        assert_eq!(sent["ops"][0]["type"], "request");
+        assert_eq!(sent["ops"][0]["requestId"], "req_aaaaaaaa");
+        assert_eq!(sent["ops"][0]["revision"], 3);
+        assert!(sent["ops"][2].get("recipeId").is_none());
+        // A request leaves a recipe on screen as it was.
+        assert!(pending_notes(&entries[..1], "rcp_a").is_none());
+        assert!(pending_state(&entries, "rcp_a").is_none());
     }
 
     fn state(id: &str, recipe: &str, state: RecipeState) -> ClientOp {

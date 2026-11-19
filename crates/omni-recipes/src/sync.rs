@@ -18,6 +18,7 @@ use crate::error::{R, corrupt, not_found, sql};
 use crate::inbox;
 use crate::meta::{self, NOTES, STATE};
 use crate::organize::set_state;
+use crate::requests;
 use crate::service::Recipes;
 use crate::tags;
 
@@ -135,17 +136,52 @@ fn sync(conn: &Connection, since: Option<u64>, build: Option<String>) -> R<SyncR
     })
 }
 
-/// Applies one op and returns `(ok, error, recipe id)`.
+/// Applies one op and returns `(ok, error, recipe id)`. `added` is set when
+/// the op stored a new request.
 fn apply_op(
     conn: &Connection,
     now: i64,
     op: &ClientOp,
+    webhook: bool,
+    added: &mut bool,
 ) -> R<(bool, Option<String>, Option<String>)> {
     let refuse = |message: &str| Ok((false, Some(message.to_owned()), None));
     let target = match &op.kind {
         ClientOpKind::Notes { recipe_id, .. }
         | ClientOpKind::State { recipe_id, .. }
         | ClientOpKind::Amount { recipe_id, .. } => recipe_id,
+        // A request changes no recipe: it is stored for the agent.
+        ClientOpKind::Request {
+            request_id,
+            text,
+            origin,
+            recipe_id,
+            revision,
+            scale,
+            step,
+        } => {
+            let stored = requests::submit(
+                conn,
+                now,
+                &requests::Submit {
+                    id: request_id,
+                    text,
+                    origin: *origin,
+                    recipe_id: recipe_id.as_deref(),
+                    revision: *revision,
+                    scale: *scale,
+                    step: step.as_deref(),
+                },
+                webhook,
+            )?;
+            return match stored {
+                Ok(new) => {
+                    *added |= new;
+                    Ok((true, None, None))
+                }
+                Err(message) => refuse(&message),
+            };
+        }
     };
     // An op on a recipe that was merged away lands on the recipe it became.
     let Ok((row, redirected)) = recipe_for_read(conn, target) else {
@@ -230,6 +266,7 @@ fn apply_op(
                 return Ok((false, Some(message), Some(row.id)));
             }
         }
+        ClientOpKind::Request { .. } => {}
         ClientOpKind::State { state, .. } => {
             let wanted = match state {
                 RecipeState::Active => "active",
@@ -265,7 +302,13 @@ fn apply_op(
     Ok((true, None, Some(row.id)))
 }
 
-fn apply_ops(conn: &Connection, now: i64, ops: &[ClientOp]) -> R<OpsResponse> {
+fn apply_ops(
+    conn: &Connection,
+    now: i64,
+    ops: &[ClientOp],
+    webhook: bool,
+) -> R<(OpsResponse, bool)> {
+    let mut added = false;
     let mut results = Vec::with_capacity(ops.len());
     for op in ops {
         let stored: Option<String> = conn
@@ -287,7 +330,7 @@ fn apply_ops(conn: &Connection, now: i64, ops: &[ClientOp]) -> R<OpsResponse> {
                 )
             }
             None => {
-                let outcome = apply_op(conn, now, op)?;
+                let outcome = apply_op(conn, now, op, webhook, &mut added)?;
                 conn.execute(
                     "INSERT INTO recipes_client_op (id, applied_at, result) VALUES (?1, ?2, ?3)",
                     params![
@@ -316,10 +359,13 @@ fn apply_ops(conn: &Connection, now: i64, ops: &[ClientOp]) -> R<OpsResponse> {
             recipe,
         });
     }
-    Ok(OpsResponse {
-        seq: db::current_seq(conn)?,
-        results,
-    })
+    Ok((
+        OpsResponse {
+            seq: db::current_seq(conn)?,
+            results,
+        },
+        added,
+    ))
 }
 
 impl Recipes {
@@ -330,11 +376,15 @@ impl Recipes {
     /// Applies the app's record edits, each id once.
     pub async fn apply_ops(&self, ops: Vec<ClientOp>) -> R<OpsResponse> {
         let before = self.query(db::current_seq).await?;
-        let response = self
-            .transact(false, move |conn, now| apply_ops(conn, now, &ops))
+        let webhook = self.requests.target.is_some();
+        let (response, added) = self
+            .transact(false, move |conn, now| apply_ops(conn, now, &ops, webhook))
             .await?;
         if response.seq != before {
             self.hub.library(response.seq);
+        }
+        if added {
+            self.request_added();
         }
         Ok(response)
     }

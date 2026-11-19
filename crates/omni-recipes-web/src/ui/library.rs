@@ -5,17 +5,36 @@ use leptos::prelude::*;
 use omni_api::fond::{ImageVariant, RecipeState, paths};
 use omni_recipe_format::format::fmt_time;
 
-use super::{Connection, Link, Sheet, icon, remaining};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use super::requests::{AskSheet, kitchen_items};
+use super::{Connection, Link, Sheet, icon, remaining, settled};
 use crate::logic::library::{Sort, filter_groups, tag_groups, visible};
 use crate::logic::session::{is_open, project};
 use crate::logic::{Route, cover, tile_color};
-use crate::store::use_store;
+use crate::store::{Ask, Recipe, use_store};
+
+type Recipes = BTreeMap<String, Arc<Recipe>>;
+
+/// The recipes the grid is drawn from (see [`Library`]).
+#[derive(Clone, Copy)]
+struct Shown(ReadSignal<Recipes>);
+
+/// Whether two copies of the library would draw the same grid.
+fn same_library(a: &Recipes, b: &Recipes) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|((id, a), (other, b))| id == other && (Arc::ptr_eq(a, b) || a.rec == b.rec))
+}
 
 #[component]
 fn Card(id: String) -> impl IntoView {
     let store = use_store();
+    let Shown(shown) = expect_context::<Shown>();
     move || {
-        let recipe = store.recipe(&id)?;
+        let recipe = shown.with(|recipes| recipes.get(&id).cloned())?;
         let rec = &recipe.rec;
         let class = if cover(rec).is_some() {
             "card"
@@ -117,9 +136,21 @@ fn CookingNow() -> impl IntoView {
 pub fn Library() -> impl IntoView {
     let store = use_store();
     let sheet = RwSignal::new(false);
+    let menu = RwSignal::new(false);
+    let asking = RwSignal::new(false);
+    // The grid follows the library as it syncs, except under an open sheet:
+    // then it keeps what it shows and "Recipes updated · Reload" is offered.
+    let shown = settled(
+        store,
+        "Recipes updated",
+        store.recipes.into(),
+        same_library,
+        Signal::derive(move || sheet.get() || menu.get() || asking.get()),
+    );
+    provide_context(Shown(shown));
     let ids = Memo::new(move |_| {
         let groups = store.tags.with(|tags| tag_groups(tags));
-        store.recipes.with(|recipes| {
+        shown.with(|recipes| {
             visible(
                 recipes.values().map(|recipe| &recipe.item),
                 &store.filter.get(),
@@ -129,7 +160,7 @@ pub fn Library() -> impl IntoView {
         })
     });
     let groups = move || {
-        store.recipes.with(|recipes| {
+        shown.with(|recipes| {
             store.tags.with(|registry| {
                 filter_groups(
                     recipes.values().map(|recipe| &recipe.item),
@@ -161,6 +192,7 @@ pub fn Library() -> impl IntoView {
                         (pending > 0).then(|| view! { <span class="count">{pending}</span> })
                     }}
                 </Link>
+                <button class="icon-btn" aria-label="More" on:click=move |_| menu.set(true)>{icon("more")}</button>
             </header>
             <div class="scroller" data-testid="scroller"><div class="scroller-in">
             <div class="tools">
@@ -200,7 +232,7 @@ pub fn Library() -> impl IntoView {
             <Show when=move || ids.with(Vec::is_empty)>
                 <p class="empty">
                     {move || {
-                        if store.recipes.with(|recipes| recipes.is_empty()) {
+                        if shown.with(BTreeMap::is_empty) {
                             if store.has_library.get() {
                                 "No recipes yet. Ask an agent to add one, or send a photo from the Inbox."
                             } else if store.online.get() {
@@ -216,6 +248,10 @@ pub fn Library() -> impl IntoView {
             </Show>
             </div></div>
         </main>
+        <Sheet open=menu title="Library">
+            <div class="menu">{kitchen_items(menu, asking)}</div>
+        </Sheet>
+        <AskSheet open=asking about=Callback::new(|()| Ask::library())/>
         <Sheet open=sheet title="Filter">
             {move || {
                 groups()

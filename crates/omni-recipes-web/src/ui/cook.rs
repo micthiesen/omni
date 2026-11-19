@@ -15,12 +15,13 @@ use omni_recipe_format::{
 use super::amount::{AmountSheet, AmountTarget};
 use super::chart::{CellMark, Chart};
 use super::recipe::{Notes, segments_view};
+use super::requests::{AskSheet, kitchen_items};
 use super::{Connection, Link, Sheet, back, icon, remaining, replace};
 use crate::logic::Route;
 use crate::logic::session::{Projection, project};
 use crate::platform::prefs::{self, RecipeView};
 use crate::platform::{device, now_ms};
-use crate::store::{Store, use_store};
+use crate::store::{Ask, Store, Undo, use_store};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -347,8 +348,18 @@ pub fn CookPage(id: String) -> impl IntoView {
     let basis = Memo::new(move |_| {
         session.with(|session| {
             let session = session.as_ref()?;
-            let (doc, outdated) = store.session_doc(session, &state.get())?;
-            Some((doc, outdated, session.scale, session.recipe_id.clone()))
+            let (doc, _) = store.session_doc(session, &state.get())?;
+            Some((doc, session.scale, session.recipe_id.clone()))
+        })
+    });
+    // The recipe has a newer revision than the one being cooked from. The
+    // cook stays on its own; the newer one is a tap away.
+    let outdated = Memo::new(move |_| {
+        session.with(|session| {
+            session
+                .as_ref()
+                .and_then(|session| store.session_doc(session, &state.get()))
+                .is_some_and(|(_, outdated)| outdated)
         })
     });
     let finished = Memo::new(move |_| state.with(|state| state.finished));
@@ -371,6 +382,77 @@ pub fn CookPage(id: String) -> impl IntoView {
     let finish_photo = NodeRef::<html::Input>::new();
     let photo_name = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
+    let menu = RwSignal::new(false);
+    let asking = RwSignal::new(false);
+
+    let offer = StoredValue::new(None::<u64>);
+    let withdraw = move || {
+        if let Some(id) = offer.get_value() {
+            offer.set_value(None);
+            store.withdraw_reload(id);
+        }
+    };
+    Effect::new(move |_| {
+        if outdated.get() && !finished.get() {
+            if offer.get_value().is_none() {
+                let reload: Undo = Arc::new(move || {
+                    let head = session.with_untracked(|session| {
+                        let session = session.as_ref()?;
+                        store.recipes.with_untracked(|recipes| {
+                            recipes
+                                .get(&session.recipe_id)
+                                .map(|recipe| recipe.rec.revision)
+                        })
+                    });
+                    if let Some(revision) = head {
+                        store.cook_event(
+                            &session_id.get_value(),
+                            CookEventKind::Rebase { revision },
+                        );
+                    }
+                });
+                offer.set_value(Some(store.offer_reload("Recipe updated", reload)));
+            }
+        } else {
+            withdraw();
+        }
+    });
+    on_cleanup(withdraw);
+
+    // What a request written during this cook is about: the recipe at the
+    // revision and scale being cooked, and the step that is open.
+    let ask_about = Callback::new(move |()| {
+        let found = session.with_untracked(|session| {
+            let session = session.as_ref()?;
+            let recipe = store.recipe(&session.recipe_id)?;
+            let state = state.get_untracked();
+            let doc = store.session_doc(session, &state).map(|(doc, _)| doc);
+            let step = doc.as_ref().and_then(|doc| {
+                let ix = Index::build(doc);
+                chosen
+                    .get_untracked()
+                    .filter(|id| ix.step(id).is_some())
+                    .or_else(|| state.current_step(doc, None))
+                    .and_then(|id| ix.step(&id).map(|step| (id.clone(), step.action.clone())))
+            });
+            let about = match &step {
+                Some((_, action)) => format!(
+                    "About {}, at the step \u{201c}{action}\u{201d}.",
+                    recipe.title
+                ),
+                None => format!("About {}.", recipe.title),
+            };
+            Some(Ask {
+                origin: omni_api::fond::RequestOrigin::Cook,
+                recipe_id: Some(session.recipe_id.clone()),
+                revision: Some(state.revision),
+                scale: Some(session.scale),
+                step: step.map(|(id, _)| id),
+                about,
+            })
+        });
+        found.unwrap_or_else(Ask::library)
+    });
 
     if session.get_untracked().is_none() {
         spawn_local(async move { store.refresh_session(id).await });
@@ -448,6 +530,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                 <Show when=move || basis.with(Option::is_some) && !finished.get()>
                     <button class="btn small" data-testid="finish" on:click=move |_| finishing.set(true)>"Finish"</button>
                 </Show>
+                <button class="icon-btn" aria-label="More" on:click=move |_| menu.set(true)>{icon("more")}</button>
             </header>
             {move || {
                 if finished.get() {
@@ -459,7 +542,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                     }
                     .into_any();
                 }
-                let Some((doc, outdated, scale, recipe_id)) = basis.get() else {
+                let Some((doc, scale, recipe_id)) = basis.get() else {
                     return view! {
                         <div class="empty">
                             <p>"This cook session is not on this phone."</p>
@@ -484,9 +567,6 @@ pub fn CookPage(id: String) -> impl IntoView {
                     choosing_amount,
                     notes_open,
                 };
-                let head_revision = store
-                    .recipes
-                    .with_untracked(|recipes| recipes.get(&recipe_id).map_or(0, |recipe| recipe.rec.revision));
                 let marks = Callback::new(move |cell: Cell| {
                     ctx.state.with(|state| {
                         let doc = ctx.doc.get_value();
@@ -527,14 +607,6 @@ pub fn CookPage(id: String) -> impl IntoView {
                         {tab_button(Tab::Chart, "Chart")}
                     </nav>
                     <div class="scroller" data-testid="scroller"><div class="scroller-in">
-                    {outdated.then(|| view! {
-                        <div class="notice inline" data-testid="outdated">
-                            <span class="notice-main">"The recipe was updated since you started."</span>
-                            <button class="notice-act" on:click=move |_| send(CookEventKind::Rebase { revision: head_revision })>
-                                "Switch"
-                            </button>
-                        </div>
-                    })}
                     {move || {
                         state
                             .with(|state| state.notes.clone())
@@ -559,6 +631,10 @@ pub fn CookPage(id: String) -> impl IntoView {
                 .into_any()
             }}
         </main>
+        <Sheet open=menu title="Cooking">
+            <div class="menu">{kitchen_items(menu, asking)}</div>
+        </Sheet>
+        <AskSheet open=asking about=ask_about/>
         <Sheet open=choosing_amount title="Change an amount">
             <div class="menu">
                 {move || amount_choices

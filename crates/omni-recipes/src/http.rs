@@ -2,7 +2,7 @@
 //! is registered only as a host app (`Subsystem::host_apps`), never merged
 //! into Omni's router, so it answers on the recipes host and nowhere else.
 //!
-//! There is no catch-all: the four client routes return `index.html` and any
+//! There is no catch-all: the five client routes return `index.html` and any
 //! other path is the host app's 404.
 
 use std::path::{Component, Path as FsPath, PathBuf};
@@ -24,8 +24,8 @@ use axum::routing::{get, post};
 use futures::StreamExt as _;
 use omni_api::fond::{
     AppendCookEventsRequest, CookActor, CookSession, Hello, InboxList, InboxUploadResponse,
-    LibraryChanged, OpsRequest, OpsResponse, Original, SessionChanged, StartCookRequest,
-    SyncResponse, paths, sse as frames,
+    LibraryChanged, OpsRequest, OpsResponse, Original, RequestList, SessionChanged,
+    StartCookRequest, SyncResponse, paths, sse as frames,
 };
 use omni_core::clock::SharedClock;
 use omni_server_kit::host_app::{HostApp, InvalidAppOrigin, MutationGuard, guard_mutations};
@@ -184,6 +184,7 @@ async fn events(State(app): State<App>) -> Result<Response, ApiError> {
                         frames::SESSION,
                         serde_json::to_string(&SessionChanged { id, seq }).ok()?,
                     )),
+                    HubEvent::Requests => Some(frame(frames::REQUESTS, "{}".to_owned())),
                 }
             }
         });
@@ -340,6 +341,14 @@ async fn inbox_upload(
                 complete: upload.complete,
             })
         })
+        .map_err(api_error)
+}
+
+async fn requests_list(State(app): State<App>) -> Api<RequestList> {
+    app.recipes
+        .requests_for_app()
+        .await
+        .map(axum::Json)
         .map_err(api_error)
 }
 
@@ -625,6 +634,7 @@ pub fn router(recipes: Recipes, origin: &str, dist: PathBuf, build: Option<Strin
         .route("/api/cook/{id}", get(cook_get))
         .route("/api/cook/{id}/events", post(cook_events))
         .route(paths::INBOX, get(inbox_list))
+        .route(paths::REQUESTS, get(requests_list))
         .route("/api/original/{id}", get(original))
         .route("/img/{digest}/{file}", get(image))
         .route("/src/{item}/{file}", get(source_photo))
@@ -632,6 +642,7 @@ pub fn router(recipes: Recipes, origin: &str, dist: PathBuf, build: Option<Strin
         .route("/r/{id}", get(index))
         .route("/cook/{id}", get(index))
         .route("/inbox", get(index))
+        .route("/requests", get(index))
         .route("/sw.js", get(root_file))
         .route("/manifest.webmanifest", get(root_file))
         .route("/assets/{*path}", get(asset))

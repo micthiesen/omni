@@ -1844,3 +1844,87 @@ body:has(.sheet.open) .stack {
     padding-bottom: 32px;
   }
 }
+
+/* --- Requests ----------------------------------------------------------- */
+
+.ask-text {
+  display: block;
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--raised);
+  line-height: 1.45;
+  resize: none;
+}
+
+.requests .body {
+  display: grid;
+  gap: 14px;
+}
+
+.requests-list {
+  display: grid;
+}
+
+.request {
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.request-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.request-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+}
+
+.status {
+  padding: 1px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status[data-status="working"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status[data-status="done"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.status[data-status="declined"],
+.status[data-status="unsent"] {
+  color: var(--muted);
+}
+
+.request-note {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.request-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.request-links .link {
+  padding: 0;
+  white-space: normal;
+}

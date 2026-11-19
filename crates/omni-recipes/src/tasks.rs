@@ -118,6 +118,13 @@ fn purge_tx(conn: &Connection, now: i64) -> R<Purged> {
         params![cutoff],
     )
     .map_err(sql)?;
+    // Requests an agent closed a month ago.
+    conn.execute(
+        "DELETE FROM recipes_request
+         WHERE status IN ('done', 'declined') AND updated_at <= ?1",
+        params![cutoff],
+    )
+    .map_err(sql)?;
     // Items an agent set aside, and uploads that never completed.
     conn.execute(
         "DELETE FROM recipes_inbox_file WHERE item_id IN

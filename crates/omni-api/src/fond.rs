@@ -22,6 +22,8 @@ pub mod paths {
     pub const COOK: &str = "/api/cook";
     /// `GET /api/inbox` lists; `POST /api/inbox` uploads one photo.
     pub const INBOX: &str = "/api/inbox";
+    /// `GET /api/requests`: the requests sent to the kitchen agent.
+    pub const REQUESTS: &str = "/api/requests";
     /// The header every non-JSON upload must carry (any value).
     pub const UPLOAD_HEADER: &str = "x-fond-upload";
 
@@ -90,6 +92,8 @@ pub mod sse {
     pub const LIBRARY: &str = "library";
     /// A cook session changed: [`super::SessionChanged`]. Fetch it again.
     pub const SESSION: &str = "session";
+    /// A request was added or an agent changed one (`{}`). Fetch the list again.
+    pub const REQUESTS: &str = "requests";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -422,6 +426,96 @@ pub enum ClientOpKind {
         unit: Option<String>,
         base_revision: u32,
     },
+    /// A request for the kitchen agent, stored once by `request_id`. The
+    /// context is what the cook was looking at; a library request has none.
+    #[serde(rename_all = "camelCase")]
+    Request {
+        /// `req_` plus 8 lowercase letters or digits, chosen by the client.
+        request_id: String,
+        text: String,
+        origin: RequestOrigin,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recipe_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<f64>,
+        /// The step open in cook mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step: Option<String>,
+    },
+}
+
+/// Where in the app a request was written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestOrigin {
+    Recipe,
+    Cook,
+    Library,
+}
+
+impl RequestOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RequestOrigin::Recipe => "recipe",
+            RequestOrigin::Cook => "cook",
+            RequestOrigin::Library => "library",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestStatus {
+    Queued,
+    Working,
+    Done,
+    Declined,
+}
+
+impl RequestStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RequestStatus::Queued => "queued",
+            RequestStatus::Working => "working",
+            RequestStatus::Done => "done",
+            RequestStatus::Declined => "declined",
+        }
+    }
+}
+
+/// One request as the Requests page shows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KitchenRequest {
+    pub id: String,
+    pub text: String,
+    pub at: Ms,
+    pub updated_at: Ms,
+    pub origin: RequestOrigin,
+    pub status: RequestStatus,
+    /// The recipe it is about, with its title now (absent once the recipe is
+    /// gone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_title: Option<String>,
+    /// The agent's short note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The revision that answered it, and the recipe that revision is of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_recipe_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<u32>,
+}
+
+/// `GET /api/requests`: the newest requests first.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestList {
+    pub items: Vec<KitchenRequest>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

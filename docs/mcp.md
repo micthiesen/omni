@@ -84,7 +84,7 @@ families cover:
 - the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
   record queries, measurement comparison, typed records and immutable events,
   private evidence, export, restore and fixture purge (see [Stylist](stylist.md))
-- Fond, the recipe library (`recipes_*`, 21 tools, see [Recipes](recipes.md)):
+- Fond, the recipe library (`recipes_*`, 23 tools, see [Recipes](recipes.md)):
   the authoring guide (`recipes_guide`), search, one recipe as document, text
   or chart at any scale or revision, history and diffs, images as image
   blocks; creating from a whole document and editing with id-addressed
@@ -92,8 +92,9 @@ families cover:
   tags and state in bulk, the tag registry, merging duplicates and undoing any
   logged change from the last 30 days; importing a recipe page
   (`recipes_import_url`, fetched by the PressPods retrievers) and the inbox of
-  captured photos, pages and text; and cook sessions (start, read, append
-  events). Every tool that changes a recipe or the tag registry takes
+  captured photos, pages and text; cook sessions (start, read, append
+  events); and the requests the owner writes in the app (`recipes_requests_list`,
+  `recipes_request_update`). Every tool that changes a recipe or the tag registry takes
   `dryRun`, a refused document lists every problem at once, and nothing is
   ever removed: content has revisions, metadata has undo, delete is a 30-day
   trash

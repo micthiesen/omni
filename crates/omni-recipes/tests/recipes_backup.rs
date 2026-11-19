@@ -18,8 +18,8 @@ use omni_testkit::TestApp;
 use serde_json::{Value, json};
 
 /// A library with every kind of row: revisions, tags, images, an inbox item
-/// of each state, a finished cook with a note, an active cook, a merge
-/// and a change log.
+/// of each state, a finished cook with a note, an active cook, a merge,
+/// a request and a change log.
 async fn populated() -> Harness {
     let h = Harness::new().await;
     let router = h.router();
@@ -100,6 +100,22 @@ async fn populated() -> Harness {
         json!({ "keep": lasagne, "absorb": [twin] }),
     )
     .await;
+    // A request written in the app, taken by an agent.
+    let asked = post_json(
+        &h.router(),
+        "/api/ops",
+        &json!({ "ops": [{
+            "id": "op_request00001", "at": 1, "type": "request", "requestId": "req_aaaaaaaa",
+            "text": "More cheese.", "origin": "recipe", "recipeId": lasagne, "revision": 1, "scale": 1.5
+        }] }),
+    )
+    .await;
+    assert_eq!(asked.json()["results"][0]["ok"], true);
+    h.ok(
+        "recipes_request_update",
+        json!({ "requestId": "req_aaaaaaaa", "status": "working", "note": "On it." }),
+    )
+    .await;
     h
 }
 
@@ -137,7 +153,7 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
         h.recipes.dump().await.unwrap(),
         restored_to.dump().await.unwrap(),
     );
-    assert_eq!(original.len(), 12);
+    assert_eq!(original.len(), 13);
     for (table, rows) in &original {
         assert_eq!(copy[table], *rows, "{table}");
         if table != "recipes_redirect" {
@@ -257,6 +273,13 @@ fn as_written_before_adjustments_were_retired(path: &std::path::Path) -> std::pa
         archive["counts"][table] = json!(rows.as_array().unwrap().len());
         archive["checksums"][table] =
             json!(omni_recipes::db::sha256_hex(rows.to_string().as_bytes()));
+    }
+    // Requests came later still: an archive of that age has no such table.
+    for part in ["tables", "counts", "checksums"] {
+        archive[part]
+            .as_object_mut()
+            .unwrap()
+            .remove("recipes_request");
     }
     let old_path = path.with_file_name("fond-old-schema.json.gz");
     let mut encoder = flate2::write::GzEncoder::new(
@@ -435,10 +458,11 @@ async fn the_subsystem_registers_its_tools_tasks_and_host_app() {
     let app = TestApp::new().await;
     let subsystem = omni_recipes::subsystem(&app.ctx).unwrap();
     assert_eq!(subsystem.name, "recipes");
-    assert_eq!(subsystem.mcp_tools.len(), 21);
+    assert_eq!(subsystem.mcp_tools.len(), 23);
     let tasks: Vec<&str> = subsystem.tasks.iter().map(|task| task.name()).collect();
     assert_eq!(tasks, ["RecipesBackup", "RecipesPurge"]);
-    assert_eq!(subsystem.services.len(), 1);
+    let services: Vec<&str> = subsystem.services.iter().map(|s| s.name).collect();
+    assert_eq!(services, ["recipes-timers", "recipes-requests"]);
     assert_eq!(subsystem.boot_steps.len(), 1);
     // Without RECIPES_APP_URL no app is served, and the tools still work.
     assert!(subsystem.host_apps.is_empty());
@@ -458,5 +482,5 @@ async fn the_subsystem_registers_its_tools_tasks_and_host_app() {
     // An agent is told where the session opens.
     let recipes = omni_recipes::service(&ctx);
     let tools = omni_recipes::mcp::tools(std::sync::Arc::new(recipes)).unwrap();
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 23);
 }

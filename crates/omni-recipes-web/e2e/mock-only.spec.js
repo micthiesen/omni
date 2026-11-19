@@ -100,7 +100,7 @@ test.describe('the built app', () => {
 test.describe('an agent at work', () => {
   test.skip(!DIST, 'needs the mock server (set FOND_DIST)');
 
-  test('a revised recipe shows "updated since you started" and the cook can switch', async ({ page, request }) => {
+  test('a revised recipe shows "Recipe updated" and the cook can reload', async ({ page, request }) => {
     await page.goto('/');
     await page.locator('[data-testid=grid] a.card').first().click();
     const recipeId = page.url().split('/').pop();
@@ -110,9 +110,9 @@ test.describe('an agent at work', () => {
     await expect(page.locator('.card-step')).toBeVisible();
     await expect(page.locator('[data-testid=connection]')).toHaveCount(0);
     await request.post('/__mock/revise', { data: { recipeId } });
-    const notice = page.locator('[data-testid=outdated]');
-    await expect(notice).toContainText('updated since you started');
-    await notice.getByRole('button', { name: 'Switch' }).click();
+    const notice = page.locator('[data-testid=stale]');
+    await expect(notice).toContainText('Recipe updated');
+    await notice.getByRole('button', { name: 'Reload' }).click();
     await expect(notice).toHaveCount(0);
     await expect.poll(async () => (await (await request.get(`/api/cook/${sessionId}`)).json()).revision).toBe(2);
 
@@ -210,5 +210,64 @@ test.describe('an agent at work', () => {
     await expect(imported).toHaveAttribute('data-state', 'imported');
     await imported.getByRole('link', { name: 'Open recipe' }).click();
     await expect(page).toHaveURL(new RegExp(`/r/${recipeId}$`));
+  });
+});
+
+test.describe('changes that arrive under an open sheet', () => {
+  test.skip(!DIST, 'needs the mock server (set FOND_DIST)');
+
+  test('the library keeps its grid under the filter sheet and follows again when it closes', async ({ page, request }) => {
+    await page.goto('/');
+    const first = page.locator('[data-testid=grid] a.card').first();
+    await expect(first).toBeVisible();
+    const recipeId = (await first.getAttribute('href')).split('/').pop();
+    const title = await first.locator('h3').innerText();
+    const notice = page.locator('[data-testid=stale]');
+
+    // With nothing open, a renamed recipe shows by itself.
+    await request.post('/__mock/revise', { data: { recipeId, title: `${title} I` } });
+    await expect(first.locator('h3')).toHaveText(`${title} I`);
+    await expect(notice).toHaveCount(0);
+
+    // Under the filter sheet the grid stays as it is.
+    await page.getByRole('button', { name: 'Filter' }).click();
+    const sheet = page.locator('.sheet.open');
+    await expect(sheet).toBeVisible();
+    await request.post('/__mock/revise', { data: { recipeId, title: `${title} II` } });
+    await expect(notice).toContainText('Recipes updated');
+    await expect(first.locator('h3')).toHaveText(`${title} I`);
+    await notice.getByRole('button', { name: 'Reload' }).click();
+    await expect(first.locator('h3')).toHaveText(`${title} II`);
+    await expect(notice).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+
+    await request.post('/__mock/revise', { data: { recipeId, title } });
+    await expect(notice).toContainText('Recipes updated');
+    await sheet.getByRole('button', { name: 'Close' }).click();
+    await expect(first.locator('h3')).toHaveText(title);
+    await expect(notice).toHaveCount(0);
+  });
+
+  test('the Requests page keeps its list while a request is being written', async ({ page, request }) => {
+    await page.goto('/requests');
+    await page.locator('main.requests [data-testid=ask-kitchen]').click();
+    const sheet = page.locator('.sheet.open');
+    await sheet.locator('[data-testid=ask-text]').fill('Add a flatbread recipe.');
+    await sheet.locator('[data-testid=ask-submit]').click();
+    const row = page.locator('[data-testid=requests] li').filter({ hasText: 'Add a flatbread recipe.' });
+    await expect(row.locator('[data-testid=request-status]')).toHaveText('Queued');
+    const requestId = await row.getAttribute('data-request');
+
+    await page.locator('main.requests [data-testid=ask-kitchen]').click();
+    await expect(sheet).toBeVisible();
+    await request.post('/__mock/request', { data: { requestId, status: 'working' } });
+    const notice = page.locator('[data-testid=stale]');
+    await expect(notice).toContainText('Requests updated');
+    await expect(row.locator('[data-testid=request-status]')).toHaveText('Queued');
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
+    await expect(row.locator('[data-testid=request-status]')).toHaveText('Working');
+    await expect(notice).toHaveCount(0);
+    await request.post('/__mock/request', { data: { requestId, status: 'declined', note: 'Test.' } });
+    await expect(row.locator('[data-testid=request-status]')).toHaveText('Declined');
   });
 });

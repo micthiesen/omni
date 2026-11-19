@@ -80,20 +80,29 @@ pub type ToolResult = Result<(Value, Vec<Content>), String>;
 
 impl Harness {
     pub async fn new() -> Self {
-        Self::build(|ctx| ctx, true).await
+        Self::build(|ctx| ctx, true, None).await
     }
 
     /// Without a page fetcher wired.
     pub async fn without_pages() -> Self {
-        Self::build(|ctx| ctx, false).await
+        Self::build(|ctx| ctx, false, None).await
     }
 
     /// With the context changed before the service is built.
     pub async fn with(change: impl FnOnce(AppContext) -> AppContext) -> Self {
-        Self::build(change, true).await
+        Self::build(change, true, None).await
     }
 
-    async fn build(change: impl FnOnce(AppContext) -> AppContext, with_pages: bool) -> Self {
+    /// With requests announced through `delivery`, as the app at [`ORIGIN`].
+    pub async fn with_delivery(delivery: omni_recipes::requests::RequestDelivery) -> Self {
+        Self::build(|ctx| ctx, true, Some(delivery)).await
+    }
+
+    async fn build(
+        change: impl FnOnce(AppContext) -> AppContext,
+        with_pages: bool,
+        delivery: Option<omni_recipes::requests::RequestDelivery>,
+    ) -> Self {
         let app = TestApp::new().await;
         let ctx = change(app.ctx.clone());
         let events = RecordedEvents::install(&ctx.ports);
@@ -101,7 +110,10 @@ impl Harness {
         if with_pages {
             ctx.ports.set_page_fetcher(pages.clone()).unwrap();
         }
-        let recipes = Recipes::from_context(&ctx).with_file_grace(Duration::ZERO);
+        let mut recipes = Recipes::from_context(&ctx).with_file_grace(Duration::ZERO);
+        if let Some(delivery) = delivery {
+            recipes = recipes.with_request_delivery(delivery).with_app_url(ORIGIN);
+        }
         let tools = omni_recipes::mcp::tools(Arc::new(recipes.clone())).unwrap();
         Self {
             app,

@@ -29,7 +29,7 @@ crates/omni-recipes-web/
   src/platform/                the browser: fetch, IndexedDB, service worker,
                                wake lock, timer sound, photo downscaling
   src/store.rs                 app state, sync, the outbox pump, the event stream
-  src/ui/                      Library, Recipe, Cook, Inbox, the chart table
+  src/ui/                      Library, Recipe, Cook, Inbox, Requests, the chart table
   dev/mock-server.py           the contract in memory, for development and tests
   e2e/                         Playwright tests (WebKit, iPhone size)
 ```
@@ -130,6 +130,43 @@ sync that lands first has the queued change laid over it. A ten-second Undo
 toast sends the old amount back as another op. A refusal from the server
 restores the recipe it sends and shows its reason.
 
+**Requests.** "Ask Kitchen…" is in the overflow menu (the three dots) of the
+recipe page, of cook mode and of the library, next to "Requests"
+(`ui/requests.rs`). It opens a sheet with one text field and Submit: no
+photos, no voice, no thread. The request goes into the outbox as a
+`ClientOpKind::Request` with a `req_` id chosen on the phone, so it is written
+offline too and sent once the server can be reached. What the app attaches by
+itself: the recipe, the revision on screen and the scale (recipe page and cook
+mode) and the open step (cook mode); a library request has no recipe. The
+Requests page (`/requests`) lists every request with its text, status (Queued,
+Working, Done, Declined; "Waiting to send" while it is still in the outbox),
+date, the agent's note, a link to the recipe, and for a done request a link to
+the recipe under "See revision N". It is read-only apart from its own "Ask
+Kitchen…" button: replies never appear in Fond. The list is kept in `kv`
+(`requests`) for offline, fetched with every sync, and fetched again when
+`/api/events` sends `requests`.
+
+**Changes made elsewhere.** A sync runs at launch, on `online`, when the app
+returns to the front (`visibilitychange`) or its window regains the focus, and
+on every `library` frame, so an agent's edit or another device's change
+reaches the library, an open recipe page and the Requests page within a
+second. The screens draw from a copy that follows the store only while nothing
+is open over them (`ui::settled`):
+
+- With a sheet open (any menu, the amount sheet, the step sheet, Ask Kitchen)
+  or the notes field focused, a recipe page keeps the revision it shows and
+  the notice "Recipe updated" with Reload appears (the library says "Recipes
+  updated", the Requests page "Requests updated"). It is the app-update
+  notice's markup and stack, so it sits above the screen, and at the top while
+  a sheet is open. Reload shows the new content at once; closing the sheet or
+  leaving the field does the same without a tap.
+- The notes field is never overwritten while it has the keyboard; it catches
+  up when the keyboard goes.
+- Cook mode never follows by itself: a session shows the revision it pinned,
+  and "Recipe updated" with Reload moves it to the newest one (a `rebase`
+  event). The app's own amount change still moves its session at once.
+- A redraw of the recipe page keeps the scroll position.
+
 **Chart columns.** Every chart label is horizontal. `logic::chart_widths`
 sizes the columns of each block for the width the block really has (measured,
 and again on resize), with label widths measured on a canvas in the chart's
@@ -210,8 +247,8 @@ home indicator, and the fixed pieces keep their own insets.
 the build and prepends two constants to `js/sw.js`: `SHELL` (the URLs, with
 `index.html` as `/`) and `BUILD` (a checksum over those files and the worker
 source). The worker precaches `SHELL` into `fond-shell-<BUILD>` and serves
-the shell from it: navigations to `/`, `/r/*`, `/cook/*` and `/inbox` get the
-cached `index.html`, so those addresses load offline.
+the shell from it: navigations to `/`, `/r/*`, `/cook/*`, `/inbox` and
+`/requests` get the cached `index.html`, so those addresses load offline.
 
 A deploy changes `BUILD`, so the browser installs the new worker beside the
 running one:
@@ -268,7 +305,9 @@ FOND_DIST=../dist npx playwright test
 The mock server (Python standard library only) implements the contract in
 memory, seeded with the four golden recipes of `omni-recipe-format` and the
 preview seed's small three-step recipe, and has
-`/__mock/*` helpers to play an agent (`note`, `revise`, `import`, `reset`).
+`/__mock/*` helpers to play an agent (`note`, `revise`, `import`, `reset`,
+and `requests` and `request` for `recipes_requests_list` and
+`recipes_request_update`).
 
 The browser tests run in WebKit at iPhone size and cover the library, search,
 the tag filter, both recipe views (asserting `rowspan`/`colspan` and that
@@ -290,6 +329,15 @@ during a cook, an agent's note, the retired adjustment events of an app not
 yet updated, the absence of any cook-only wording in the built app, the
 "While … runs" offers, the
 server-pinned session document, and an imported inbox item.
+`requests.spec.js` covers "Ask Kitchen" from the three menus with the context
+each attaches, the Requests page, a request written offline, an agent working
+a request through to a done revision while the app follows, and the "Recipe
+updated" notice under a sheet, with the notes focused and in cook mode. The
+agent is played by `agent.js`: through the mock's helpers, or with
+`FOND_AGENT=claude` through the real MCP tools, each call made by a fresh
+`claude -p` client (slow: about twenty seconds a call). Against a real Omni it
+needs a throwaway recipe named by `FOND_RECIPE_REQUEST`; it writes revisions
+to that recipe and leaves its requests closed, marked as test requests.
 The rest take the server from `FOND_BASE_URL`, so the same suite runs against
 a real Omni:
 

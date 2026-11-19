@@ -605,13 +605,14 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
     );
     if ctx.config.recipes_app_url.is_some() {
         // The preview starts no background services except the recipe app's
-        // timer service: without it cook sessions never close and ended timers
-        // are never recorded (nothing is sent in preview). It only touches the
-        // recipe tables.
+        // own: without the timer service cook sessions never close and ended
+        // timers are never recorded, and without the request service a
+        // request's notice is never settled (nothing is sent in preview).
+        // Both only touch the recipe tables.
         let timers = subsystems
             .iter_mut()
             .flat_map(|subsystem| std::mem::take(&mut subsystem.services))
-            .filter(|service| service.name == "recipes-timers")
+            .filter(|service| matches!(service.name, "recipes-timers" | "recipes-requests"))
             .collect();
         crate::services::start_all(&ctx, timers);
     }

@@ -26,6 +26,7 @@ pub mod library;
 pub mod mcp;
 pub mod meta;
 pub mod organize;
+pub mod requests;
 pub mod review;
 pub mod schema;
 pub mod search;
@@ -66,6 +67,7 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, SubsystemError> {
     let tz = recipes.tz.clone();
     let init = recipes.clone();
     let timers = recipes.clone();
+    let requests = recipes.clone();
     let tasks: Vec<Arc<dyn omni_tasks::Task>> = vec![
         Arc::new(tasks::BackupTask::new(recipes.clone(), &tz)?),
         Arc::new(tasks::PurgeTask::new(recipes.clone(), &tz)?),
@@ -98,14 +100,24 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, SubsystemError> {
                 })
             }),
         }],
-        services: vec![BackgroundService {
-            name: "recipes-timers",
-            start: Box::new(move |ctx| {
-                let timers = timers.clone();
-                Box::pin(async move { timers.run_timers(ctx.shutdown.clone()).await })
-            }),
-            retry: None,
-        }],
+        services: vec![
+            BackgroundService {
+                name: "recipes-timers",
+                start: Box::new(move |ctx| {
+                    let timers = timers.clone();
+                    Box::pin(async move { timers.run_timers(ctx.shutdown.clone()).await })
+                }),
+                retry: None,
+            },
+            BackgroundService {
+                name: "recipes-requests",
+                start: Box::new(move |ctx| {
+                    let requests = requests.clone();
+                    Box::pin(async move { requests.run_requests(ctx.shutdown.clone()).await })
+                }),
+                retry: None,
+            },
+        ],
         ..Subsystem::named("recipes")
     })
 }

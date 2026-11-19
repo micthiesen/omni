@@ -202,10 +202,39 @@ const MIGRATIONS: &[Migration] = &[
         ],
         columns: &[],
     },
+    // Requests written in the app for the kitchen agent, with the state of
+    // the webhook notice each one is owed.
+    Migration {
+        version: 4,
+        statements: &[
+            "CREATE TABLE IF NOT EXISTS recipes_request (
+               id TEXT PRIMARY KEY,
+               text TEXT NOT NULL,
+               origin TEXT NOT NULL,
+               recipe_id TEXT,
+               revision INTEGER,
+               scale REAL,
+               step TEXT,
+               status TEXT NOT NULL,
+               note TEXT,
+               result_recipe_id TEXT,
+               result_revision INTEGER,
+               created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL,
+               delivery TEXT NOT NULL,
+               attempts INTEGER NOT NULL DEFAULT 0,
+               next_attempt_at INTEGER NOT NULL DEFAULT 0,
+               last_error TEXT,
+               delivered_at INTEGER)",
+            "CREATE INDEX IF NOT EXISTS recipes_request_by_status
+               ON recipes_request (status, created_at)",
+        ],
+        columns: &[],
+    },
 ];
 
 /// The newest schema version this build writes.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// Every table an archive carries, and a restore compares.
 pub const TABLES: &[&str] = &[
@@ -221,7 +250,17 @@ pub const TABLES: &[&str] = &[
     "recipes_change",
     "recipes_client_op",
     "recipes_redirect",
+    "recipes_request",
 ];
+
+/// The schema version that introduced `table`. An archive written before it
+/// has no such table, which reads as no rows.
+pub fn table_since(table: &str) -> u32 {
+    match table {
+        "recipes_request" => 4,
+        _ => 1,
+    }
+}
 
 pub fn meta(conn: &Connection, key: &str) -> R<Option<String>> {
     conn.query_row(

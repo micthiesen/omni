@@ -851,7 +851,7 @@ test.describe('changing an amount', () => {
 
     // Cook mode shows the new amount at once, with nothing to switch to.
     await expect(line).not.toHaveText(lineBefore);
-    await expect(page.locator('[data-testid=outdated]')).toHaveCount(0);
+    await expect(page.locator('[data-testid=stale]')).toHaveCount(0);
     await expect(page.locator('[data-testid=toast]')).toContainText('Amount changed');
     await shot(page, 'cook-amount-changed');
     await flushed(page);
@@ -860,7 +860,7 @@ test.describe('changing an amount', () => {
     expect(saved.qty).toBe(before.qty * 2);
     expect(saved.revision).toBe(before.revision + 1);
     expect((await session()).revision).toBe(saved.revision);
-    await expect(page.locator('[data-testid=outdated]')).toHaveCount(0);
+    await expect(page.locator('[data-testid=stale]')).toHaveCount(0);
 
     // Undo is one more revision, and the cook follows it back.
     await page.locator('[data-testid=toast]').getByRole('button', { name: 'Undo' }).click();

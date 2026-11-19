@@ -96,7 +96,7 @@ at scale 1 always reads exactly as written.
 
 ## Tools
 
-All 21 are recommended `allow`: each changes only Omni's own recipe data and is
+All 23 are recommended `allow`: each changes only Omni's own recipe data and is
 reversible. `recipes_import_url` and `recipes_images_edit` (with `url`) fetch a
 public URL the caller supplies.
 
@@ -123,6 +123,8 @@ public URL the caller supplies.
 | `recipes_cook_start` | Start a cook session at a scale |
 | `recipes_cook_get` | Active sessions, one session's state, or a recipe's cook log |
 | `recipes_cook_update` | Append events: check, uncheck, note, timer, cancelTimer, rebase, finish, abandon |
+| `recipes_requests_list` | Requests the owner wrote in the app, by status and recipe, oldest first |
+| `recipes_request_update` | A request's status, note and the revision that answers it |
 
 Behaviour every tool keeps:
 
@@ -337,6 +339,74 @@ ingredient without a quantity (to taste) cannot be given one.
   not swallow the alert. A timer that ended more than ten minutes ago (the
   server was down) is recorded as missed and not announced.
 
+## Requests from the app
+
+The owner writes a request to the kitchen agent in the app ("Ask Kitchen…" in the overflow menu
+of a recipe, of cook mode and of the library): a text field and Submit. Fond holds no
+conversation. It stores the request, announces it, and shows where it stands; every question
+and answer happens in the agent's own chat with the owner.
+
+- **Stored first.** A request is a row of `recipes_request`, written by `ClientOpKind::Request`
+  through `POST /api/ops` (so it rides the app's offline outbox) before anything is announced.
+  The library is the source of truth: a webhook that is down, misconfigured or never set up
+  loses nothing. The id is chosen by the app (`req_` and eight characters) and stored once,
+  whichever op id carries it.
+- **Context.** `origin` (`recipe`, `cook`, `library`), the recipe, the revision on screen, the
+  scale it was shown at, and in cook mode the step that was open. A library request has none.
+  Context that does not check out is dropped, never a reason to lose the text: an unknown
+  revision or a scale out of range goes, and a request about a recipe that no longer exists
+  (it waited offline) is kept as a library request. An empty text, more than 2,000 characters
+  or a malformed id refuses the op (`ok: false`, one line for the cook). At most 100 requests may be open at once, since the
+  app has no login.
+- **Status.** `queued`, `working`, `done`, `declined`, set only by an agent with
+  `recipes_request_update`, with an optional note of at most 300 characters and the revision
+  that answers it (`resultRevision`; `resultRecipeId` when a new recipe answers a library
+  request, and then its newest revision when none is given). The tool changes only the request:
+  the recipe change is an ordinary `recipes_edit`, `recipes_replace` or `recipes_create`, with
+  the household diet and measuring checks unchanged. `recipes_guide` carries the flow
+  ("Requests from the app").
+- **The notice.** When `RECIPES_REQUEST_WEBHOOK_URL` is set, the `recipes-requests` service
+  posts one JSON event per request to it (`requests.rs`):
+
+  ```json
+  {
+    "event": "recipe.request",
+    "requestId": "req_7h2k9m4x",
+    "text": "Halve the butter next time.",
+    "createdAt": "2026-11-19T04:12:09.120Z",
+    "recipeTitle": "Cauliflower Piccata",
+    "link": "https://recipes.example.com/r/rcp_rydc5v1b",
+    "context": { "origin": "cook", "recipeId": "rcp_rydc5v1b", "revision": 4, "scale": 1.5, "step": "sear" }
+  }
+  ```
+
+  `recipeTitle` and the context fields are `null` when the request has none; a library request
+  links to `/requests`. Headers: `Content-Type: application/json`, `X-Fond-Event:
+  recipe.request`, `Idempotency-Key: <requestId>` (the same on every attempt, so the receiver
+  collapses a resend), and `Authorization: Bearer <RECIPES_REQUEST_WEBHOOK_TOKEN>` when that is
+  set. There is no body signature: the bearer key is the authentication, as on the Claude
+  session notify targets. `RECIPES_REQUEST_WEBHOOK_CONNECT` connects to another host than the
+  URL's (a reverse proxy on a Docker network) while keeping the URL's host for TLS and `Host`.
+  The client is the LAN-capable one (the address is configuration, never app input), follows
+  no redirect, waits ten seconds, and in `SideEffectMode::Record` sends nothing.
+- **Retries.** An attempt is reserved (`attempts`, `next_attempt_at`) before it is sent. No
+  answer, a timeout, 408, 425, 429 and 5xx are retried after 30 seconds, doubling to 30
+  minutes, for 24 hours from the request; then, or at once on any other 4xx, a redirect or an
+  answer longer than 64 KiB (some other page, not a webhook's answer), the notice is `failed`
+  and logged at WARN. A 2xx whose body says `"ignored": true` (the bot has no
+  webhook routine) settles as `ignored`. A request an agent already took is `skipped`. Whatever
+  the notice's fate (`delivery` in the tool output: `pending`, `delivered`, `ignored`,
+  `failed`, `unconfigured`, `skipped`), the request stays `queued` until an agent takes it,
+  and `recipes_requests_list` returns it. Without the URL the service logs at boot that the
+  webhook is disabled and each request is stored as `unconfigured`; when the service later
+  starts with a URL, the `unconfigured` requests still `queued` are announced then.
+- **In the app.** `GET /api/requests` lists the newest 200; an `/api/events` frame named
+  `requests` says the list changed. Request writes bump `cook_seq`, not the library sequence:
+  no device syncs its library over them, and the hourly archive still sees them.
+- **Kept.** `RecipesPurge` removes a request 30 days after it was closed (`done` or
+  `declined`); an open one stays. Request text is written in an app without a login: the tool
+  descriptions mark it as untrusted, to be acted on only as a recipe change.
+
 ## Storage
 
 Relational tables in `docstore.db`, written through `store.write`
@@ -355,6 +425,7 @@ also ensures them on first use, and a database from a newer build is refused.
 | `recipes_change` | The change log: tool, summary, touched facets, before, after |
 | `recipes_client_op` | Ids of the app's edits already applied |
 | `recipes_redirect` | Where a purged, merged-away recipe lives |
+| `recipes_request` | Requests written in the app, their status and outcome, and the state of each one's webhook notice |
 | `recipes_timer_alert` | One row per ended timer: the alert reservation |
 | `recipes_meta` | `schema_version`, `seq`, `cook_seq`, backup bookkeeping |
 | `recipes_fts` | FTS5 index |
@@ -365,8 +436,9 @@ also ensures them on first use, and a database from a newer build is refused.
 - `seq` is a library-wide counter bumped by every change. The app syncs with
   "everything after `seq` N". Cook events bump `cook_seq` instead, so crossing
   a step off does not make every device sync.
-- Ids are a prefix (`rcp_`, `chg_`, `inb_`, `cook_`, `img_`, `adj_`) and eight
-  lowercase base32 characters. The app chooses a session's `cook_` id.
+- Ids are a prefix (`rcp_`, `chg_`, `inb_`, `cook_`, `img_`, `adj_`, `req_`) and eight
+  lowercase base32 characters. The app chooses a session's `cook_` id and a
+  request's `req_` id.
 
 ### Search
 
@@ -408,8 +480,9 @@ same tokeniser.
 | Route | Purpose |
 |---|---|
 | `GET /api/sync?since=<seq>` | The library after `seq` (or all of it), `removed` ids, tags, open sessions |
-| `GET /api/events` | SSE: `hello`, then `library` and `session` frames, with pings |
-| `POST /api/ops` | Notes and state edits, each applied once by id |
+| `GET /api/events` | SSE: `hello`, then `library`, `session` and `requests` frames, with pings |
+| `POST /api/ops` | Notes, state and amount edits and requests, each applied once by id |
+| `GET /api/requests` | The requests written in the app, newest first |
 | `POST /api/cook`, `GET /api/cook/:id` | Start (idempotent by id) and read a session |
 | `POST /api/cook/:id/events` | Append events |
 | `POST /api/cook/:id/photo?id=` | The photo of the result, as an image of the recipe; stored once per upload `id` |
@@ -417,7 +490,7 @@ same tokeniser.
 | `GET /api/original/:recipeId` | The stored source |
 | `GET /img/:digest/:variant.jpg` | `thumb` or `full`, immutable; only digests a row refers to |
 | `GET /src/:itemId/:n.jpg` | Photo `n` of an inbox item |
-| `/`, `/r/:id`, `/cook/:id`, `/inbox` | `index.html` (`no-cache`) |
+| `/`, `/r/:id`, `/cook/:id`, `/inbox`, `/requests` | `index.html` (`no-cache`) |
 | `/assets/*`, `/icons/*`, `/sw.js`, `/manifest.webmanifest` | The app's files |
 
 - The static files come from `AppPaths::recipes_web_dist`
@@ -496,8 +569,9 @@ local runs.
 
 There is no login. Anyone on the LAN or the VPN can read the recipes and do
 what the app can do: change a recipe's state and notes, change the amount of
-one ingredient, run cook sessions and upload to the inbox. Those writes are
-logged and reversible.
+one ingredient, run cook sessions, upload to the inbox and write a request for
+the kitchen agent. The recipe writes are logged and reversible; a request
+changes nothing until an agent acts on it.
 
 ### Running it locally
 
@@ -513,8 +587,9 @@ with a drawn placeholder photo and a note, and one photo waits in
 the inbox, so every screen of the app has something to show
 (`crates/omni/src/preview_recipes.rs`). `http://localhost:8099/` is still the
 Omni preview. Of the background services the preview starts only
-`recipes-timers`, so idle sessions close and ended timers are recorded
-(`recipes_timer_alert`, state `unrouted`: nothing is sent in a preview).
+`recipes-timers` and `recipes-requests`, so idle sessions close, ended timers
+are recorded (`recipes_timer_alert`, state `unrouted`) and a request's notice
+is settled; nothing is sent in a preview.
 Fetching is offline in a preview, so URL import answers `[fetch_failed]`.
 The app's browser tests run against it with
 `FOND_BASE_URL=http://fond.localhost:8099` (`docs/recipes-app.md`).
@@ -551,8 +626,9 @@ so the library keeps its own archive.
   stored source shared by another recipe stays.
 - **`RecipesPurge`**, daily at 04:12, removes recipes trashed 30 days ago
   (keeping the pointer of a merged-away recipe), change-log entries and applied
-  app-edit ids older than 30 days, inbox items discarded 30 days ago, uploads
-  that never completed, and image files nothing refers to.
+  app-edit ids older than 30 days, requests closed 30 days ago, inbox items
+  discarded 30 days ago, uploads that never completed, and image files nothing
+  refers to.
 - **`omni recipes-verify <archive> [--dir DIR]`** checks every table's
   checksum and, when the recipes directory exists, that every image the
   archive refers to is stored there intact.
@@ -580,4 +656,6 @@ archive plus the off-site backup's interval. The archive is also the export.
 - Fond's router is only a host app. Its mutations need the app's own origin.
 - A timer alert is reserved before it is sent and is never sent twice.
 - Events are published after commit, once per item or session.
+- A request is stored before its notice is sent, and no failure of the notice
+  changes or loses the request.
 - A restore needs an empty library and an archive that verifies.

@@ -180,6 +180,7 @@ class State:
         self.sessions = {}
         self.photo_uploads = set()
         self.op_results = {}
+        self.requests = {}
         self.inbox = {}
         self.inbox_counts = {}
 
@@ -405,17 +406,72 @@ class State:
         with self.lock:
             results = []
             changed = False
+            asked = False
             for op in ops:
                 if op["id"] in self.op_results:
                     results.append(self.op_results[op["id"]])
                     continue
-                result = self.apply_op(op)
-                changed = changed or result["ok"]
+                if op.get("type") == "request":
+                    result = self.add_request(op)
+                    asked = asked or result["ok"]
+                else:
+                    result = self.apply_op(op)
+                    changed = changed or result["ok"]
                 self.op_results[op["id"]] = result
                 results.append(result)
             if changed:
                 self.emit_library()
+            if asked:
+                self.broadcast("requests", {})
             return copy.deepcopy({"seq": self.seq, "results": results})
+
+    def add_request(self, op):
+        """Stores a request once by its id; a request changes no recipe."""
+
+        def answer(ok, error=None):
+            return {"id": op["id"], "ok": ok, "error": error, "recipe": None}
+
+        request_id, text = op.get("requestId"), op.get("text")
+        if not isinstance(request_id, str) or not re.fullmatch(r"req_[a-z0-9]{8}", request_id):
+            return answer(False, "the request has no valid id")
+        if request_id in self.requests:
+            return answer(True)
+        if not isinstance(text, str) or not text.strip():
+            return answer(False, "the request is empty")
+        if len(text.strip()) > 2000:
+            return answer(False, "a request is limited to 2,000 characters")
+        recipe = self.recipes.get(op.get("recipeId")) if op.get("origin") != "library" else None
+        if op.get("origin") != "library" and op.get("recipeId") and recipe is None:
+            return answer(False, "no such recipe")
+        now = now_ms()
+        self.requests[request_id] = {
+            "id": request_id,
+            "text": text.strip(),
+            "at": now,
+            "updatedAt": now,
+            "origin": op.get("origin") if recipe else "library",
+            "status": "queued",
+            "recipeId": recipe["id"] if recipe else None,
+            # Kept for the tests; the app's list does not carry them.
+            "context": {
+                "revision": op.get("revision") if recipe else None,
+                "scale": op.get("scale") if recipe else None,
+                "step": op.get("step") if recipe else None,
+            },
+        }
+        return answer(True)
+
+    def request_wire(self, request):
+        recipe = self.recipes.get(request.get("recipeId"))
+        wire = {k: v for k, v in request.items() if k != "context" and v is not None}
+        if recipe is not None:
+            wire["recipeTitle"] = recipe["doc"]["title"]
+        return wire
+
+    def requests_list(self):
+        with self.lock:
+            newest = sorted(self.requests.values(), key=lambda r: (-r["at"], r["id"]))
+            return copy.deepcopy({"items": [self.request_wire(r) for r in newest]})
 
     def apply_op(self, op):
         def refuse(error):
@@ -710,9 +766,47 @@ class State:
             if recipe is None:
                 raise ApiError(404, "unknown recipe")
             recipe["revision"] += 1
+            # A change a reader can see, when asked for one.
+            for field in ("summary", "title"):
+                if isinstance(body.get(field), str):
+                    recipe["doc"][field] = body[field]
             self.touch(recipe)
             self.emit_library()
             return copy.deepcopy(recipe)
+
+    def mock_requests(self, body):
+        """The stored requests with their context, oldest first, as an agent lists them."""
+        with self.lock:
+            status = body.get("status")
+            found = [
+                r for r in sorted(self.requests.values(), key=lambda r: (r["at"], r["id"]))
+                if status in (None, "all")
+                or r["status"] == status
+                or (status == "open" and r["status"] in ("queued", "working"))
+            ]
+            return copy.deepcopy({"requests": found})
+
+    def mock_request(self, body):
+        """Plays `recipes_request_update`: status, note, resultRevision, resultRecipeId."""
+        with self.lock:
+            request = self.requests.get(body.get("requestId"))
+            if request is None:
+                raise ApiError(404, "unknown request")
+            before = copy.deepcopy(request)
+            if body.get("status") in ("queued", "working", "done", "declined"):
+                request["status"] = body["status"]
+            if isinstance(body.get("note"), str):
+                request["note"] = body["note"].strip() or None
+            if is_int(body.get("resultRevision")) or isinstance(body.get("resultRecipeId"), str):
+                target = body.get("resultRecipeId") or request.get("recipeId")
+                if target not in self.recipes:
+                    raise ApiError(404, "unknown recipe")
+                request["resultRecipeId"] = target
+                request["resultRevision"] = body.get("resultRevision") or self.recipes[target]["revision"]
+            if request != before:
+                request["updatedAt"] = now_ms()
+                self.broadcast("requests", {})
+            return copy.deepcopy(request)
 
     def mock_unimage(self, body):
         """Removes every image of a recipe, as an agent's images edit would."""
@@ -852,6 +946,8 @@ class Handler(BaseHTTPRequestHandler):
             return state.sync(since)
         if path == "/api/inbox":
             return state.inbox_list()
+        if path == "/api/requests":
+            return state.requests_list()
         parts = path.split("/")[2:]
         if len(parts) == 2 and parts[0] == "cook":
             return state.get_session(parts[1])
@@ -879,7 +975,14 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/__mock/reset":
                 self.read_json()
                 answer = state.reset()
-            elif path in ("/__mock/note", "/__mock/revise", "/__mock/import", "/__mock/unimage"):
+            elif path in (
+                "/__mock/note",
+                "/__mock/revise",
+                "/__mock/import",
+                "/__mock/unimage",
+                "/__mock/request",
+                "/__mock/requests",
+            ):
                 body = self.read_json()
                 if not isinstance(body, dict):
                     raise ApiError(400, "body must be an object")
@@ -910,7 +1013,11 @@ class Handler(BaseHTTPRequestHandler):
     # -- static files -------------------------------------------------------
 
     def serve_static(self, path, head):
-        spa = path in ("/", "/inbox") or path.startswith("/r/") or path.startswith("/cook/")
+        spa = (
+            path in ("/", "/inbox", "/requests")
+            or path.startswith("/r/")
+            or path.startswith("/cook/")
+        )
         relative = "index.html" if spa else path.lstrip("/")
         segments = relative.split("/")
         if not relative or ".." in segments or "\\" in relative or "\x00" in relative:

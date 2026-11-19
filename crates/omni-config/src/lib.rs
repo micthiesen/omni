@@ -143,6 +143,27 @@ pub fn is_notify_target_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
+/// An `https://` webhook address without credentials or fragment, as given.
+/// The error never quotes the value: its path or query may be a credential.
+fn webhook_url(key: &'static str, raw: &str) -> Result<String, ConfigError> {
+    url::Url::parse(raw)
+        .ok()
+        .filter(|url| {
+            url.scheme() == "https"
+                && url.host_str().is_some_and(|host| !host.is_empty())
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.fragment().is_none()
+        })
+        .map(|_| raw.to_owned())
+        .ok_or_else(|| {
+            invalid(
+                key,
+                format!("{key} must be an https URL without credentials or fragment"),
+            )
+        })
+}
+
 /// A host name or IP address without port, path or credentials.
 fn is_connect_host(host: &str) -> bool {
     host.parse::<std::net::IpAddr>().is_ok()
@@ -486,6 +507,15 @@ config_struct! {
     /// The built recipe app (`/app/recipes-web` in the container,
     /// `crates/omni-recipes-web/dist` otherwise).
     omni_recipes_web_dist: Option<String> = "OMNI_RECIPES_WEB_DIST",
+    /// Where a request written in the recipe app is announced
+    /// (`recipe.request`): an `https://` webhook without credentials or
+    /// fragment. Unset keeps requests in the library only.
+    recipes_request_webhook_url: Option<String> = "RECIPES_REQUEST_WEBHOOK_URL",
+    /// The bearer key that webhook expects (at least 16 characters).
+    recipes_request_webhook_token: Option<String> = "RECIPES_REQUEST_WEBHOOK_TOKEN",
+    /// Connect to this host instead of the webhook URL's, keeping the URL's
+    /// host for TLS and `Host` (see [`ClaudeNotifyTarget::connect`]).
+    recipes_request_webhook_connect: Option<String> = "RECIPES_REQUEST_WEBHOOK_CONNECT",
     /// HTTP(S) without credentials, query or fragment; trailing slashes trimmed.
     hister_url: String = "HISTER_URL",
     hister_access_token: Option<String> = "HISTER_ACCESS_TOKEN",
@@ -915,6 +945,41 @@ impl Config {
                 Some(raw) => Some(recipes_app_origin(raw, env.boolean("DOCKERIZED", false)?)?),
             },
             omni_recipes_web_dist: env.opt("OMNI_RECIPES_WEB_DIST"),
+            recipes_request_webhook_url: env
+                .opt("RECIPES_REQUEST_WEBHOOK_URL")
+                .map(|raw| raw.trim().to_owned())
+                .filter(|raw| !raw.is_empty())
+                .map(|raw| webhook_url("RECIPES_REQUEST_WEBHOOK_URL", &raw))
+                .transpose()?,
+            recipes_request_webhook_token: env
+                .opt("RECIPES_REQUEST_WEBHOOK_TOKEN")
+                .filter(|raw| !raw.trim().is_empty())
+                .map(|token| {
+                    if token.len() < 16 || token.chars().any(char::is_whitespace) {
+                        Err(invalid(
+                            "RECIPES_REQUEST_WEBHOOK_TOKEN",
+                            "RECIPES_REQUEST_WEBHOOK_TOKEN must be at least 16 characters without spaces",
+                        ))
+                    } else {
+                        Ok(token)
+                    }
+                })
+                .transpose()?,
+            recipes_request_webhook_connect: env
+                .opt("RECIPES_REQUEST_WEBHOOK_CONNECT")
+                .map(|raw| raw.trim().to_owned())
+                .filter(|raw| !raw.is_empty())
+                .map(|host| {
+                    if is_connect_host(&host) {
+                        Ok(host)
+                    } else {
+                        Err(invalid(
+                            "RECIPES_REQUEST_WEBHOOK_CONNECT",
+                            "RECIPES_REQUEST_WEBHOOK_CONNECT must be a bare host name or IP address",
+                        ))
+                    }
+                })
+                .transpose()?,
             hister_url: {
                 let key = "HISTER_URL";
                 let url = env.trimmed_url(key, "https://hister.syas.ca")?;
@@ -1061,6 +1126,21 @@ impl Config {
             values.extend(targets.0.values().map(|target| target.token.clone()));
         }
         values
+    }
+
+    /// The webhook that hears about requests written in the recipe app, when
+    /// `RECIPES_REQUEST_WEBHOOK_URL` is set. The token is empty when none is
+    /// configured, and then no `Authorization` header is sent.
+    pub fn recipes_request_webhook(&self) -> Option<ClaudeNotifyTarget> {
+        let url = url::Url::parse(self.recipes_request_webhook_url.as_deref()?).ok()?;
+        Some(ClaudeNotifyTarget {
+            url,
+            token: self
+                .recipes_request_webhook_token
+                .clone()
+                .unwrap_or_default(),
+            connect: self.recipes_request_webhook_connect.clone(),
+        })
     }
 
     /// `DOCKERIZED ? /data/<DB_NAME> : <DB_NAME>` (string concatenation).
@@ -1493,6 +1573,48 @@ mod tests {
         ] {
             assert!(public_origin("K", bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_recipe_request_webhook_needs_only_a_url_and_is_never_shown() {
+        let load = |pairs: &[(&str, &str)]| {
+            let vars: BTreeMap<String, String> = pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+            Config::from_env(&vars)
+        };
+        assert!(load(&[]).unwrap().recipes_request_webhook().is_none());
+        let url = (
+            "RECIPES_REQUEST_WEBHOOK_URL",
+            "https://bots.example/hooks/kitchen-path",
+        );
+        let bare = load(&[url]).unwrap().recipes_request_webhook().unwrap();
+        assert_eq!(bare.url.host_str(), Some("bots.example"));
+        assert!(bare.token.is_empty() && bare.connect.is_none());
+        let token = ("RECIPES_REQUEST_WEBHOOK_TOKEN", "kitchen-key-0123456789");
+        let connect = ("RECIPES_REQUEST_WEBHOOK_CONNECT", "npm");
+        let config = load(&[url, token, connect]).unwrap();
+        let full = config.recipes_request_webhook().unwrap();
+        assert_eq!(full.token, "kitchen-key-0123456789");
+        assert_eq!(full.connect.as_deref(), Some("npm"));
+        // Neither the address nor the key reaches the boot summary, and both are scrubbed.
+        let summary = format!("{config:?}");
+        assert!(!summary.contains("kitchen-path") && !summary.contains("kitchen-key"));
+        let secrets = config.secret_values();
+        assert!(secrets.contains(&url.1.to_owned()) && secrets.contains(&token.1.to_owned()));
+        for bad in [
+            "http://bots.example/x",
+            "https://user:pw@bots.example/x",
+            "kitchen",
+        ] {
+            assert!(
+                load(&[("RECIPES_REQUEST_WEBHOOK_URL", bad)]).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(load(&[url, ("RECIPES_REQUEST_WEBHOOK_TOKEN", "short")]).is_err());
+        assert!(load(&[url, ("RECIPES_REQUEST_WEBHOOK_CONNECT", "a/b")]).is_err());
     }
 
     #[test]
