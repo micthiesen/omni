@@ -7,11 +7,11 @@ deploy, with UX and timing decisions delegated where noted. Earlier history: `PR
 
 The recipe request webhook was left unset, as asked.
 
-## Status
+## Status: finished
 
-Built, reviewed and tested locally, then pushed (the push deploys and restarts Omni). The
-production results are in the section "Production" once a later commit adds them, and in the
-session's final message.
+Deployed and verified in production on 2026-11-19: build `4702cd3` on
+`https://recipes.syas.ca` (the batch is commit `58f7446`; `4702cd3` only repairs the image
+build, see "Production"). Nothing is in progress.
 
 ## 1. Unit-aware steppers
 
@@ -160,7 +160,8 @@ WebKit at iPhone 14 size, light and dark, in
 - `library/`: `library-masonry-2`, `library-masonry-2-end`, `library-masonry-3`,
   `library-masonry-3-end`, `pins-section`, `pins-card-menu`, `pins-card-menu-pinned`,
   `pins-dragging`, `stepper-amount`.
-- `production/` (after the deploy): the 145-recipe library at phone width and wider.
+- `production/`: the 145-recipe library in production at phone width and wider
+  (`library-masonry-2`, `-2-end`, `-3`, `-3-end`), and the pin screens there.
 
 ## Tests
 
@@ -180,6 +181,41 @@ Before the push:
   left the app out of step; pin positions could tie on a second device after a pinned recipe
   was trashed; the drag could lose the touch when cards reshuffled; the cleanup now also
   cleans notes when a source write is refused, and leaves a stored text another recipe shares.
+
+## Production
+
+- **The deploy.** The first image build of `58f7446` failed, not on this batch: the CAM++
+  speaker model's release asset was replaced upstream with a file one byte longer, so its
+  pinned SHA-256 stopped matching as soon as the build cache no longer held the old download.
+  `4702cd3` takes that file from the same pinned earlier image the parakeet model already
+  comes from (checked on boris: that image holds it with the pinned checksum). CI then passed
+  every job. Adopting either new upstream export stays a separate decision.
+- **Crouton history.** Boot log: "Removed Crouton import history: 141 recipes changed (141
+  sources, 141 notes, 141 stored originals), 0 left as they were". The library before and after
+  was compared recipe by recipe from the Mac: for all 145 the document differs in `source`
+  alone; the 141 imported ones have notes equal to what stood before the block (66 keep notes
+  of their own, 75 are now empty), no stored original, and one new revision; the other four
+  are untouched; "Crouton" appears in no notes field and no source. Sources are now 101 `web`,
+  42 `original`, 2 `person`.
+- **Tools.** A fresh client: `recipes_pins` answers, `recipes_guide` is version 6 with the
+  pins paragraph and the rule against import history.
+- **Browser tests** (WebKit at iPhone size through the SSH proxy):
+  - `library.spec.js`: 8 passed, 1 skipped (the list set elsewhere needs the mock): masonry
+    of 145 cards at 390px and 820px, scroll restore, pin from both menus, drag reorder, menu
+    reorder, the amount sheet's steps in every unit family the library has, the yield stepper.
+  - `cook-chart.spec.js`: 8 passed (on Cauliflower Piccata and World's Best Lasagna).
+  - The existing suite (`fond`, `chart-borders`, `shell`, `view-preference`): 35 passed, 4
+    skipped (finishing a cook, the inbox upload, on-demand screenshots). An earlier run of it
+    was lost to the SSH tunnel dropping, and showed that the chart-lines test needed a larger
+    time budget now that it also marks a step through the sheet in each of 30 recipes; both
+    are fixed (keep-alives on the tunnel, the budget in the test).
+  - Not run against production: `requests.spec.js` (unchanged since the last batch, and it
+    needs a throwaway recipe and writes requests) and the mock-only group.
+- **Test data.** Nothing is pinned, no cook session is open, the Requests page and the inbox
+  are empty. Two cook sessions the interrupted run left open were discarded (nothing logged).
+  The amount tests leave revisions on Dad's Mustard Vinaigrette, each change followed by its
+  undo, as before.
+- Not verifiable here: a real iPhone (the list below).
 
 ## To check on the iPhone
 

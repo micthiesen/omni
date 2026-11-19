@@ -195,7 +195,9 @@ test('every chart line is drawn once, and the pinned column keeps its edge while
   // the recipes with the most steps (the widest charts) stand for the rest.
   const steps = (recipe) => recipe.doc.components.reduce((sum, component) => sum + component.steps.length, 0);
   const recipes = (await activeRecipes(page)).sort((a, b) => steps(b) - steps(a)).slice(0, 30);
-  test.setTimeout(60_000 + recipes.length * 20_000);
+  // Each recipe is checked at every scroll position twice (recipe view and
+  // cook mode, where a step is also marked through its sheet).
+  test.setTimeout(60_000 + recipes.length * 35_000);
   for (const recipe of recipes) {
     await openChart(page, recipe);
     await checkLines(page, recipe.doc.title);

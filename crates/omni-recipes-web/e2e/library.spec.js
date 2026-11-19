@@ -340,7 +340,7 @@ test('the amount sheet steps each unit the way it is measured', async ({ page })
   const found = {};
   for (const recipe of library) {
     for (const component of recipe.doc.components) {
-      for (const ingredient of component.ingredients) {
+      for (const ingredient of component.ingredients || []) {
         if (typeof ingredient.qty !== 'number') continue;
         for (const [family, units] of Object.entries(families)) {
           if (!found[family] && units.includes(ingredient.unit)) found[family] = { recipe, ingredient };
