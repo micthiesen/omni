@@ -147,6 +147,15 @@ pub fn countdown(remaining_ms: Ms) -> String {
     }
 }
 
+/// What a timer shows: the countdown, then how long ago it ran out ("+0:12").
+pub fn timer_text(remaining_ms: Ms) -> String {
+    if remaining_ms >= 0 {
+        countdown(remaining_ms)
+    } else {
+        format!("+{}", countdown(-remaining_ms / 1000 * 1000))
+    }
+}
+
 /// The cover of a recipe: the chosen image, else the first.
 pub fn cover(record: &RecipeRecord) -> Option<&omni_api::fond::ImageInfo> {
     record
@@ -395,6 +404,15 @@ mod tests {
         assert_eq!(countdown(900), "0:01");
         assert_eq!(countdown(0), "0:00");
         assert_eq!(countdown(-5), "0:00");
+    }
+
+    #[test]
+    fn a_timer_counts_down_and_then_up() {
+        assert_eq!(timer_text(61_000), "1:01");
+        assert_eq!(timer_text(0), "0:00");
+        assert_eq!(timer_text(-999), "+0:00");
+        assert_eq!(timer_text(-12_400), "+0:12");
+        assert_eq!(timer_text(-3_725_000), "+1:02:05");
     }
 
     fn labels<'a>(steps: &[&'a str]) -> Vec<ChartLabel<'a>> {

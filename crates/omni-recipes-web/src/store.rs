@@ -152,7 +152,8 @@ pub struct Store {
     pub online: RwSignal<bool>,
     pub update_available: RwSignal<bool>,
     pub route: RwSignal<Route>,
-    /// Ticks every second.
+    /// The wall clock, four times a second. Timers are end times compared
+    /// with it, so a locked screen or a suspended app loses nothing.
     pub now: RwSignal<Ms>,
     pub toast: RwSignal<Option<Toast>>,
     pub alerts: RwSignal<Vec<Alert>>,
@@ -172,6 +173,7 @@ pub struct Store {
     requests_asked: StoredValue<u64>,
     stale_seq: StoredValue<u64>,
     last_wake: StoredValue<Ms>,
+    last_ring: StoredValue<Ms>,
 }
 
 thread_local! {
@@ -180,6 +182,9 @@ thread_local! {
 
 const NOTES_DEBOUNCE: Duration = Duration::from_millis(800);
 pub const UNDO_WINDOW: Duration = Duration::from_secs(10);
+/// A timer that ran out rings again this often, for this long.
+const RING_EVERY_MS: Ms = 10_000;
+const RING_FOR_MS: Ms = 60_000;
 /// The long edge of an uploaded photo.
 const PHOTO_EDGE: u32 = 2400;
 
@@ -229,6 +234,7 @@ impl Store {
             requests_asked: StoredValue::new(0),
             stale_seq: StoredValue::new(0),
             last_wake: StoredValue::new(0),
+            last_ring: StoredValue::new(0),
         }
     }
 
@@ -318,7 +324,9 @@ impl Store {
             },
         );
         // The clock only drives countdowns; the handle lives as long as the page.
-        let _ = set_interval_with_handle(move || self.tick(), Duration::from_secs(1));
+        // Four times a second, so a countdown changes within a quarter second
+        // of its second and never skips one when the interval runs late.
+        let _ = set_interval_with_handle(move || self.tick(), Duration::from_millis(250));
     }
 
     /// The app came back (to the foreground or to the network). Coming to
@@ -359,11 +367,17 @@ impl Store {
                 }
             }
         });
-        if due != self.alerts.get_untracked() {
-            let known = self.alerts.get_untracked();
-            if due.iter().any(|alert| !known.contains(alert)) && visible() {
-                device::ring();
-            }
+        let known = self.alerts.get_untracked();
+        let new = due.iter().any(|alert| !known.contains(alert));
+        // Three tones are easy to miss over a pan: they repeat until the
+        // timer is stopped, for its first minute.
+        let again = now - self.last_ring.get_value() >= RING_EVERY_MS
+            && due.iter().any(|alert| now - alert.ends_at < RING_FOR_MS);
+        if (new || again) && visible() {
+            self.last_ring.set_value(now);
+            device::ring();
+        }
+        if due != known {
             self.alerts.set(due);
         }
     }
@@ -429,13 +443,19 @@ impl Store {
     }
 
     pub fn show_toast(self, text: impl Into<String>, undo: Option<Undo>) {
-        let id = self.toast_seq.get_value() + 1;
-        self.toast_seq.set_value(id);
         let lasts = if undo.is_some() {
             UNDO_WINDOW
         } else {
             Duration::from_secs(3)
         };
+        self.show_toast_for(text, undo, lasts);
+    }
+
+    /// A toast that leaves after `lasts`: a short one confirms something the
+    /// screen already shows.
+    pub fn show_toast_for(self, text: impl Into<String>, undo: Option<Undo>, lasts: Duration) {
+        let id = self.toast_seq.get_value() + 1;
+        self.toast_seq.set_value(id);
         self.toast.set(Some(Toast {
             id,
             text: text.into(),

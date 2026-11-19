@@ -64,6 +64,7 @@ features = [
   "ServiceWorkerContainer",
   "ServiceWorkerRegistration",
   "ServiceWorkerState",
+  "Selection",
   "Storage",
   "TextMetrics",
   "Url",

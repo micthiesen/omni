@@ -101,6 +101,8 @@ photo is uploaded under its stored blob name as the upload id, so a retry
 stores it once.
 Timers are end times in the log; the app rings (Web Audio and vibration)
 while it is in front, and Omni's own alert covers the rest.
+Running timers are docked under the cook screen and count up once they run
+out; marking a step done stops its timer (`docs/fond/cook-chart-steps.md`).
 The Finish sheet also offers "Discard this cook", which asks once more and
 then appends an `abandon` event: the session leaves "Cooking now", nothing is
 logged and the recipe's cook count is unchanged.

@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use omni_api::fond::CookEventKind;
 use wasm_bindgen::JsCast;
 
-use crate::logic::{Route, countdown};
+use crate::logic::{Route, timer_text};
 use crate::platform::{device, listen, shell, window};
 use crate::store::{Store, use_store};
 
@@ -175,9 +175,18 @@ pub fn Sheet(
     #[prop(into)] title: Signal<String>,
     children: Children,
 ) -> impl IntoView {
+    // A sheet opens at its top, whatever was read in it last.
+    let sheet = NodeRef::<leptos::html::Section>::new();
+    Effect::new(move |_| {
+        if open.get()
+            && let Some(sheet) = sheet.get_untracked()
+        {
+            sheet.set_scroll_top(0);
+        }
+    });
     view! {
         <div class="scrim" class:open=move || open.get() on:click=move |_| open.set(false)></div>
-        <section class="sheet" class:open=move || open.get() role="dialog" aria-modal="true"
+        <section node_ref=sheet class="sheet" class:open=move || open.get() role="dialog" aria-modal="true"
             aria-hidden=move || (!open.get()).to_string()>
             <header class="sheet-head">
                 <h2>{move || title.get()}</h2>
@@ -292,7 +301,7 @@ fn Overlays() -> impl IntoView {
 
 /// A countdown to `ends_at` that follows the app clock.
 pub fn remaining(store: Store, ends_at: i64) -> String {
-    countdown(ends_at - store.now.get())
+    timer_text(ends_at - store.now.get())
 }
 
 #[component]

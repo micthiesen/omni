@@ -11,7 +11,7 @@ unchanged too: a tap opens its read-only step sheet and nothing can be held.
 | Touch | On | Does |
 | --- | --- | --- |
 | Tap | a step or set-up cell | opens the step sheet |
-| Press and hold, about 450 ms | a step or set-up cell | marks the step done, or un-marks a done one, without the sheet |
+| Press and hold, 400 ms | a step or set-up cell | marks the step done, or un-marks a done one, without the sheet; a toast names it and offers Undo |
 | Tap | an ingredient or "from above" cell | crosses the input off, as before |
 
 Before this, a tap on a step cell marked it done. That made the chart the one
@@ -34,9 +34,18 @@ taps but is not a second button.
 
 `Hold` in `chart.rs`, pointer events, so touch and mouse behave the same:
 
-- `pointerdown` starts a 450 ms timer. When it fires the step is toggled and
-  the cell fades once from the accent colour to its new colour (class `held`,
-  colour only, off with reduced motion).
+- `pointerdown` starts a 400 ms timer and the cell fills from the left (class
+  `pressing`, a background that grows for 320 ms after 80 ms in which a tap
+  or the start of a scroll shows nothing). 400 ms ends before the half second
+  after which iOS starts its own long press, and the fill tells the cook how
+  long to stay, which a fixed wait of 450 ms did not.
+- When the timer fires the step is toggled, the cell fades once from the
+  accent colour to its new colour (class `held`, off with reduced motion), a
+  selection the browser may have made is dropped, and a four-second toast
+  says "Done: sear" (or "Not done: sear") with Undo. The finger covers the
+  cell, so the toast is what confirms the hold.
+- A step marked done stops its timer (every way of marking it does); the
+  toast's Undo brings the timer back with its old end.
 - The click that follows the lift is swallowed, so a hold never also opens the
   sheet. The flag clears 400 ms after the lift, because iOS may send no click
   after a long press and a later click with no press of its own (a screen
@@ -71,6 +80,36 @@ patches it in place and the countdown is a text node of its own, so the sheet
 keeps its scroll position. If the session moves to a revision without the
 step, or the cook ends, it closes.
 
+## Nothing selects
+
+iOS answers a long press on text it may not select by selecting the nearest
+text it may. With only the cells unselectable, a hold selected the hint under
+the chart, a caption or the title. So nothing in `.page.cook` or in the
+notices (`.stack`) is selectable or raises the callout; the sheets are outside
+the page and keep their text selectable. The chart section also cancels
+`selectstart` and `contextmenu`, and `html` has `touch-action: manipulation`,
+so two quick taps (two ingredients crossed off) never zoom.
+
+## The timer dock
+
+Running timers are docked under the cook screen (`dock` in `cook.rs`,
+`.timer-dock`), not in the scrolling area: starting, stopping or finishing a
+timer never moves the chart under a finger. Before, the strip sat above the
+chart, so a hold that finished a timed step pulled the chart up as the finger
+lifted. One timer is as wide as the screen, more sit two to a row. A tap opens
+the step: its sheet over the chart, its card on the other tabs. Digits are
+tabular in a fixed, right-aligned width.
+
+A timer that ran out turns the alert colour and counts up ("+0:12",
+`logic::timer_text`) in the dock, the cell and the sheet, where Cancel now
+reads Stop. Cancel on a running timer shows "Timer cancelled" with Undo. The
+tones repeat every ten seconds for a minute while the alert is unanswered.
+What can be done meanwhile is above the step card on the Steps tab.
+
+The clock (`store.now`) is the wall clock read four times a second; a timer is
+an end time compared with it, so a locked screen or a suspended app loses
+nothing, and a displayed second never skips.
+
 ## The timer in the cell
 
 A step with a running timer shows a small timer mark and the countdown on one
@@ -87,9 +126,11 @@ so the mark wraps onto the line above it instead of overflowing.
 ## Left out on purpose
 
 - No checkbox, swipe or double tap in a cell (see above).
-- No progress ring while the finger is down: the hold is short, and the cell's
-  change of colour is the answer.
-- No haptic tick: Safari on iOS has no vibration API for web pages.
+- No haptic tick: Safari on iOS has no vibration API for web pages. The fill,
+  the flash and the toast stand in for it.
+- No pause: a timer is an end time in the session's event log (`timer`,
+  `cancelTimer`). Pausing needs a new event kind on the server and in every
+  reader.
 - The hold does not start timers or cross off inputs. An input is one tap.
 - No Previous and Next in the sheet. The chart is the way around; the Steps
   tab has the arrows.
@@ -127,5 +168,5 @@ unchanged, whole-pixel rows, every countdown inside its cell).
 `fond.spec.js` and the cook-mode part of `chart-borders.spec.js` mark steps
 through the sheet and the hold.
 
-Only on an iPhone: the feel of 450 ms, the callout, a real scroll's
+Only on an iPhone: the feel of 400 ms and of the fill, the callout, a real scroll's
 `pointercancel`, and a finger stopping a moving page.

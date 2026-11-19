@@ -128,9 +128,10 @@ test.describe('an agent at work', () => {
     await page.locator('[data-testid=cook]').click();
     await expect(page.locator('.card-step')).toHaveAttribute('data-step', 'sauce');
     await page.locator('[data-testid=timer]').click();
-    const strip = page.locator('[data-testid=running]');
-    await expect(strip.locator('.meanwhile')).toContainText('While «boil down 15 min» runs:');
-    await strip.locator('.meanwhile .chip', { hasText: 'fry' }).click();
+    await expect(page.locator('[data-testid=running]')).toBeVisible();
+    const offers = page.locator('.steps-tab .meanwhile');
+    await expect(offers).toContainText('While «boil down 15 min» runs:');
+    await offers.locator('.chip', { hasText: 'fry' }).click();
     await expect(page.locator('.card-step')).toHaveAttribute('data-step', 'fry');
   });
 

@@ -21,7 +21,10 @@ use crate::platform::{document, now_ms, window};
 use crate::store::{Store, use_store};
 
 /// How long a press on a step cell lasts before it counts as a hold.
-const HOLD_MS: u64 = 450;
+/// Shorter than the half second after which iOS starts its own long press
+/// (selection, callout), and long enough that a tap never reaches it. The
+/// fill in app.css (`cook-press`) runs for the same time.
+const HOLD_MS: u64 = 400;
 /// A press that travels further than this is a scroll, not a hold.
 const HOLD_SLOP_PX: i32 = 10;
 /// A press that began this soon after the page scrolled, or during which it
@@ -59,6 +62,8 @@ struct Hold {
     pending: StoredValue<Option<(TimeoutHandle, i32, i32)>>,
     /// The press became a hold, so the click that ends it is not a tap.
     held: StoredValue<bool>,
+    /// A press is under way: the cell fills until it counts as a hold.
+    pressing: RwSignal<bool>,
     flash: RwSignal<bool>,
 }
 
@@ -69,6 +74,7 @@ impl Hold {
             on_hold,
             pending: StoredValue::new(None),
             held: StoredValue::new(false),
+            pressing: RwSignal::new(false),
             flash: RwSignal::new(false),
         };
         on_cleanup(move || hold.cancel());
@@ -79,6 +85,7 @@ impl Hold {
         if let Some((timer, ..)) = self.pending.try_update_value(Option::take).flatten() {
             timer.clear();
         }
+        self.pressing.try_set(false);
     }
 
     fn begin(self, event: &web_sys::PointerEvent, cell: Cell) {
@@ -91,10 +98,14 @@ impl Hold {
         // The chart can leave the page while the timer runs (a tab change, a
         // rebase), so nothing here may assume the cell still exists.
         let fire = move || {
-            if self.pending.try_set_value(None).is_some()
-                || LAST_SCROLL.get() >= down - SCROLL_QUIET_MS
-            {
+            let gone = self.pending.try_set_value(None).is_some();
+            self.pressing.try_set(false);
+            if gone || LAST_SCROLL.get() >= down - SCROLL_QUIET_MS {
                 return;
+            }
+            // Whatever the browser selected during the press is let go.
+            if let Ok(Some(selection)) = window().get_selection() {
+                let _ = selection.remove_all_ranges();
             }
             self.held.set_value(true);
             self.flash.set(true);
@@ -109,6 +120,7 @@ impl Hold {
         if let Ok(timer) = set_timeout_with_handle(fire, Duration::from_millis(HOLD_MS)) {
             self.pending
                 .set_value(Some((timer, event.client_x(), event.client_y())));
+            self.pressing.set(true);
         }
     }
 
@@ -286,6 +298,7 @@ fn cell_view(
                 class:done=move || done() == CellMark::Done
                 class:ready=move || ready() == CellMark::Ready
                 class:tap=tappable
+                class:pressing=move || hold.is_some_and(|hold| hold.pressing.get())
                 class:held=move || hold.is_some_and(|hold| hold.flash.get())
                 data-key=cell.key.clone()
                 rowspan=span(rows)
@@ -339,7 +352,7 @@ fn cell_view(
                 {(!filler).then(|| view! { <span>{cell.label.clone()}</span> })}
                 {timer.filter(|_| !filler).map(|timer| move || {
                     timer.run(timed.clone()).map(|ends_at| view! {
-                        <span class="cell-timer" data-testid="cell-timer" class:late=move || ends_at <= store.now.get()>
+                        <span class="cell-timer" data-testid="cell-timer" class:late=move || ends_at < store.now.get()>
                             {icon("timer")}
                             <b>{move || remaining(store, ends_at)}</b>
                         </span>

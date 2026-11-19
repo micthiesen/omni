@@ -26,7 +26,8 @@ const RECIPES = {
 };
 const SHOTS = process.env.FOND_SHOTS;
 const COUNTDOWN = /^\d+:\d\d(:\d\d)?$/;
-// Longer than the app's 450 ms.
+const toast = (page) => page.locator('[data-testid=toast]');
+// Longer than the app's 400 ms.
 const HOLD_MS = 700;
 
 async function shot(page, name) {
@@ -207,7 +208,7 @@ test('a tap on a step cell opens its details, and Mark done there marks it', asy
   const { chart, sessionId } = await cookChart(page);
   await shot(page, 'cook-chart-cell');
   await expect(chart.locator('.hint')).toHaveText(
-    'Tap a step for details. Press and hold to mark it done. Tap an ingredient to cross it off.',
+    'Tap a step for details. Press and hold it until it fills to mark it done, and again to undo. Tap an ingredient to cross it off.',
   );
   const found = await readyStep(page, chart, RECIPES.cook, (step) => step.inputs.length > 0);
   test.skip(!found, 'no ready step with inputs');
@@ -279,6 +280,46 @@ test('press and hold marks a step done without the sheet; a scroll is not a hold
   // A long press selects nothing. (The iOS callout is switched off beside
   // it in the stylesheet; this WebKit build does not know the property.)
   expect(await cell.evaluate((el) => getComputedStyle(el).webkitUserSelect || getComputedStyle(el).userSelect)).toBe('none');
+  // Nor does anything around the chart: iOS would select the nearest text
+  // that can be selected instead.
+  const selectable = await page.evaluate(() =>
+    [...document.querySelectorAll('.page.cook *')]
+      .filter((el) => [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim()))
+      .filter((el) => (getComputedStyle(el).webkitUserSelect || getComputedStyle(el).userSelect) !== 'none')
+      .map((el) => el.className || el.tagName),
+  );
+  expect(selectable).toEqual([]);
+  expect(await cell.evaluate((el) => getComputedStyle(el).touchAction)).toBe('manipulation');
+  // A selection or a menu that starts on the chart is refused.
+  expect(
+    await cell.evaluate((el) =>
+      ['selectstart', 'contextmenu'].map((type) => el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }))),
+    ),
+  ).toEqual([false, false]);
+
+  // While the press lasts the cell fills; lifted early, it is a tap and the
+  // fill is gone.
+  const box = await cell.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(cell).toHaveClass(/pressing/);
+  // (This WebKit build does not advance an animation while a test holds
+  // the mouse down, so the fill is checked by its rule, not its progress.)
+  expect(await cell.evaluate((el) => [getComputedStyle(el).animationName, getComputedStyle(el).backgroundRepeat])).toEqual([
+    'cook-press',
+    'no-repeat',
+  ]);
+  await page.waitForTimeout(250);
+  await shot(page, 'cook-chart-pressing');
+  await page.mouse.up();
+  await expect(cell).not.toHaveClass(/pressing/);
+  await expect(cell).toHaveClass(/done/);
+  // The hold says what it did and takes it back.
+  await expect(toast(page)).toContainText('Done: ');
+  await shot(page, 'cook-chart-held');
+  await toast(page).getByRole('button', { name: 'Undo' }).click();
+  await expect(cell).not.toHaveClass(/done/);
+  await expect(toast(page)).toHaveCount(0);
 
   await hold(page, cell);
   await expect(cell).toHaveClass(/done/);
@@ -326,7 +367,8 @@ test('press and hold marks a step done without the sheet; a scroll is not a hold
       new PointerEvent('pointerdown', { bubbles: true, isPrimary: true, pointerId: 9, pointerType: 'touch', clientX: box.left + 5, clientY: box.top + 5 }),
     );
   });
-  await page.getByRole('tab', { name: 'Steps' }).click();
+  // At once: Playwright's own click takes longer than the hold.
+  await page.getByRole('tab', { name: 'Steps' }).evaluate((el) => el.click());
   await page.waitForTimeout(HOLD_MS);
   await page.getByRole('tab', { name: 'Chart' }).click();
   await expect(stepCell(chart, id)).not.toHaveClass(/done/);
@@ -384,17 +426,36 @@ test('a timer started in the sheet counts down in the sheet, the cell and the st
   await page.locator('[data-testid=scroller]').evaluate((el) => el.scrollTo(0, 0));
   await shot(page, 'cook-chart-timer');
 
-  // A done step's timer is not shown, as in the strip; un-marked, it is back.
+  // The dock is under the screen: the chart did not move when it came, and
+  // a tap on a timer opens its step over the chart.
+  expect(await strip.evaluate((el) => el.closest('.scroller'))).toBeNull();
+  const digits = await strip.locator('b').boundingBox();
+  await strip.click();
+  await expect(sheet).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Chart' })).toHaveAttribute('aria-selected', 'true');
+  await closeSheet(page);
+  // The digits keep their place as they change.
+  await expect(strip.locator('b')).not.toHaveText(await strip.locator('b').innerText());
+  expect(await strip.locator('b').boundingBox()).toEqual(digits);
+
+  // A step marked done stops its timer; the toast's Undo brings both back.
   await hold(page, cell);
   await expect(cell).toHaveClass(/done/);
   await expect(inCell).toHaveCount(0);
   await expect(strip).toHaveCount(0);
-  await hold(page, cell);
+  await toast(page).getByRole('button', { name: 'Undo' }).click();
+  await expect(cell).not.toHaveClass(/done/);
   await expect(inCell).toHaveText(COUNTDOWN);
+  await expect(strip).toHaveCount(1);
 
-  // Cancel removes all three.
+  // Cancel removes all three, and can be taken back.
   await page.waitForTimeout(500);
   await cell.click();
+  await sheet.getByRole('button', { name: 'Cancel' }).click();
+  await expect(inSheet).toHaveCount(0);
+  await expect(toast(page)).toContainText('Timer cancelled');
+  await toast(page).getByRole('button', { name: 'Undo' }).click();
+  await expect(inSheet).toHaveText(COUNTDOWN);
   await sheet.getByRole('button', { name: 'Cancel' }).click();
   await expect(sheet.locator('[data-testid=timer]')).toBeVisible();
   await expect(inSheet).toHaveCount(0);
@@ -402,6 +463,45 @@ test('a timer started in the sheet counts down in the sheet, the cell and the st
   await expect(strip).toHaveCount(0);
   expect((await layout(chart)).columns).toEqual(before.columns);
 
+  await discardCook(page);
+});
+
+test('a timer that ran out counts up, in the alert colour, until it is stopped', async ({ page }) => {
+  const { chart, sessionId } = await cookChart(page);
+  const found = await readyStep(page, chart, RECIPES.cook, (step) => !!step.time);
+  test.skip(!found, 'no ready step with a time');
+  const { id, cell } = found;
+  // Two timers, one about to run out: set as another device would.
+  const other = (await stepsOf(page, RECIPES.cook)).find((step) => step.id !== id);
+  const event = (step, endsAt) => ({ seq: 0, clientEventId: `ev_e2e${step}${Date.now()}`, at: Date.now(), actor: 'app', type: 'timer', step, endsAt });
+  const pushed = await page.request.post(`/api/cook/${sessionId}/events`, {
+    headers: sameOrigin(page),
+    data: { events: [event(id, Date.now() + 2500), event(other.id, Date.now() + 3_600_000)] },
+  });
+  expect(pushed.ok()).toBe(true);
+  const pills = page.locator('[data-testid=running]');
+  await expect(pills).toHaveCount(2);
+  // Two to a row, inside the screen.
+  const [a, b] = [await pills.nth(0).boundingBox(), await pills.nth(1).boundingBox()];
+  expect(a.y).toBe(b.y);
+  expect(Math.max(a.x + a.width, b.x + b.width)).toBeLessThanOrEqual(390);
+  const late = page.locator(`[data-testid=running][data-step="${id}"]`);
+  await expect(late).toHaveClass(/late/, { timeout: 8000 });
+  await expect(late.locator('b')).toHaveText(/^\+\d+:\d\d$/);
+  await expect(cell.locator('[data-testid=cell-timer]')).toHaveClass(/late/);
+  await expect(page.locator('[data-testid=timer-alert]')).toContainText('Timer done');
+  // The alert is above the dock, not on it.
+  const alert = await page.locator('[data-testid=timer-alert]').boundingBox();
+  const dock = await page.locator('[data-testid=timer-dock]').boundingBox();
+  expect(alert.y + alert.height).toBeLessThanOrEqual(dock.y);
+  await shot(page, 'cook-chart-timer-late');
+  await late.click();
+  await stepSheet(page).getByRole('button', { name: 'Stop' }).click();
+  await expect(late).toHaveCount(0);
+  await expect(page.locator('[data-testid=timer-alert]')).toHaveCount(0);
+  // Stopping one that ran out needs no undo.
+  await expect(toast(page)).toHaveCount(0);
+  await expect(pills).toHaveCount(1);
   await discardCook(page);
 });
 
@@ -544,8 +644,7 @@ test('a wide chart keeps its columns and whole-pixel rows with timers running', 
   expect(during.columns).toEqual(before.columns);
   await expect(page.locator('[data-testid=running]')).toHaveCount(steps.length);
   if (SHOTS) {
-    // The strips take the first screen; show the chart itself.
-    for (const [index, block] of (await chart.locator('.chart-block').all()).entries()) {
+        for (const [index, block] of (await chart.locator('.chart-block').all()).entries()) {
       await block.scrollIntoViewIfNeeded();
       await shot(page, `cook-chart-wide-timers-${index + 1}`);
     }

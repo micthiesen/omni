@@ -23,6 +23,9 @@ use crate::platform::prefs::{self, RecipeView};
 use crate::platform::{device, now_ms};
 use crate::store::{Ask, Store, Undo, use_store};
 
+/// How long the toast after a press and hold stays.
+const HOLD_TOAST: std::time::Duration = std::time::Duration::from_secs(4);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Gather,
@@ -78,6 +81,86 @@ impl Ctx {
 
     fn toggle(self, target: &str) {
         self.send(self.state.with_untracked(|state| state.toggle(target)));
+    }
+
+    /// Marks a step done, or not done again. A step that is done has no use
+    /// for its timer, so the timer stops with it instead of ringing later for
+    /// a step the screen no longer shows as running. With `announce` (the
+    /// chart's press and hold, where the finger covers the cell) a short
+    /// toast names what happened and takes it back.
+    fn toggle_step(self, step: &str, announce: bool) {
+        let (was_done, timer) = self.state.with_untracked(|state| {
+            (
+                state.checked.contains(step),
+                state.timers.get(step).copied(),
+            )
+        });
+        self.toggle(step);
+        let stopped = timer.filter(|_| !was_done);
+        if stopped.is_some() {
+            self.send(CookEventKind::CancelTimer {
+                step: step.to_owned(),
+            });
+        }
+        if announce {
+            let label = self.step_label(step);
+            let text = if was_done {
+                format!("Not done: {label}")
+            } else {
+                format!("Done: {label}")
+            };
+            let step = step.to_owned();
+            let undo: Undo = Arc::new(move || {
+                let now_done = self
+                    .state
+                    .with_untracked(|state| state.checked.contains(&step));
+                if now_done != was_done {
+                    self.toggle(&step);
+                }
+                if let Some(ends_at) = stopped {
+                    self.send(CookEventKind::Timer {
+                        step: step.clone(),
+                        ends_at,
+                    });
+                }
+            });
+            self.store.show_toast_for(text, Some(undo), HOLD_TOAST);
+        }
+    }
+
+    /// Stops a step's timer; the toast starts it again with the same end.
+    fn stop_timer(self, step: &str) {
+        let Some(ends_at) = self
+            .state
+            .with_untracked(|state| state.timers.get(step).copied())
+        else {
+            return;
+        };
+        self.send(CookEventKind::CancelTimer {
+            step: step.to_owned(),
+        });
+        // One that has run out was stopped on purpose.
+        if ends_at > now_ms() {
+            let step = step.to_owned();
+            let undo: Undo = Arc::new(move || {
+                self.send(CookEventKind::Timer {
+                    step: step.clone(),
+                    ends_at,
+                });
+            });
+            self.store.show_toast("Timer cancelled", Some(undo));
+        }
+    }
+
+    /// Shows a step: its sheet over the chart, its card on the other tabs.
+    fn open_step(self, step: String) {
+        if self.tab.get_untracked() == Tab::Chart {
+            self.sheet_step.set(step);
+            self.step_open.set(true);
+        } else {
+            self.chosen.set(Some(step));
+            self.tab.set(Tab::Steps);
+        }
     }
 
     /// Opens the amount sheet for an ingredient. What it saves is a revision
@@ -155,58 +238,82 @@ fn gather(ctx: Ctx) -> impl IntoView {
         .collect_view()
 }
 
-/// The strip for running timers: the countdown and what can be done meanwhile.
-fn running(ctx: Ctx) -> impl IntoView {
+/// The running timers, docked under the screen: starting, stopping or
+/// finishing one never moves what is being read or pressed above it.
+fn dock(ctx: Ctx) -> impl IntoView {
+    move || {
+        let timers: Vec<(String, i64)> = ctx.state.with(|state| {
+            state
+                .timers
+                .iter()
+                .filter(|(step, _)| !state.checked.contains(*step))
+                .map(|(step, ends_at)| (step.clone(), *ends_at))
+                .collect()
+        });
+        (!timers.is_empty()).then(|| {
+            let pills = timers
+                .into_iter()
+                .map(|(step, ends_at)| {
+                    let label = ctx.step_label(&step);
+                    view! {
+                        <button class="running" data-testid="running" data-step=step.clone()
+                            class:late=move || ends_at < ctx.store.now.get()
+                            on:click=move |_| ctx.open_step(step.clone())>
+                            {icon("timer")}
+                            <span>{label}</span>
+                            <b>{move || remaining(ctx.store, ends_at)}</b>
+                        </button>
+                    }
+                })
+                .collect_view();
+            view! { <div class="timer-dock" data-testid="timer-dock">{pills}</div> }
+        })
+    }
+}
+
+/// What can be done while a passive step's timer runs, above the step card.
+fn meanwhile_offers(ctx: Ctx) -> impl IntoView {
     move || {
         let state = ctx.state.get();
         let doc = ctx.doc.get_value();
+        let ix = Index::build(&doc);
         let done = state.done_steps(&doc);
         state
             .timers
-            .iter()
-            .filter(|(step, _)| !done.contains(step))
-            .map(|(step, ends_at)| {
-                let ends_at = *ends_at;
-                let passive = Index::build(&doc)
-                    .step(step)
-                    .and_then(|found| found.time)
+            .keys()
+            .filter(|step| !done.contains(step))
+            .filter_map(|step| {
+                let found = ix.step(step)?;
+                let passive = found
+                    .time
                     .is_some_and(|time| time.attention == Attention::Passive);
-                let offers = if passive { meanwhile(&doc, step, &done) } else { Vec::new() };
-                let (open, label) = (step.clone(), ctx.step_label(step));
-                let chart_label = Index::build(&doc)
-                    .step(step)
-                    .map(omni_recipe_format::chart_label)
-                    .unwrap_or_default();
-                view! {
-                    <div class="running" data-testid="running">
-                        <button class="running-main" on:click=move |_| {
-                            ctx.chosen.set(Some(open.clone()));
-                            ctx.tab.set(Tab::Steps);
-                        }>
-                            {icon("timer")}
-                            <span>{label}</span>
-                            <b class:late={move || ends_at <= ctx.store.now.get()}>{move || remaining(ctx.store, ends_at)}</b>
-                        </button>
-                        {(!offers.is_empty()).then(|| view! {
-                            <p class="meanwhile">
-                                {format!("While «{chart_label}» runs: ")}
-                                {offers
-                                    .into_iter()
-                                    .take(3)
-                                    .map(|offer| {
-                                        let label = ctx.step_label(&offer);
-                                        view! {
-                                            <button class="chip" on:click=move |_| {
-                                                ctx.chosen.set(Some(offer.clone()));
-                                                ctx.tab.set(Tab::Steps);
-                                            }>{label}</button>
-                                        }
-                                    })
-                                    .collect_view()}
-                            </p>
-                        })}
-                    </div>
+                let offers = if passive {
+                    meanwhile(&doc, step, &done)
+                } else {
+                    Vec::new()
+                };
+                if offers.is_empty() {
+                    return None;
                 }
+                let chart_label = omni_recipe_format::chart_label(found);
+                Some(view! {
+                    <p class="meanwhile">
+                        {format!("While «{chart_label}» runs: ")}
+                        {offers
+                            .into_iter()
+                            .take(3)
+                            .map(|offer| {
+                                let label = ctx.step_label(&offer);
+                                view! {
+                                    <button class="chip" on:click=move |_| {
+                                        ctx.chosen.set(Some(offer.clone()));
+                                        ctx.tab.set(Tab::Steps);
+                                    }>{label}</button>
+                                }
+                            })
+                            .collect_view()}
+                    </p>
+                })
             })
             .collect_view()
     }
@@ -247,11 +354,11 @@ fn step_body(ctx: Ctx, state: &Projection, id: &str, in_sheet: bool) -> Option<A
             Some(ends_at) => view! {
                 <div class="timer on">
                     {icon("timer")}
-                    <b data-testid="countdown" class:late={move || ends_at <= ctx.store.now.get()}>
+                    <b data-testid="countdown" class:late={move || ends_at < ctx.store.now.get()}>
                         {move || remaining(ctx.store, ends_at)}
                     </b>
-                    <button class="link" on:click=move |_| ctx.send(CookEventKind::CancelTimer { step: cancel.clone() })>
-                        "Cancel"
+                    <button class="btn small" data-testid="timer-stop" on:click=move |_| ctx.stop_timer(&cancel)>
+                        {move || if ends_at < ctx.store.now.get() { "Stop" } else { "Cancel" }}
                     </button>
                 </div>
             }
@@ -342,12 +449,12 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                 <div class="card-actions">
                     {if is_done {
                         view! {
-                            <button class="btn ghost" on:click=move |_| ctx.toggle(&done_id)>"Not done"</button>
+                            <button class="btn ghost" on:click=move |_| ctx.toggle_step(&done_id, false)>"Not done"</button>
                         }.into_any()
                     } else {
                         view! {
                             <button class="btn primary" data-testid="done" on:click=move |_| {
-                                ctx.toggle(&done_id);
+                                ctx.toggle_step(&done_id, false);
                                 ctx.chosen.set(go_next.clone());
                             }>{icon("check")}"Done"</button>
                         }.into_any()
@@ -392,13 +499,13 @@ fn step_sheet(ctx: Ctx) -> impl IntoView {
                     {if is_done {
                         // Still to do after all: the step stays in front.
                         view! {
-                            <button class="btn" data-testid="sheet-undo" on:click=move |_| ctx.toggle(&toggle_id)>"Undo"</button>
+                            <button class="btn" data-testid="sheet-undo" on:click=move |_| ctx.toggle_step(&toggle_id, false)>"Undo"</button>
                         }.into_any()
                     } else {
                         // Back to the chart, where the cell is now dimmed.
                         view! {
                             <button class="btn primary" data-testid="sheet-done" on:click=move |_| {
-                                ctx.toggle(&toggle_id);
+                                ctx.toggle_step(&toggle_id, false);
                                 ctx.step_open.set(false);
                             }>{icon("check")}"Mark done"</button>
                         }.into_any()
@@ -695,7 +802,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                     }
                     CellKind::Leaf | CellKind::Ref => ctx.toggle(&cell.key),
                 });
-                let held = Callback::new(move |cell: Cell| ctx.toggle(&cell.step));
+                let held = Callback::new(move |cell: Cell| ctx.toggle_step(&cell.step, true));
                 // As in the strip above the tabs, a done step's timer is not shown.
                 let timers = Callback::new(move |cell: Cell| {
                     ctx.state.with(|state| {
@@ -732,20 +839,23 @@ pub fn CookPage(id: String) -> impl IntoView {
                             .map(|note| view! { <p class="session-note">{note}</p> })
                             .collect_view()
                     }}
-                    {running(ctx)}
                     {move || match tab.get() {
                         Tab::Gather => view! { <section class="tab gather-tab">{gather(ctx)}</section> }.into_any(),
-                        Tab::Steps => view! { <section class="tab steps-tab">{step_card(ctx)}</section> }.into_any(),
+                        Tab::Steps => view! { <section class="tab steps-tab">{meanwhile_offers(ctx)}{step_card(ctx)}</section> }.into_any(),
                         Tab::Chart => view! {
-                            <section class="tab charts live" data-testid="chart">
+                            // A press on the chart is never the start of a selection or a menu.
+                            <section class="tab charts live" data-testid="chart"
+                                on:selectstart=move |event| event.prevent_default()
+                                on:contextmenu=move |event| event.prevent_default()>
                                 <Chart doc=ctx.doc.get_value() factor=scale mark=marks on_tap=tapped leaf_taps=true
                                     on_hold=held timer=timers/>
-                                <p class="hint">"Tap a step for details. Press and hold to mark it done. Tap an ingredient to cross it off."</p>
+                                <p class="hint">"Tap a step for details. Press and hold it until it fills to mark it done, and again to undo. Tap an ingredient to cross it off."</p>
                             </section>
                         }
                         .into_any(),
                     }}
                     </div></div>
+                    {dock(ctx)}
                 }
                 .into_any()
             }}

@@ -169,6 +169,8 @@ pub fn prime_audio() {
 pub fn ring() {
     AUDIO.with_borrow(|slot| {
         let Some(context) = slot else { return };
+        // iOS suspends the context while the app is in the background.
+        let _ = context.resume();
         let start = context.current_time();
         for n in 0..3 {
             let at = start + f64::from(n) * 0.45;

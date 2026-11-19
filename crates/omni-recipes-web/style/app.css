@@ -79,6 +79,9 @@ body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  /* No double-tap zoom: two quick taps are two taps (two ingredients crossed
+     off). Pinch zoom stays. */
+  touch-action: manipulation;
 }
 
 body {
@@ -1528,26 +1531,40 @@ body:has(.sheet.open) .stack {
   font-size: 17px;
 }
 
-.running {
-  margin-top: 10px;
-  border-radius: 14px;
-  background: var(--good-soft);
-  font-size: 17px;
+/* Running timers, docked under the cook screen (cook.rs `dock`). One timer
+   is as wide as the screen; more sit two to a row. The digits are tabular and
+   right-aligned in a fixed width, so nothing moves as they change. */
+.timer-dock {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 8px var(--gutter) calc(8px + var(--safe-b));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
 }
 
-.running-main {
+.running {
+  flex: 1 1 calc(50% - 4px);
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  min-width: 0;
   min-height: 48px;
   padding: 0 14px;
   border: 0;
-  background: none;
+  border-radius: 14px;
+  background: var(--good-soft);
+  font-size: 17px;
   text-align: left;
 }
 
-.running-main span {
+.running .icon {
+  flex: none;
+}
+
+.running span {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1555,10 +1572,43 @@ body:has(.sheet.open) .stack {
   white-space: nowrap;
 }
 
-.running-main b,
+.running b {
+  flex: none;
+  min-width: 4ch;
+  font-size: 1.1em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Run out: the colour of the alert, and counting up. */
+.running.late {
+  background: var(--accent);
+  color: var(--accent-ink);
+  animation: pulse 1s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .running.late {
+    animation: none;
+  }
+}
+
 .timer b {
   font-size: 1.1em;
   font-variant-numeric: tabular-nums;
+}
+
+/* Notices sit above the dock, not on it. */
+body:has(.timer-dock) .stack {
+  bottom: calc(76px + var(--safe-b));
+}
+
+body:has(.timer-dock .running:nth-child(3)) .stack {
+  bottom: calc(132px + var(--safe-b));
+}
+
+body:has(.timer-dock):has(.sheet.open) .stack {
+  bottom: auto;
 }
 
 .late {
@@ -1570,7 +1620,7 @@ body:has(.sheet.open) .stack {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 0 14px 12px;
+  padding: 10px 2px 12px;
   color: var(--muted);
   font-size: 15px;
 }
@@ -1664,6 +1714,10 @@ body:has(.sheet.open) .stack {
 
 .timer.on b {
   flex: 1;
+}
+
+.timer .btn.small {
+  min-height: 44px;
 }
 
 .step-tools {
@@ -2073,6 +2127,53 @@ body:has(.sheet.open) .stack {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* iOS answers a long press on text it may not select by selecting the nearest
+   text it may: the hint under the chart, a caption, the title. So nothing on
+   the cook screen or in the notices over it is selectable. The sheets are not
+   inside the screen and keep their text selectable. */
+.page.cook,
+.stack {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The press: the cell fills from the left for as long as a hold takes
+   (HOLD_MS in chart.rs), after a moment in which a tap or the start of a
+   scroll shows nothing. Background only; the chart never transforms. */
+@keyframes cook-press {
+  from {
+    background-size: 0% 100%;
+  }
+
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+.charts.live .chart td.pressing {
+  background-image: linear-gradient(var(--press), var(--press));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: cook-press 320ms linear 80ms forwards;
+
+  --press: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.charts.live .chart td.tap:active {
+  background-color: var(--surface);
+}
+
+.charts.live .chart td.done.tap:active {
+  background-color: var(--bg);
+}
+
+.charts.live .chart td.ready.tap:active {
+  background-color: var(--accent-soft);
 }
 
 /* A cell is a button for the keyboard too; its ring stays inside the cell,
@@ -2095,6 +2196,11 @@ body:has(.sheet.open) .stack {
 
 @media (prefers-reduced-motion: reduce) {
   .charts.live .chart td.held {
+    animation: none;
+  }
+
+  .charts.live .chart td.pressing {
+    background-size: 100% 100%;
     animation: none;
   }
 }
