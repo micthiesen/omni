@@ -59,6 +59,9 @@ its two halves.
   already have theirs, so it never doubles one.
 - **Block titles do not scroll sideways.** They sit outside the scrolling
   area.
+- **Up and down is the screen's job.** The chart sits inside the screen's
+  one vertical scroller ("The shell" in `docs/recipes-app.md`); a block's own
+  scroller moves only sideways and keeps its own bounce at both ends.
 - **Nothing is pinned to the top.** The chart has no header row: its columns
   are steps in order, not named fields. Titles are not pinned to the top of
   the page either. A block is seldom much taller than the screen, and cook

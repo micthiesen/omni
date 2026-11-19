@@ -444,6 +444,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         <Connection/>
                         <button class="icon-btn" aria-label="More" on:click=move |_| menu.set(true)>{icon("more")}</button>
                     </header>
+                    <div class="scroller" data-testid="scroller"><div class="scroller-in">
                     {art}
                     <div class="body">
                         <h1>{recipe.title.clone()}</h1>
@@ -500,6 +501,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         <Notes id=rec.id.clone()/>
                         <OriginalSection rec=rec.clone() doc_url=source.url.clone()/>
                     </div>
+                    </div></div>
                     <footer class="cta">
                         <button class="btn primary big" data-testid="cook" on:click=cook.clone()>
                             {

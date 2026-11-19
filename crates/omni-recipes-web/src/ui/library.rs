@@ -9,7 +9,6 @@ use super::{Connection, Link, Sheet, icon, remaining};
 use crate::logic::library::{Sort, filter_groups, tag_groups, visible};
 use crate::logic::session::{is_open, project};
 use crate::logic::{Route, cover, tile_color};
-use crate::platform::window;
 use crate::store::use_store;
 
 #[component]
@@ -147,7 +146,7 @@ pub fn Library() -> impl IntoView {
     };
     let scroll = store.library_scroll.get_untracked();
     if scroll > 0.0 {
-        request_animation_frame(move || window().scroll_to_with_x_and_y(0.0, scroll));
+        request_animation_frame(move || crate::platform::shell::set_scroll_top(scroll));
     }
 
     view! {
@@ -163,6 +162,7 @@ pub fn Library() -> impl IntoView {
                     }}
                 </Link>
             </header>
+            <div class="scroller" data-testid="scroller"><div class="scroller-in">
             <div class="tools">
                 <input
                     type="search"
@@ -214,6 +214,7 @@ pub fn Library() -> impl IntoView {
                     }}
                 </p>
             </Show>
+            </div></div>
         </main>
         <Sheet open=sheet title="Filter">
             {move || {

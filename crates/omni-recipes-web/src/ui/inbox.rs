@@ -40,6 +40,7 @@ pub fn InboxPage() -> impl IntoView {
                 <h1>"Inbox"</h1>
                 <Connection/>
             </header>
+            <div class="scroller" data-testid="scroller"><div class="scroller-in">
             <div class="body">
                 <p class="lede">
                     "Photograph a cookbook page or a recipe card. Several photos sent together become one recipe; an agent does the reading."
@@ -125,6 +126,7 @@ pub fn InboxPage() -> impl IntoView {
                     }}
                 </ul>
             </div>
+            </div></div>
         </main>
     }
 }

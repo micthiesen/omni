@@ -12,7 +12,7 @@ use omni_api::fond::CookEventKind;
 use wasm_bindgen::JsCast;
 
 use crate::logic::{Route, countdown};
-use crate::platform::{device, listen, window};
+use crate::platform::{device, listen, shell, window};
 use crate::store::{Store, use_store};
 
 thread_local! {
@@ -24,14 +24,13 @@ thread_local! {
 /// Goes to `route`, adding a history entry.
 pub fn navigate(store: Store, route: Route) {
     if store.route.get_untracked() == Route::Library {
-        store.library_scroll.set(window().scroll_y().unwrap_or(0.0));
+        store.library_scroll.set(shell::scroll_top());
     }
     if let Ok(history) = window().history() {
         let _ = history.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&route.path()));
     }
     DEPTH.set(DEPTH.get() + 1);
     store.route.set(route);
-    window().scroll_to_with_x_and_y(0.0, 0.0);
 }
 
 /// Replaces the current screen without adding a history entry.
@@ -41,7 +40,6 @@ pub fn replace(store: Store, route: Route) {
             history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&route.path()));
     }
     store.route.set(route);
-    window().scroll_to_with_x_and_y(0.0, 0.0);
 }
 
 /// Goes back one screen, or to `fallback` when the app was opened here.
@@ -231,6 +229,7 @@ pub fn App() -> impl IntoView {
     });
     device::register_service_worker(store.update_available, move || store.cache_thumbnails());
     device::persist_storage();
+    shell::install();
     store.start();
 
     let route = Memo::new(move |_| store.route.get());

@@ -526,6 +526,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                         {tab_button(Tab::Steps, "Steps")}
                         {tab_button(Tab::Chart, "Chart")}
                     </nav>
+                    <div class="scroller" data-testid="scroller"><div class="scroller-in">
                     {outdated.then(|| view! {
                         <div class="notice inline" data-testid="outdated">
                             <span class="notice-main">"The recipe was updated since you started."</span>
@@ -553,6 +554,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                         }
                         .into_any(),
                     }}
+                    </div></div>
                 }
                 .into_any()
             }}

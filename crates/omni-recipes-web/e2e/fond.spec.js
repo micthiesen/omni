@@ -219,7 +219,7 @@ test('the library shows photo cards and typographic tiles', async ({ page }) => 
   // Two columns on a phone.
   const [first, second] = [await cards.nth(0).boundingBox(), await cards.nth(1).boundingBox()];
   if (second) expect(Math.abs(first.y - second.y)).toBeLessThan(4);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.querySelector('.scroller').scrollTo(0, 0));
   await shot(page, 'library');
 });
 
@@ -227,25 +227,28 @@ test('the library scroll position is restored on the way back', async ({ page })
   // A short screen, so even a small library scrolls.
   await page.setViewportSize({ width: 390, height: 320 });
   await openLibrary(page);
-  const room = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+  const room = await page.evaluate(() => {
+    const area = document.querySelector('.scroller');
+    return area.scrollHeight - area.clientHeight;
+  });
   test.skip(room < 60, 'the library is too short to scroll');
-  await page.evaluate(() => window.scrollTo(0, 60));
+  await page.evaluate(() => document.querySelector('.scroller').scrollTo(0, 60));
   const target = page.locator('[data-testid=grid] a.card').nth(1);
   // Clicking scrolls the card into view first; what counts is where that leaves the page.
   await target.scrollIntoViewIfNeeded();
-  const saved = await page.evaluate(() => window.scrollY);
+  const saved = await page.evaluate(() => document.querySelector('.scroller').scrollTop);
   expect(saved).toBeGreaterThan(0);
   await target.click();
   await expect(page.locator('main.recipe h1')).toBeVisible();
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await page.evaluate(() => document.querySelector('.scroller').scrollTop)).toBe(0);
   await page.locator('header').getByRole('button', { name: 'Back' }).click();
   await expect(page.locator('[data-testid=grid]')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(saved);
+  await expect.poll(() => page.evaluate(() => document.querySelector('.scroller').scrollTop)).toBe(saved);
   // The same through the browser's own back (the iOS swipe).
   await target.click();
   await expect(page.locator('main.recipe h1')).toBeVisible();
   await page.goBack();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(saved);
+  await expect.poll(() => page.evaluate(() => document.querySelector('.scroller').scrollTop)).toBe(saved);
 });
 
 test('search is instant, prefix-matched and ignores accents and case', async ({ page }) => {
@@ -354,9 +357,9 @@ test('a wide chart scrolls sideways under a pinned ingredient column, and turns 
   // Cook never covers a chart cell, wherever the page is scrolled.
   const cook = page.locator('[data-testid=cook]');
   await expect(cook).toBeVisible();
-  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  const height = await page.evaluate(() => document.querySelector('.scroller').scrollHeight);
   for (let y = 0; y < height; y += 150) {
-    await page.evaluate((top) => window.scrollTo(0, top), y);
+    await page.evaluate((top) => document.querySelector('.scroller').scrollTo(0, top), y);
     const covered = await page.evaluate(() => {
       const button = document.querySelector('[data-testid=cook]').getBoundingClientRect();
       const bar = document.querySelector('main.recipe .bar').getBoundingClientRect();
@@ -425,7 +428,7 @@ test('scaling changes every amount in both views and is remembered', async ({ pa
   await expect(page.locator('.scale-note')).toContainText('do not scale');
   const doubled = await ingredients.first().innerText();
   expect(doubled).not.toBe(before);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.querySelector('.scroller').scrollTo(0, 0));
   await shot(page, 'recipe-scaled');
 
   await page.getByRole('tab', { name: 'Chart' }).click();

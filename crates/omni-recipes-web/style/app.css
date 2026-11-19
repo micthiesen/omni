@@ -70,7 +70,24 @@ body {
   font: 17px/1.45 var(--sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
+}
+
+/* The document never scrolls, so the header and footer of a screen cannot be
+   pulled with it. Each screen scrolls in its own .scroller instead. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+}
+
+#root {
+  height: 100%;
 }
 
 h1,
@@ -146,16 +163,43 @@ img {
 /* --- Page frame ------------------------------------------------------- */
 
 .page {
+  display: flex;
+  flex-direction: column;
   max-width: 760px;
+  /* The keyboard covers the bottom of the window; the screen ends above it. */
+  height: calc(100% - var(--kb, 0px));
   margin: 0 auto;
-  min-height: 100dvh;
-  padding: 0 calc(var(--gutter) + var(--safe-r)) calc(28px + var(--safe-b)) calc(var(--gutter) + var(--safe-l));
+  padding: 0 calc(var(--gutter) + var(--safe-r)) 0 calc(var(--gutter) + var(--safe-l));
+}
+
+/* As wide as the page, so full-bleed content and the scroll indicator reach
+   the screen's edges. Its inner block is a pixel taller than the area, so the
+   area always scrolls: iOS then gives it the drag and its own bounce and never
+   looks for something behind it to move. */
+.scroller {
+  flex: 1;
+  min-height: 0;
+  margin: 0 calc(-1 * (var(--gutter) + var(--safe-r))) 0 calc(-1 * (var(--gutter) + var(--safe-l)));
+  padding: 0 calc(var(--gutter) + var(--safe-r)) 0 calc(var(--gutter) + var(--safe-l));
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroller-in {
+  min-height: calc(100% + 1px);
+  padding-bottom: calc(28px + var(--safe-b));
+}
+
+/* With the keyboard up the home indicator is covered. */
+.kb .scroller-in {
+  padding-bottom: 28px;
 }
 
 .bar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 20;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -703,12 +747,12 @@ a.link {
 .sheet {
   position: fixed;
   right: 0;
-  bottom: 0;
+  bottom: var(--kb, 0px);
   left: 0;
   z-index: 41;
   display: none;
   max-width: 760px;
-  max-height: 86dvh;
+  max-height: min(86dvh, calc(100dvh - var(--kb, 0px) - var(--safe-t) - 12px));
   margin: 0 auto;
   overflow-y: auto;
   padding: 6px calc(var(--gutter) + var(--safe-r)) calc(18px + var(--safe-b)) calc(var(--gutter) + var(--safe-l));
@@ -720,6 +764,11 @@ a.link {
 
 .sheet.open {
   display: block;
+}
+
+/* The keyboard covers the home indicator. */
+.kb .sheet {
+  padding-bottom: 18px;
 }
 
 .sheet-head {
@@ -873,6 +922,10 @@ a.link {
 
 body:has(.cta) .stack {
   bottom: calc(92px + var(--safe-b));
+}
+
+.kb body .stack {
+  bottom: calc(12px + var(--kb, 0px));
 }
 
 /* A sheet's buttons sit where notices do: move notices to the top meanwhile. */
@@ -1244,6 +1297,11 @@ body:has(.sheet.open) .stack {
   background: linear-gradient(to top, var(--bg) 62%, transparent);
 }
 
+/* Typing in the page: the button would sit on the keyboard, over the field. */
+.kb .cta {
+  display: none;
+}
+
 .cta .btn {
   display: flex;
   max-width: 728px;
@@ -1446,16 +1504,16 @@ body:has(.sheet.open) .stack {
 .cook {
   font-size: 20px;
   line-height: 1.45;
+}
+
+.cook .scroller-in {
   padding-bottom: calc(40px + var(--safe-b));
 }
 
 .cook .tabs {
-  position: sticky;
-  top: calc(52px + var(--safe-t));
-  z-index: 19;
-  margin-top: 2px;
+  flex: none;
+  margin: 2px 0 6px;
   font-size: 17px;
-  box-shadow: 0 0 0 6px var(--bg);
 }
 
 .tab {

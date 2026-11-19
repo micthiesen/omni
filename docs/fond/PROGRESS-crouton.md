@@ -154,3 +154,67 @@ enchiladas, lasagne; recipe view and cook mode; scroll start, early, middle, end
     the pie crust (added by the spoon).
 - Checked after the import: every document passes the new diet check, renders as a list and a
   chart at scale 1, 0.5 and 2 without error, and has an image; the inbox is empty.
+
+## Follow-up, same day: the shell no longer rubber-bands
+
+Asked 2026-11-18 17:00 PT. In the installed app the header, cook mode's tabs and the page itself
+could be pulled with the iOS rubber band.
+
+**Approach.** The document is locked (`html` and `body`: `overflow: hidden`,
+`overscroll-behavior: none`, `body` fixed to the window). A screen is a column as tall as the
+window: its header, then one `.scroller` holding everything else, with
+`overscroll-behavior: contain`. The scroller's content is always one pixel taller than the
+scroller, so iOS gives the drag and the bounce to that area even on a short screen. Cook mode's
+tabs moved out of the scrolling content, next to the header. The chart's sideways scroller, the
+photo strip and the sheets are unchanged, so the pinned ingredient column and the lines of
+`docs/fond/chart-borders.md` are as they were (their tests pass unchanged).
+
+What a scrolling document gave for free is now in `crates/omni-recipes-web/src/platform/shell.rs`:
+
+- A tap on a bare part of a header scrolls the screen to its top.
+- The library's scroll position is stored and restored from the scroller.
+- The keyboard: the visual viewport says how much it covers; the screen ends above it, sheets
+  sit on it, notices move up, the Cook button hides while typing in the page, the focused field
+  is scrolled into view, and a document iOS panned is put back.
+
+Safe-area insets, the notices' placement, the wake lock, timers and the offline path are
+untouched code.
+
+**Files.** `src/platform/shell.rs` (new), `src/platform/mod.rs`, `src/ui/{mod,library,recipe,
+cook,inbox}.rs`, `style/app.css`, `e2e/shell.spec.js` (new), `e2e/fond.spec.js` (reads the
+scroller instead of the window), `docs/recipes-app.md` ("The shell: what scrolls"),
+`docs/fond/chart-borders.md`.
+
+**Tests.**
+
+- `cargo xtask gate`: 3,815 passed, 21 skipped.
+- Playwright WebKit at iPhone size on the mock: 46 passed, 1 skipped (on-demand screenshots).
+  The nine new shell tests: the document cannot scroll and every screen has one area that always
+  can; the library header, the recipe header and Cook button, and cook mode's header and tabs do
+  not move when the content is pulled past either end; a wide chart still scrolls sideways and
+  gets its pinned edge; the header tap; a sheet takes nothing behind it along; with a keyboard
+  (played by shrinking the visual viewport) the search field, recipe notes, and the amount sheet
+  in the recipe and in cook mode stay in view. The existing scroll-restore test passes.
+- Playwright's WebKit has no rubber band, touch drag or keyboard, so the bounce itself and the
+  real keyboard are not covered: see the list below.
+- The production run of the full suite happened after the deploy of this commit; its result is in
+  the session's final message, not in this file (a second push would restart Omni again).
+
+**To check on the iPhone (installed app).**
+
+1. Library, a recipe and cook mode: pull down at the top and up at the bottom. The content
+   bounces; the header, cook mode's tabs and the Cook button do not move.
+2. A screen with little on it (search for something with no match): it still bounces a little,
+   and nothing behind it moves.
+3. A wide chart: sideways scroll and bounce feel as before, the ingredient column stays pinned
+   with its edge, and a diagonal drag does not fight between the two directions.
+4. Tap the bare middle of a header: the screen goes to its top.
+5. Search, recipe notes, and the amount sheet in a recipe and in cook mode: the field stays above
+   the keyboard, the sheet sits on the keyboard, and after the keyboard closes the header is back
+   at the very top with no gap.
+6. Open a sheet (Filter, the recipe menu) and drag on it and on the dimmed area: the page behind
+   stays still.
+7. Back from a recipe returns the library to where it was; the swipe-back gesture too.
+8. The notch and the home indicator: nothing under them, the last line of a screen clears the
+   home indicator.
+9. Rotate the phone once in a recipe and in cook mode.

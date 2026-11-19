@@ -169,6 +169,41 @@ cached as they are viewed. After each sync the worker also deletes cached
 ever evicted, the next launch on the LAN rebuilds it; only an unsent outbox
 exists solely on the phone.
 
+## The shell: what scrolls
+
+The document never scrolls. `html` and `body` are locked (`overflow: hidden`,
+`overscroll-behavior: none`, `body` fixed to the window), so on an iPhone the
+header, cook mode's tabs and the Cook button cannot be pulled with a rubber
+band. A screen is a column as tall as the window: its `.bar` header, then one
+`.scroller` (`data-testid="scroller"`) that holds everything else, with
+`overscroll-behavior: contain`. The scroller's inner block is one pixel taller
+than the scroller, so it always scrolls; iOS then bounces that area and never
+looks for something behind it. Sideways scrollers inside it (the chart's
+`.chart-scroll`, the photo strip) are untouched and keep their own bounce;
+the chart's pinned column and lines are as `docs/fond/chart-borders.md` says.
+Sheets, notices and the Cook button are fixed to the window as before; a
+sheet scrolls by itself (`overscroll-behavior: contain`) and a pull on it or
+on the scrim reaches nothing.
+
+What a scrolling document gave for free is done by `platform/shell.rs`:
+
+- **Tap the header to go to the top.** The status-bar tap needs a scrolling
+  document. A tap on a bare part of a `.bar` (not on a button, link or field)
+  scrolls the screen's scroller to its top.
+- **Scroll position.** `navigate` stores the library's scroller position and
+  the library restores it on the way back; a new screen starts at its top
+  because its scroller is new.
+- **Keyboard.** `visualViewport` resize and scroll events set `--kb` on the
+  root element to the height the keyboard covers, and the class `kb`. The
+  screen ends above the keyboard (`.page` height), sheets sit on it
+  (`.sheet` bottom and max height), notices move up, the Cook button is
+  hidden, and the focused field is scrolled into view inside its scroller or
+  sheet. iOS pans a locked document to reveal a field and can leave it
+  panned; the handler puts the window back at 0.
+
+Safe areas: the header pads the notch, the scroller's inner block pads the
+home indicator, and the fixed pieces keep their own insets.
+
 ## Service worker and updates
 
 `build/precache.sh` runs as a trunk post-build hook. It lists every file of
@@ -235,7 +270,10 @@ recipe view and in cook mode (no vertical or rotated text, no label that does
 not fit or breaks inside a word, a table that fills its container unless it
 scrolls), the chart's lines and pinned column at several sideways scroll
 positions (`chart-borders.spec.js`), the remembered view
-(`view-preference.spec.js`), scaling, notes, archive and delete with undo, cook mode in all three
+(`view-preference.spec.js`), the shell (`shell.spec.js`: the document cannot
+scroll, headers and the Cook button stay put when content is pulled past
+either end, the header tap, sheets, and the keyboard played by shrinking the
+visual viewport; the bounce itself is only on a real iPhone), scaling, notes, archive and delete with undo, cook mode in all three
 tabs with recipe notes, timer, reload and finish, leaving and discarding a cook,
 changing an amount (recipe view, scaled page, cook mode, offline), the inbox
 upload, the manifest and icons, and the app offline with writes sent on
