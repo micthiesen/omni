@@ -84,7 +84,11 @@ timers." Design reference: `cook-chart-steps.md` (updated with everything below)
 
 ## Production
 
-Added below once deployed.
+Deployed by the push of `1eacc78` (CI passed; the deploy restarts only Omni). On
+`https://recipes.syas.ca`, `cook-chart.spec.js` in WebKit at iPhone size through the SSH proxy,
+cooking "World's Best Lasagna" and "Crispy Cheesy Pan Pizza": 9 of 9 passed. Every test
+session was discarded, which logs nothing; no cook session is open afterwards. Screenshots:
+`~/Pictures/fond-shots/cookchart-polish-prod/`.
 
 ## To check on the iPhone
 
