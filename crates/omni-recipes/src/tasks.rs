@@ -90,6 +90,7 @@ fn purge_tx(conn: &Connection, now: i64) -> R<Purged> {
                (SELECT id FROM recipes_cook WHERE recipe_id = ?1)",
             "DELETE FROM recipes_cook WHERE recipe_id = ?1",
             "DELETE FROM recipes_fts WHERE recipe_id = ?1",
+            "DELETE FROM recipes_pin WHERE recipe_id = ?1",
             "DELETE FROM recipes_recipe WHERE id = ?1",
             // The recipe's stored source goes with it, unless another recipe
             // (a second import, or the recipe that absorbed this one) uses it.

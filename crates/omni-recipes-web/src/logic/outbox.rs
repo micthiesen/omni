@@ -260,6 +260,20 @@ pub fn pending_state(entries: &[Entry], recipe: &str) -> Option<RecipeState> {
     })
 }
 
+/// The newest queued pinned list, when one is waiting to be sent.
+pub fn pending_pins(entries: &[Entry]) -> Option<&[String]> {
+    entries.iter().rev().find_map(|entry| match &entry.job {
+        Job::Op {
+            op:
+                ClientOp {
+                    kind: ClientOpKind::Pins { ids },
+                    ..
+                },
+        } => Some(ids.as_slice()),
+        _ => None,
+    })
+}
+
 /// A server copy of a recipe with the app's unsent edits on top, so a sync
 /// that lands before the outbox drains does not undo them on screen.
 pub fn overlay_pending(mut record: RecipeRecord, entries: &[Entry]) -> RecipeRecord {
@@ -289,6 +303,12 @@ pub fn overlay_pending(mut record: RecipeRecord, entries: &[Entry]) -> RecipeRec
     }
     if let Some(state) = pending_state(entries, &record.id) {
         record.state = state;
+    }
+    if let Some(pins) = pending_pins(entries) {
+        record.pinned = pins
+            .iter()
+            .position(|id| *id == record.id)
+            .and_then(|place| u32::try_from(place).ok());
     }
     record
 }
@@ -578,6 +598,7 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             seq: 1,
+            pinned: None,
             adjustments: Vec::new(),
         }
     }

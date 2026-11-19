@@ -206,8 +206,9 @@ test('every chart line is drawn once, and the pinned column keeps its edge while
     split += await chart.locator('td.fill').count();
     if (!(await openCookChart(page))) continue;
     // Marks restyle cells; they must not move or drop a line.
-    await page.locator('[data-testid=chart] td.lead.tap').first().click();
+    await page.locator('[data-testid=chart] td.lead.leaf.tap').first().click();
     await page.locator('[data-testid=chart] td.step').first().click();
+    await page.locator('.sheet.open [data-testid=sheet-done]').click();
     await checkLines(page, `${recipe.doc.title} in cook mode`);
     await discardCook(page);
   }
@@ -274,8 +275,9 @@ test('screenshots of every chart at each sideways scroll position', async ({ pag
     if (!(await openCookChart(page))) continue;
     // One ingredient crossed off and one step done, so the marked styles are
     // in the picture too.
-    await page.locator('[data-testid=chart] td.lead.tap').first().click();
+    await page.locator('[data-testid=chart] td.lead.leaf.tap').first().click();
     await page.locator('[data-testid=chart] td.step').first().click();
+    await page.locator('.sheet.open [data-testid=sheet-done]').click();
     await capture(page, `cook-${name}`);
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.setViewportSize(TALL);

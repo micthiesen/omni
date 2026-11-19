@@ -197,6 +197,10 @@ pub struct RecipeRecord {
     pub created_at: Ms,
     pub updated_at: Ms,
     pub seq: u64,
+    /// Where the recipe stands among the pinned ones (0 is first); absent
+    /// when it is not pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<u32>,
     /// Always empty. An app installed before cook-only adjustments were
     /// removed requires the key to decode a sync, and would show a frozen
     /// library until it updates itself.
@@ -426,6 +430,9 @@ pub enum ClientOpKind {
         unit: Option<String>,
         base_revision: u32,
     },
+    /// Sets the pinned recipes, in order: every id pinned, first to last.
+    /// A recipe left out is unpinned.
+    Pins { ids: Vec<String> },
     /// A request for the kitchen agent, stored once by `request_id`. The
     /// context is what the cook was looking at; a library request has none.
     #[serde(rename_all = "camelCase")]

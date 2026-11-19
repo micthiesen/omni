@@ -75,6 +75,8 @@ pub struct Item {
     pub cook_count: u32,
     pub last_cooked_at: Option<Ms>,
     pub created_at: Ms,
+    /// Its place among the pinned recipes (0 is first).
+    pub pinned: Option<u32>,
     /// Folded words of everything the recipe is found by.
     pub words: Vec<String>,
 }
@@ -109,6 +111,7 @@ pub fn item(record: &RecipeRecord, doc: Option<&RecipeDoc>, title: &str) -> Item
         cook_count: record.cook_count,
         last_cooked_at: record.last_cooked_at,
         created_at: record.created_at,
+        pinned: record.pinned,
         words: search_words(doc, title, &record.tags, &record.notes),
     }
 }
@@ -142,6 +145,66 @@ pub fn tag_groups(tags: &[Tag]) -> BTreeMap<String, String> {
     tags.iter()
         .map(|tag| (tag.name.clone(), tag.group.clone()))
         .collect()
+}
+
+/// The pinned recipes the library shows at its top, first to last. Archived
+/// ones keep their pin and stay out of sight.
+pub fn pinned<'a>(items: impl IntoIterator<Item = &'a Item>) -> Vec<String> {
+    let mut found: Vec<(u32, &str)> = items
+        .into_iter()
+        .filter(|item| item.state == RecipeState::Active)
+        .filter_map(|item| Some((item.pinned?, item.id.as_str())))
+        .collect();
+    found.sort();
+    found.into_iter().map(|(_, id)| id.to_owned()).collect()
+}
+
+/// Whether the library is narrowed by a search or a tag filter. The pinned
+/// section is only shown over the whole library.
+pub fn narrowed(filter: &Filter) -> bool {
+    !filter.query.trim().is_empty() || !filter.tags.is_empty() || filter.archived
+}
+
+/// How many columns the card grid has at `width` CSS pixels.
+pub fn column_count(width: f64) -> usize {
+    if width >= 620.0 { 3 } else { 2 }
+}
+
+/// Column `column` of `ids` laid out over `columns` columns. Cards are dealt
+/// across the columns in order, so reading left to right, row by row, follows
+/// the sort, and each column keeps its cards' own heights with no gaps.
+pub fn column(ids: &[String], columns: usize, column: usize) -> Vec<String> {
+    ids.iter()
+        .skip(column)
+        .step_by(columns.max(1))
+        .cloned()
+        .collect()
+}
+
+/// `list` with `id` moved to position `to` (the place it should end up at).
+pub fn moved_to(list: &[String], id: &str, to: usize) -> Vec<String> {
+    let mut rest: Vec<String> = list.iter().filter(|other| *other != id).cloned().collect();
+    if rest.len() == list.len() {
+        return rest;
+    }
+    rest.insert(to.min(rest.len()), id.to_owned());
+    rest
+}
+
+/// `list` with `id` moved one place up (`-1`) or down (`1`); unchanged at
+/// either end.
+pub fn moved_by(list: &[String], id: &str, by: i32) -> Vec<String> {
+    match list.iter().position(|other| other == id) {
+        Some(at) => {
+            let to = if by < 0 {
+                at.saturating_sub(1)
+            } else {
+                (at + 1).min(list.len() - 1)
+            };
+            moved_to(list, id, to)
+        }
+        None => list.to_vec(),
+    }
 }
 
 /// The ids to show, in order.
@@ -251,7 +314,62 @@ mod tests {
             cook_count: cooked,
             last_cooked_at: last,
             created_at: created,
+            pinned: None,
         }
+    }
+
+    #[test]
+    fn pinned_recipes_come_first_in_their_own_order_and_cards_are_dealt_across_columns() {
+        let pin = |id: &str, place: Option<u32>, state: RecipeState| Item {
+            pinned: place,
+            state,
+            ..entry(id, id, &[], 0, None, 0)
+        };
+        let items = [
+            pin("a", Some(2), RecipeState::Active),
+            pin("b", None, RecipeState::Active),
+            pin("c", Some(0), RecipeState::Active),
+            pin("d", Some(1), RecipeState::Archived),
+            pin("e", Some(3), RecipeState::Active),
+        ];
+        assert_eq!(pinned(&items), ["c", "a", "e"]);
+        assert!(!narrowed(&Filter::default()));
+        assert!(narrowed(&Filter {
+            query: "soup".into(),
+            ..Filter::default()
+        }));
+        assert!(narrowed(&Filter {
+            archived: true,
+            ..Filter::default()
+        }));
+
+        let ids: Vec<String> = ["1", "2", "3", "4", "5", "6", "7"]
+            .iter()
+            .map(|id| (*id).to_owned())
+            .collect();
+        // Two columns on a phone: rows read 1 2, 3 4, 5 6, 7.
+        assert_eq!(column(&ids, 2, 0), ["1", "3", "5", "7"]);
+        assert_eq!(column(&ids, 2, 1), ["2", "4", "6"]);
+        assert_eq!(column(&ids, 3, 2), ["3", "6"]);
+        assert_eq!(column(&ids[..1], 3, 1), Vec::<String>::new());
+        assert_eq!(
+            (
+                column_count(390.0),
+                column_count(619.0),
+                column_count(620.0)
+            ),
+            (2, 2, 3)
+        );
+
+        // Dragging a card onto another's place, and the menu's one step.
+        assert_eq!(moved_to(&ids[..4], "4", 0), ["4", "1", "2", "3"]);
+        assert_eq!(moved_to(&ids[..4], "1", 2), ["2", "3", "1", "4"]);
+        assert_eq!(moved_to(&ids[..4], "2", 9), ["1", "3", "4", "2"]);
+        assert_eq!(moved_to(&ids[..3], "x", 0), ["1", "2", "3"]);
+        assert_eq!(moved_by(&ids[..3], "2", -1), ["2", "1", "3"]);
+        assert_eq!(moved_by(&ids[..3], "2", 1), ["1", "3", "2"]);
+        assert_eq!(moved_by(&ids[..3], "1", -1), ["1", "2", "3"]);
+        assert_eq!(moved_by(&ids[..3], "3", 1), ["1", "2", "3"]);
     }
 
     fn registry() -> Vec<Tag> {

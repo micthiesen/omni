@@ -303,6 +303,67 @@ pub fn friendly(qty: f64, unit: &str) -> Option<String> {
     })
 }
 
+/// The size of one press of a plus or minus button at `qty` of `unit`, so a
+/// stepper moves between amounts a cook can measure: grams and millilitres
+/// in steps that grow with the amount (and stay on the grid `awkward`
+/// accepts), spoons and cups in the fractions their measures come in, and
+/// anything counted by one.
+fn step_size(qty: f64, unit: Option<&str>) -> (f64, f64) {
+    let unit = unit.map(|unit| crate::format::unit_alias(unit).unwrap_or(unit));
+    // `(from, size)`: amounts from `from` up move by `size`.
+    let bands: &[(f64, f64)] = match unit {
+        Some("g") => &[
+            (0.0, 1.0),
+            (20.0, 5.0),
+            (100.0, 10.0),
+            (250.0, 25.0),
+            (1000.0, 50.0),
+        ],
+        // Millilitres are measured in fives up to 60 and in 25s above
+        // (`awkward` flags anything else), so there is no step of ten.
+        Some("ml") => &[(0.0, 5.0), (60.0, 25.0), (500.0, 50.0)],
+        Some("kg" | "l") => &[(0.0, 0.05), (1.0, 0.1), (3.0, 0.25)],
+        Some("tsp" | "cup") => &[(0.0, 0.25), (2.0, 0.5)],
+        Some("tbsp") => &[(0.0, 0.5), (TBSP_MAX, 1.0)],
+        Some("oz") => &[(0.0, 0.5)],
+        Some("lb") => &[(0.0, 0.25)],
+        // Servings, cloves, cans: whole things, and halves below one.
+        _ => &[(0.0, 0.5), (1.0, 1.0)],
+    };
+    let (from, size) = bands
+        .iter()
+        .rev()
+        .find(|(from, _)| qty >= *from)
+        .copied()
+        .unwrap_or((0.0, 1.0));
+    (size, from)
+}
+
+/// `qty` after one press of a stepper's plus (`up`) or minus button: the
+/// next amount on the unit's grid above or below it, so an amount off the
+/// grid (a third of a cup, 326 g) snaps onto it. It never goes below one
+/// step.
+pub fn step(qty: f64, unit: Option<&str>, up: bool) -> f64 {
+    let smallest = step_size(0.0, unit).0;
+    if !(qty.is_finite() && qty > 0.0) {
+        return smallest;
+    }
+    const EPS: f64 = 1e-6;
+    let stepped = if up {
+        let (size, _) = step_size(qty + EPS, unit);
+        ((qty + EPS) / size).floor() * size + size
+    } else {
+        // The step below a boundary is the smaller one (100 g goes to 95 g),
+        // and a step never jumps over the start of its own range (75 ml
+        // goes to 60 ml, where the fives begin).
+        let (size, from) = step_size(qty - EPS, unit);
+        let below = ((qty - EPS) / size).ceil() * size - size;
+        below.max(from).max(smallest)
+    };
+    // Sums of binary fractions of 0.05 drift; six places is far below any step.
+    (stepped * 1e6).round() / 1e6
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,5 +455,91 @@ mod tests {
         assert_eq!(show(0.5, "l"), "500 ml");
         assert_eq!(friendly(1.5, "kg"), None);
         assert_eq!(friendly(2.0, "clove"), None);
+    }
+
+    #[test]
+    fn a_stepper_moves_between_measurable_amounts_in_each_unit_family() {
+        let walk = |mut qty: f64, unit: Option<&str>, up: bool, presses: usize| {
+            let mut seen = Vec::new();
+            for _ in 0..presses {
+                qty = step(qty, unit, up);
+                seen.push(qty);
+            }
+            seen
+        };
+        // Grams: ones, fives, tens, 25s, 50s by magnitude.
+        assert_eq!(walk(18.0, Some("g"), true, 4), [19.0, 20.0, 25.0, 30.0]);
+        assert_eq!(walk(95.0, Some("g"), true, 3), [100.0, 110.0, 120.0]);
+        assert_eq!(walk(240.0, Some("g"), true, 3), [250.0, 275.0, 300.0]);
+        assert_eq!(walk(1000.0, Some("g"), true, 2), [1050.0, 1100.0]);
+        assert_eq!(walk(1000.0, Some("g"), false, 2), [975.0, 950.0]);
+        assert_eq!(walk(100.0, Some("g"), false, 2), [95.0, 90.0]);
+        assert_eq!(walk(2.0, Some("g"), false, 3), [1.0, 1.0, 1.0]);
+        // An amount off the grid snaps onto it, in either direction.
+        assert_eq!(step(326.0, Some("g"), true), 350.0);
+        assert_eq!(step(326.0, Some("g"), false), 325.0);
+        assert_eq!(step(107.0, Some("grams"), true), 110.0);
+        // Millilitres: fives to 60, then 25s, then 50s; never an awkward amount.
+        assert_eq!(walk(50.0, Some("ml"), true, 4), [55.0, 60.0, 75.0, 100.0]);
+        assert_eq!(walk(75.0, Some("ml"), false, 3), [60.0, 55.0, 50.0]);
+        assert_eq!(walk(475.0, Some("ml"), true, 3), [500.0, 550.0, 600.0]);
+        assert_eq!(step(5.0, Some("ml"), false), 5.0);
+        for start in [5.0, 40.0, 60.0, 130.0, 480.0, 900.0] {
+            for up in [true, false] {
+                let next = step(start, Some("ml"), up);
+                assert_eq!(
+                    awkward(next, "ml", true),
+                    None,
+                    "{start} ml, up {up}: {next}"
+                );
+            }
+        }
+        for start in [20.0, 45.0, 99.0, 100.0, 326.0, 990.0, 1500.0] {
+            for up in [true, false] {
+                let next = step(start, Some("g"), up);
+                assert_eq!(awkward(next, "g", true), None, "{start} g, up {up}: {next}");
+            }
+        }
+        // Kilograms and litres.
+        assert_eq!(walk(0.9, Some("kg"), true, 3), [0.95, 1.0, 1.1]);
+        assert_eq!(walk(1.0, Some("l"), false, 2), [0.95, 0.9]);
+        // Spoons and cups, in the fractions their measures come in.
+        assert_eq!(walk(0.25, Some("tsp"), true, 3), [0.5, 0.75, 1.0]);
+        assert_eq!(walk(2.0, Some("tsp"), true, 2), [2.5, 3.0]);
+        assert_eq!(walk(0.5, Some("tsp"), false, 2), [0.25, 0.25]);
+        assert_eq!(walk(1.0, Some("tbsp"), true, 2), [1.5, 2.0]);
+        assert_eq!(walk(4.0, Some("tbsp"), true, 2), [5.0, 6.0]);
+        assert_eq!(walk(1.0, Some("tbsp"), false, 2), [0.5, 0.5]);
+        assert_eq!(walk(0.5, Some("cup"), true, 3), [0.75, 1.0, 1.25]);
+        assert_eq!(walk(2.0, Some("cups"), true, 2), [2.5, 3.0]);
+        // A third of a cup is not on the quarter grid: the next press is.
+        assert_eq!(step(0.3333, Some("cup"), true), 0.5);
+        assert_eq!(step(0.3333, Some("cup"), false), 0.25);
+        for (start, unit) in [(0.75, "tsp"), (1.5, "tsp"), (2.5, "tbsp"), (0.75, "cup")] {
+            for up in [true, false] {
+                let next = step(start, Some(unit), up);
+                assert_eq!(
+                    awkward(next, unit, true),
+                    None,
+                    "{start} {unit}, up {up}: {next}"
+                );
+            }
+        }
+        // Ounces and pounds.
+        assert_eq!(walk(1.0, Some("oz"), true, 2), [1.5, 2.0]);
+        assert_eq!(walk(1.0, Some("lb"), false, 2), [0.75, 0.5]);
+        // Counted things go by one, whatever they are called.
+        assert_eq!(walk(4.0, None, true, 2), [5.0, 6.0]);
+        assert_eq!(
+            walk(4.0, Some("servings"), false, 5),
+            [3.0, 2.0, 1.0, 0.5, 0.5]
+        );
+        assert_eq!(walk(2.0, Some("clove"), false, 2), [1.0, 0.5]);
+        assert_eq!(step(0.5, Some("can"), true), 1.0);
+        assert_eq!(step(1.5, None, true), 2.0);
+        assert_eq!(step(1.5, None, false), 1.0);
+        // Nonsense in, the smallest step out.
+        assert_eq!(step(0.0, Some("g"), true), 1.0);
+        assert_eq!(step(f64::NAN, Some("tsp"), false), 0.25);
     }
 }

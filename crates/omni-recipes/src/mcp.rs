@@ -237,5 +237,10 @@ pub fn tools(recipes: Arc<Recipes>) -> Result<Vec<McpTool>, ToolMetaError> {
             &recipes,
             |r, input, _| async move { r.request_update(input).await },
         )?,
+        tool(
+            &defs::RECIPES_PINS,
+            &recipes,
+            |r, input, actor| async move { r.pins(input, actor).await },
+        )?,
     ])
 }

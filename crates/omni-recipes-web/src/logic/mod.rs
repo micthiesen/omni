@@ -79,20 +79,22 @@ pub fn parse_scale(text: &str) -> Option<f64> {
     (value.is_finite() && (SCALE_MIN..=SCALE_MAX).contains(&value)).then_some(value)
 }
 
-/// The factor after stepping the yield by `delta` whole units ("servings
-/// stepper"): 4 servings at ×1.5 is 6, one step up is 7, so ×1.75. Never
-/// below one unit.
-pub fn step_servings(yield_qty: f64, factor: f64, delta: i32) -> f64 {
+/// The factor after one press of the yield stepper. The yield moves the way
+/// an amount of its unit is measured (`omni_recipe_format::measure::step`):
+/// servings and other counted things by one, a yield in millilitres or grams
+/// by steps that grow with it, cups by quarters. 4 servings at ×1.5 is 6, one
+/// press up is 7, so ×1.75. A counted yield never goes below one.
+pub fn step_servings(yield_qty: f64, unit: &str, factor: f64, up: bool) -> f64 {
     if !(yield_qty.is_finite() && yield_qty > 0.0) {
         return factor;
     }
     let now = yield_qty * factor;
-    let stepped = if delta >= 0 {
-        (now + 1e-9).floor() + f64::from(delta)
-    } else {
-        (now - 1e-9).ceil() + f64::from(delta)
-    };
-    let stepped = stepped.max(1.0f64.min(yield_qty));
+    let mut stepped = omni_recipe_format::measure::step(now, Some(unit), up);
+    let measured = omni_recipe_format::format::is_known_unit(unit)
+        || omni_recipe_format::format::unit_alias(unit).is_some();
+    if !measured {
+        stepped = stepped.max(1.0f64.min(yield_qty));
+    }
     (stepped / yield_qty).clamp(SCALE_MIN, SCALE_MAX)
 }
 
@@ -316,17 +318,41 @@ mod tests {
     }
 
     #[test]
-    fn the_servings_stepper_moves_by_whole_servings() {
-        assert!(same_scale(step_servings(4.0, 1.0, 1), 1.25));
-        assert!(same_scale(step_servings(4.0, 1.0, -1), 0.75));
+    fn the_yield_stepper_moves_the_way_its_unit_is_measured() {
+        let step = |qty, factor, up| step_servings(qty, "servings", factor, up);
+        assert!(same_scale(step(4.0, 1.0, true), 1.25));
+        assert!(same_scale(step(4.0, 1.0, false), 0.75));
         // From 6 servings (×1.5) up to 7, and from 2½ (×0.625) to the whole numbers around it.
-        assert!(same_scale(step_servings(4.0, 1.5, 1), 1.75));
-        assert!(same_scale(step_servings(4.0, 0.625, 1), 0.75));
-        assert!(same_scale(step_servings(4.0, 0.625, -1), 0.5));
+        assert!(same_scale(step(4.0, 1.5, true), 1.75));
+        assert!(same_scale(step(4.0, 0.625, true), 0.75));
+        assert!(same_scale(step(4.0, 0.625, false), 0.5));
         // Never below one serving.
-        assert!(same_scale(step_servings(4.0, 0.25, -1), 0.25));
-        assert!(same_scale(step_servings(24.0, 1.0, 1), 25.0 / 24.0));
-        assert!(same_scale(step_servings(0.0, 1.0, 1), 1.0));
+        assert!(same_scale(step(4.0, 0.25, false), 0.25));
+        assert!(same_scale(step(24.0, 1.0, true), 25.0 / 24.0));
+        assert!(same_scale(step(0.0, 1.0, true), 1.0));
+        // A yield that is an amount steps like one: 250 ml by 25, 500 g by
+        // 25, 2 cups by a half, half a cup by a quarter.
+        assert!(same_scale(
+            step_servings(250.0, "ml", 1.0, true),
+            275.0 / 250.0
+        ));
+        assert!(same_scale(
+            step_servings(250.0, "ml", 1.0, false),
+            225.0 / 250.0
+        ));
+        assert!(same_scale(
+            step_servings(500.0, "g", 1.0, true),
+            525.0 / 500.0
+        ));
+        assert!(same_scale(step_servings(2.0, "cups", 1.0, true), 1.25));
+        assert!(same_scale(step_servings(0.5, "cup", 1.0, false), 0.5));
+        assert!(same_scale(step_servings(1.0, "l", 1.0, true), 1.1));
+        // A scaled yield that is off the grid snaps onto it: 250 ml at ×1.5
+        // is 375, and the next press is 400.
+        assert!(same_scale(
+            step_servings(250.0, "ml", 1.5, true),
+            400.0 / 250.0
+        ));
     }
 
     #[test]

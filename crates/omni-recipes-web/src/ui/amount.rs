@@ -153,6 +153,20 @@ pub fn AmountSheet(open: RwSignal<bool>, target: RwSignal<Option<AmountTarget>>)
             doc.r#yield.unit
         ))
     };
+    // One press moves to the next amount the chosen unit is measured in.
+    let nudge = move |up: bool| {
+        move |_| {
+            if let Some(value) = parse_qty(&qty.get_untracked()) {
+                let unit = unit.get_untracked();
+                let unit = (!unit.is_empty()).then_some(unit);
+                qty.set(qty_text(omni_recipe_format::measure::step(
+                    value,
+                    unit.as_deref(),
+                    up,
+                )));
+            }
+        }
+    };
     let confirm = move |_| {
         if let (Some(target), Some(Preview::Line(_, qty, unit))) =
             (target.get_untracked(), shown.get_untracked())
@@ -170,10 +184,14 @@ pub fn AmountSheet(open: RwSignal<bool>, target: RwSignal<Option<AmountTarget>>)
             <div class="amount-fields">
                 <label class="field">
                     <span>"Amount"</span>
-                    <input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done"
-                        data-testid="amount-qty"
-                        prop:value=move || qty.get()
-                        on:input=move |event| qty.set(event_target_value(&event))/>
+                    <span class="amount-stepper">
+                        <button type="button" aria-label="Less" data-testid="amount-less" on:click=nudge(false)>"−"</button>
+                        <input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done"
+                            data-testid="amount-qty"
+                            prop:value=move || qty.get()
+                            on:input=move |event| qty.set(event_target_value(&event))/>
+                        <button type="button" aria-label="More" data-testid="amount-more" on:click=nudge(true)>"+"</button>
+                    </span>
                 </label>
                 <label class="field">
                     <span>"Unit"</span>

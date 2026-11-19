@@ -130,6 +130,46 @@ sync that lands first has the queued change laid over it. A ten-second Undo
 toast sends the old amount back as another op. A refusal from the server
 restores the recipe it sends and shows its reason.
 
+**The grid.** The library's cards are a masonry (`Masonry` in `ui/library.rs`): two columns
+below 620px and three above, each a stack of cards at their own heights 22px apart, so the
+columns end ragged and no row pads a short card up to a tall neighbour. The cards are dealt
+across the columns in order (`logic::library::column`): card 1 left, card 2 right, card 3 left,
+which keeps reading row by row in the sort order and needs no measuring, so the layout is
+there on the first frame and the scroll position can be restored at once. In the DOM the
+columns come one after the other. Covers keep their 4:3 shape and still load lazily a few at a
+time. The width comes from `store.width`, kept by one `resize` listener.
+
+**Pinned recipes.** "Pin" and "Unpin" are in the recipe's menu and in each card's menu (the
+three dots on the card's cover, which also names the card for assistive tech: "More for
+…"). Pinned recipes form a "Pinned" section above the grid, in their own order, and are left
+out of the grid below; a search or a filter lists every match in one grid instead. The order is
+changed by pressing and holding a pinned card (400 ms; a finger that moves 10px before then is
+scrolling) and dragging it onto another's place: the card follows the finger as a copy, its
+own place is dimmed, and the card under the finger is outlined as the place it will take.
+Lifting the finger there stores the list; lifting anywhere else changes nothing. The cards do
+not shuffle while one is held: moving the pressed element to another column would take it out
+of the page, and with it the touch that is doing the dragging. A `touchmove` listener that is not passive keeps the page from scrolling
+during the drag, the system's own link drag and long-press preview are switched off on cards,
+the pointer is captured so a mouse let go outside the section still ends the drag, and the
+click that follows the lift is swallowed so it does not open the recipe. Without a
+drag, the card menu of a pinned card has "Move up" and "Move down", which stay open for
+several moves. The list is the server's (`ClientOpKind::Pins`, the whole list each time, laid
+over a sync until it is sent), so it is the same on every device and follows a change made
+elsewhere like the rest of the library. Not built: scrolling the screen while dragging near
+its edge (the section is at the top).
+
+**Steppers.** A plus or minus button moves to the next amount its unit is measured in
+(`omni_recipe_format::measure::step`): grams by 1 below 20, then 5, 10 from 100, 25 from 250
+and 50 from 1 kg; millilitres by 5 up to 60, then 25, and 50 from 500 (there is no step of ten,
+which the measuring rule flags); kilograms and litres by 0.05, 0.1 and 0.25; teaspoons and cups
+by quarters and by halves from 2; tablespoons by halves and by one from 4; ounces by a half,
+pounds by a quarter; anything counted by one (and to a half below one). An amount off the grid
+snaps onto it (326 g goes to 350 or 325, a third of a cup to a half or a quarter), and a step
+down never jumps over the start of its range (75 ml goes to 60). The yield stepper on the
+recipe page uses the yield's unit (servings by one and never below one, a yield in millilitres
+by its own steps); the amount sheet has the same buttons either side of the amount, following
+the unit chosen in the sheet.
+
 **Requests.** "Ask Kitchen…" is in the overflow menu (the three dots) of the
 recipe page, of cook mode and of the library, next to "Requests"
 (`ui/requests.rs`). It opens a sheet with one text field and Submit: no
@@ -329,6 +369,11 @@ during a cook, an agent's note, the retired adjustment events of an app not
 yet updated, the absence of any cook-only wording in the built app, the
 "While … runs" offers, the
 server-pinned session document, and an imported inbox item.
+`library.spec.js` covers the masonry at phone width and wider (dealt in reading order, cards
+at their own height, 22px apart, lazy covers, scroll restore), pinning from both menus,
+reordering by a held drag and by the card menu, a list set elsewhere, and the steppers of the
+amount sheet and the yield in every unit family the library has. It pins the library's first
+two recipes and unpins them, and saves no amount, so it also runs against a real Omni.
 `requests.spec.js` covers "Ask Kitchen" from the three menus with the context
 each attaches, the Requests page, a request written offline, an agent working
 a request through to a done revision while the app follows, and the "Recipe

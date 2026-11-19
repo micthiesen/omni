@@ -17,6 +17,9 @@ use crate::platform::{device, listen, shell, window};
 use crate::store::{Store, use_store};
 
 thread_local! {
+    /// Set when a drag ends on a link: the click the browser sends next is
+    /// the end of the drag, not a tap.
+    static SWALLOW_CLICK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// In-app navigations on the history stack, so Back can tell whether
     /// there is a screen of ours to go back to.
     static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
@@ -101,6 +104,16 @@ where
     shown.read_only()
 }
 
+/// Makes the next click on an in-app link do nothing. Cleared by that click,
+/// or shortly after when none comes.
+pub fn swallow_next_click() {
+    SWALLOW_CLICK.set(true);
+    set_timeout(
+        || SWALLOW_CLICK.set(false),
+        std::time::Duration::from_millis(400),
+    );
+}
+
 /// An in-app link: a real `<a href>` that navigates without a page load.
 #[component]
 pub fn Link(
@@ -117,6 +130,10 @@ pub fn Link(
             class=class
             aria-label=(!label.is_empty()).then_some(label)
             on:click=move |event: web_sys::MouseEvent| {
+                if SWALLOW_CLICK.replace(false) {
+                    event.prevent_default();
+                    return;
+                }
                 if event.button() == 0 && !event.meta_key() && !event.ctrl_key() {
                     event.prevent_default();
                     navigate(store, to.clone());

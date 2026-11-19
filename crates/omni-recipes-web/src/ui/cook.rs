@@ -50,6 +50,25 @@ struct Ctx {
     amount_choices: RwSignal<Vec<(String, String)>>,
     choosing_amount: RwSignal<bool>,
     notes_open: RwSignal<bool>,
+    /// The chart's step sheet and the step it shows
+    /// (docs/fond/cook-chart-steps.md).
+    step_open: RwSignal<bool>,
+    sheet_step: RwSignal<String>,
+}
+
+/// "Ragù: simmer" in a recipe with several components, else "simmer".
+fn step_label(doc: &RecipeDoc, step: &str) -> String {
+    let ix = Index::build(doc);
+    let Some(found) = ix.step(step) else {
+        return step.to_owned();
+    };
+    match ix
+        .component_of(step)
+        .and_then(|component| component.name.as_deref())
+    {
+        Some(name) if doc.components.len() > 1 => format!("{name}: {}", found.action),
+        _ => found.action.clone(),
+    }
 }
 
 impl Ctx {
@@ -89,20 +108,8 @@ impl Ctx {
         found
     }
 
-    /// "Ragù: simmer" in a recipe with several components, else "simmer".
     fn step_label(self, step: &str) -> String {
-        let doc = self.doc.get_value();
-        let ix = Index::build(&doc);
-        let Some(found) = ix.step(step) else {
-            return step.to_owned();
-        };
-        match ix
-            .component_of(step)
-            .and_then(|component| component.name.as_deref())
-        {
-            Some(name) if doc.components.len() > 1 => format!("{name}: {}", found.action),
-            _ => found.action.clone(),
-        }
+        step_label(&self.doc.get_value(), step)
     }
 }
 
@@ -205,6 +212,101 @@ fn running(ctx: Ctx) -> impl IntoView {
     }
 }
 
+/// What the Steps tab's card and the chart's step sheet both show of one
+/// step: its text at the session's scale, its inputs to cross off, the cue,
+/// the tip, the timer, and the ways to the recipe's amounts and notes.
+/// `in_sheet` closes the step sheet before another sheet opens over it.
+fn step_body(ctx: Ctx, state: &Projection, id: &str, in_sheet: bool) -> Option<AnyView> {
+    let doc = ctx.doc.get_value();
+    let list = ctx.list.get_value();
+    let ix = Index::build(&doc);
+    let step = ix.step(id)?;
+    let listed = list.steps.iter().find(|listed| listed.id == id)?;
+    let leave_sheet = move || {
+        if in_sheet {
+            ctx.step_open.set(false);
+        }
+    };
+    let chips = step_inputs(&ix, step, ctx.scale)
+        .into_iter()
+        .map(|input| {
+            let on = state.input_checked(id, &input.key);
+            let key = input.key.clone();
+            view! {
+                <button class="chip input" class:on=on class:optional=input.optional data-key=input.key.clone()
+                    aria-pressed=on.to_string() on:click=move |_| ctx.toggle(&key)>
+                    {input.label}
+                </button>
+            }
+        })
+        .collect_view();
+    let timer = step.time.map(|time| {
+        let (start, cancel) = (id.to_owned(), id.to_owned());
+        let minutes = time.longest();
+        match state.timers.get(id).copied() {
+            Some(ends_at) => view! {
+                <div class="timer on">
+                    {icon("timer")}
+                    <b data-testid="countdown" class:late={move || ends_at <= ctx.store.now.get()}>
+                        {move || remaining(ctx.store, ends_at)}
+                    </b>
+                    <button class="link" on:click=move |_| ctx.send(CookEventKind::CancelTimer { step: cancel.clone() })>
+                        "Cancel"
+                    </button>
+                </div>
+            }
+            .into_any(),
+            None => view! {
+                <button class="timer" data-testid="timer" on:click=move |_| {
+                    device::prime_audio();
+                    ctx.send(CookEventKind::Timer {
+                        step: start.clone(),
+                        ends_at: now_ms() + i64::from(minutes) * 60_000,
+                    });
+                }>
+                    {icon("timer")}
+                    {format!("Start {} timer", fmt_time(minutes, None))}
+                </button>
+            }
+            .into_any(),
+        }
+    });
+    let inputs: Vec<String> = step
+        .inputs
+        .iter()
+        .map(|input| input.r#ref.clone())
+        .collect();
+    let amounts = ctx.amounts(&inputs);
+    Some(
+        view! {
+            <p class="step-text" data-testid="step-text">{segments_view(&listed.segments)}</p>
+            <div class="chips">{chips}</div>
+            {step.until.clone().map(|until| view! { <p class="until"><b>"Until "</b>{until}</p> })}
+            {step.tip.clone().map(|tip| view! { <p class="tip">{tip}</p> })}
+            {timer}
+            <div class="step-tools">
+                {(!amounts.is_empty()).then(|| view! {
+                    <button class="btn ghost small" data-testid="step-amounts" on:click=move |_| {
+                        leave_sheet();
+                        // One ingredient needs no list to choose from.
+                        if let [(ingredient, _)] = amounts.as_slice() {
+                            ctx.change_amount(ingredient.clone());
+                        } else {
+                            ctx.amount_choices.set(amounts.clone());
+                            ctx.choosing_amount.set(true);
+                        }
+                    }>{icon("edit")}"Amounts"</button>
+                })}
+                <button class="btn ghost small" data-testid="recipe-notes" on:click=move |_| {
+                    leave_sheet();
+                    ctx.notes_open.set(true);
+                }>"Recipe notes"</button>
+            </div>
+        }
+        .into_any(),
+    )
+}
+
 fn step_card(ctx: Ctx) -> impl IntoView {
     move || {
         let state = ctx.state.get();
@@ -222,57 +324,8 @@ fn step_card(ctx: Ctx) -> impl IntoView {
         let all_done = state.progress(&doc).0 == total;
         let before = (listed.number > 1).then(|| list.steps[listed.number - 2].id.clone());
         let after = list.steps.get(listed.number).map(|step| step.id.clone());
-        let chips = step_inputs(&ix, step, ctx.scale)
-            .into_iter()
-            .map(|input| {
-                let on = state.input_checked(&current, &input.key);
-                let key = input.key.clone();
-                view! {
-                    <button class="chip input" class:on=on class:optional=input.optional data-key=input.key.clone()
-                        aria-pressed=on.to_string() on:click=move |_| ctx.toggle(&key)>
-                        {input.label}
-                    </button>
-                }
-            })
-            .collect_view();
-        let timer = step.time.map(|time| {
-            let (start, cancel) = (current.clone(), current.clone());
-            let minutes = time.longest();
-            match state.timers.get(&current).copied() {
-                Some(ends_at) => view! {
-                    <div class="timer on">
-                        {icon("timer")}
-                        <b data-testid="countdown" class:late={move || ends_at <= ctx.store.now.get()}>
-                            {move || remaining(ctx.store, ends_at)}
-                        </b>
-                        <button class="link" on:click=move |_| ctx.send(CookEventKind::CancelTimer { step: cancel.clone() })>
-                            "Cancel"
-                        </button>
-                    </div>
-                }
-                .into_any(),
-                None => view! {
-                    <button class="timer" data-testid="timer" on:click=move |_| {
-                        device::prime_audio();
-                        ctx.send(CookEventKind::Timer {
-                            step: start.clone(),
-                            ends_at: now_ms() + i64::from(minutes) * 60_000,
-                        });
-                    }>
-                        {icon("timer")}
-                        {format!("Start {} timer", fmt_time(minutes, None))}
-                    </button>
-                }
-                .into_any(),
-            }
-        });
+        let body = step_body(ctx, &state, &current, false)?;
         let done_id = current.clone();
-        let inputs: Vec<String> = step
-            .inputs
-            .iter()
-            .map(|input| input.r#ref.clone())
-            .collect();
-        let amounts = ctx.amounts(&inputs);
         let go_next = next.clone();
         let next_line = next.as_ref().map(|id| ctx.step_label(id));
         Some(view! {
@@ -285,26 +338,7 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                         on:click=move |_| ctx.chosen.set(after.clone())>{icon("next")}</button>
                 </header>
                 <h2>{ctx.step_label(&current)}</h2>
-                <p class="step-text" data-testid="step-text">{segments_view(&listed.segments)}</p>
-                <div class="chips">{chips}</div>
-                {step.until.clone().map(|until| view! { <p class="until"><b>"Until "</b>{until}</p> })}
-                {step.tip.clone().map(|tip| view! { <p class="tip">{tip}</p> })}
-                {timer}
-                <div class="step-tools">
-                    {(!amounts.is_empty()).then(|| view! {
-                        <button class="btn ghost small" data-testid="step-amounts" on:click=move |_| {
-                            // One ingredient needs no list to choose from.
-                            if let [(ingredient, _)] = amounts.as_slice() {
-                                ctx.change_amount(ingredient.clone());
-                            } else {
-                                ctx.amount_choices.set(amounts.clone());
-                                ctx.choosing_amount.set(true);
-                            }
-                        }>{icon("edit")}"Amounts"</button>
-                    })}
-                    <button class="btn ghost small" data-testid="recipe-notes"
-                        on:click=move |_| ctx.notes_open.set(true)>"Recipe notes"</button>
-                </div>
+                {body}
                 <div class="card-actions">
                     {if is_done {
                         view! {
@@ -328,6 +362,49 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                     None => "Nothing else is ready until this is done.".to_owned(),
                 }}
             </p>
+        })
+    }
+}
+
+/// The sheet a step cell of the chart opens: the step as the Steps tab has
+/// it, and one large button. Nothing when the step is not in the document
+/// (the session moved to a revision without it).
+fn step_sheet(ctx: Ctx) -> impl IntoView {
+    move || {
+        let state = ctx.state.get();
+        let id = ctx.sheet_step.get();
+        let doc = ctx.doc.get_value();
+        let list = ctx.list.get_value();
+        let optional = Index::build(&doc).step(&id)?.optional;
+        let number = list.steps.iter().find(|listed| listed.id == id)?.number;
+        let is_done = state.checked.contains(&id);
+        let body = step_body(ctx, &state, &id, true)?;
+        let toggle_id = id.clone();
+        Some(view! {
+            <div class="step-sheet" class:done=is_done data-testid="step-sheet" data-step=id>
+                <p class="step-no">
+                    {format!("Step {number} of {}", list.steps.len())}
+                    {optional.then_some(" · optional")}
+                    {is_done.then(|| view! { <span class="step-done">" · done"</span> })}
+                </p>
+                {body}
+                <div class="card-actions">
+                    {if is_done {
+                        // Still to do after all: the step stays in front.
+                        view! {
+                            <button class="btn" data-testid="sheet-undo" on:click=move |_| ctx.toggle(&toggle_id)>"Undo"</button>
+                        }.into_any()
+                    } else {
+                        // Back to the chart, where the cell is now dimmed.
+                        view! {
+                            <button class="btn primary" data-testid="sheet-done" on:click=move |_| {
+                                ctx.toggle(&toggle_id);
+                                ctx.step_open.set(false);
+                            }>{icon("check")}"Mark done"</button>
+                        }.into_any()
+                    }}
+                </div>
+            </div>
         })
     }
 }
@@ -384,6 +461,44 @@ pub fn CookPage(id: String) -> impl IntoView {
     let busy = RwSignal::new(false);
     let menu = RwSignal::new(false);
     let asking = RwSignal::new(false);
+    let step_open = RwSignal::new(false);
+    let sheet_step = RwSignal::new(String::new());
+    // The pieces of one rendering of the session's document.
+    let screen = move |doc: Arc<RecipeDoc>, scale: f64, recipe: String| Ctx {
+        store,
+        session: session_id,
+        recipe: StoredValue::new(recipe),
+        state,
+        list: StoredValue::new(Arc::new(list_view(&doc, scale))),
+        doc: StoredValue::new(doc),
+        scale,
+        chosen,
+        tab,
+        amount_open,
+        amount_target,
+        amount_choices,
+        choosing_amount,
+        notes_open,
+        step_open,
+        sheet_step,
+    };
+    // The step sheet has nothing to show once its step is gone (a rebase to
+    // a revision without it) or the cook is over.
+    Effect::new(move |_| {
+        if !step_open.get() {
+            return;
+        }
+        let step = sheet_step.get();
+        let exists = !finished.get()
+            && basis.with(|basis| {
+                basis
+                    .as_ref()
+                    .is_some_and(|(doc, ..)| Index::build(doc).step(&step).is_some())
+            });
+        if !exists {
+            step_open.set(false);
+        }
+    });
 
     let offer = StoredValue::new(None::<u64>);
     let withdraw = move || {
@@ -551,22 +666,7 @@ pub fn CookPage(id: String) -> impl IntoView {
                     }
                     .into_any();
                 };
-                let ctx = Ctx {
-                    store,
-                    session: session_id,
-                    recipe: StoredValue::new(recipe_id.clone()),
-                    state,
-                    list: StoredValue::new(Arc::new(list_view(&doc, scale))),
-                    doc: StoredValue::new(doc.clone()),
-                    scale,
-                    chosen,
-                    tab,
-                    amount_open,
-                    amount_target,
-                    amount_choices,
-                    choosing_amount,
-                    notes_open,
-                };
+                let ctx = screen(doc, scale, recipe_id);
                 let marks = Callback::new(move |cell: Cell| {
                     ctx.state.with(|state| {
                         let doc = ctx.doc.get_value();
@@ -587,7 +687,25 @@ pub fn CookPage(id: String) -> impl IntoView {
                         }
                     })
                 });
-                let tapped = Callback::new(move |cell: Cell| ctx.toggle(&cell.key));
+                // A step cell opens its sheet; an input is crossed off.
+                let tapped = Callback::new(move |cell: Cell| match cell.kind {
+                    CellKind::Step | CellKind::Setup => {
+                        sheet_step.set(cell.step);
+                        step_open.set(true);
+                    }
+                    CellKind::Leaf | CellKind::Ref => ctx.toggle(&cell.key),
+                });
+                let held = Callback::new(move |cell: Cell| ctx.toggle(&cell.step));
+                // As in the strip above the tabs, a done step's timer is not shown.
+                let timers = Callback::new(move |cell: Cell| {
+                    ctx.state.with(|state| {
+                        state
+                            .timers
+                            .get(&cell.step)
+                            .copied()
+                            .filter(|_| !state.checked.contains(&cell.step))
+                    })
+                });
                 let tab_button = move |this: Tab, label: &'static str| view! {
                     <button role="tab" class:on=move || tab.get() == this aria-selected=move || (tab.get() == this).to_string()
                         on:click=move |_| {
@@ -620,8 +738,9 @@ pub fn CookPage(id: String) -> impl IntoView {
                         Tab::Steps => view! { <section class="tab steps-tab">{step_card(ctx)}</section> }.into_any(),
                         Tab::Chart => view! {
                             <section class="tab charts live" data-testid="chart">
-                                <Chart doc=ctx.doc.get_value() factor=scale mark=marks on_tap=tapped leaf_taps=true/>
-                                <p class="hint">"Tap an ingredient to cross it off and a step to mark it done."</p>
+                                <Chart doc=ctx.doc.get_value() factor=scale mark=marks on_tap=tapped leaf_taps=true
+                                    on_hold=held timer=timers/>
+                                <p class="hint">"Tap a step for details. Press and hold to mark it done. Tap an ingredient to cross it off."</p>
                             </section>
                         }
                         .into_any(),
@@ -667,6 +786,19 @@ pub fn CookPage(id: String) -> impl IntoView {
             }}
         </Sheet>
         <AmountSheet open=amount_open target=amount_target/>
+        <Sheet open=step_open title=Signal::derive(move || {
+            let step = sheet_step.get();
+            basis.with(|basis| basis.as_ref().map(|(doc, ..)| step_label(doc, &step))).unwrap_or_default()
+        })>
+            // Built while open: the Steps tab's card has the same controls.
+            {move || {
+                if !step_open.get() {
+                    return None;
+                }
+                let (doc, scale, recipe_id) = basis.get()?;
+                Some(step_sheet(screen(doc, scale, recipe_id)))
+            }}
+        </Sheet>
         <Sheet open=leaving title="Leave this cook?">
             <Show
                 when=move || leave_discarding.get()

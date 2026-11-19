@@ -25,6 +25,7 @@ console_error_panic_hook.workspace = true
 workspace = true
 features = [
   "AbortController",
+  "AddEventListenerOptions",
   "AbortSignal",
   "AudioContext",
   "AudioDestinationNode",
@@ -52,6 +53,7 @@ features = [
   "Location",
   "MessageEvent",
   "MouseEvent",
+  "PointerEvent",
   "Navigator",
   "OscillatorNode",
   "Request",

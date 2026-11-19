@@ -24,6 +24,31 @@ pub const TAG_KEY_PREFIX: &str = "tag:";
 /// The facet of a tag a change put on or took off recipes.
 pub const USE: &str = "use";
 pub const REGISTRY: &str = "registry";
+/// The key of the pinned list in a change's `touched` map and in a snapshot.
+pub const PINS: &str = "pins";
+/// The key under which a snapshot holds the state of inbox items.
+pub const INBOX: &str = "inbox";
+
+/// The state of each listed inbox item: `{id: {state, resolvedAt}}`.
+pub fn inbox_states(conn: &Connection, items: &[String]) -> R<Value> {
+    let mut out = Map::new();
+    for id in items {
+        let found: Option<(String, Option<i64>)> =
+            rusqlite::OptionalExtension::optional(conn.query_row(
+                "SELECT state, resolved_at FROM recipes_inbox WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ))
+            .map_err(sql)?;
+        if let Some((state, resolved_at)) = found {
+            out.insert(
+                id.clone(),
+                json!({ "state": state, "resolvedAt": resolved_at }),
+            );
+        }
+    }
+    Ok(Value::Object(out))
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +148,25 @@ pub fn apply(conn: &Connection, snapshot: &Value, seq: u64, now: i64) -> R<Vec<S
             }
         }
     }
+    // A stored source set aside with a recipe's link to it comes back with it.
+    if let Some(items) = snapshot.get(INBOX).and_then(Value::as_object) {
+        for (id, state) in items {
+            conn.execute(
+                "UPDATE recipes_inbox SET state = ?2, resolved_at = ?3 WHERE id = ?1",
+                params![
+                    id,
+                    text(state, "state").unwrap_or("imported"),
+                    state.get("resolvedAt").and_then(Value::as_i64)
+                ],
+            )
+            .map_err(sql)?;
+        }
+    }
+    let mut written = Vec::new();
+    if let Some(pins) = snapshot.get(PINS) {
+        let ids: Vec<String> = serde_json::from_value(pins.clone()).map_err(corrupt)?;
+        written.extend(crate::pins::replace(conn, &ids, seq, now)?);
+    }
     let empty = Map::new();
     let recipes = snapshot
         .get("recipes")
@@ -139,7 +183,6 @@ pub fn apply(conn: &Connection, snapshot: &Value, seq: u64, now: i64) -> R<Vec<S
             .map_err(sql)?;
         }
     }
-    let mut written = Vec::new();
     for (id, facets) in recipes {
         if db::recipe(conn, id)?.is_none() {
             return Err(not_found(format!("{id} no longer exists")));
@@ -263,6 +306,13 @@ pub fn like(conn: &Connection, shape: &Value) -> R<Value> {
             map.insert(id.clone(), recipe_facets(conn, id, &names)?);
         }
         out.insert("recipes".to_owned(), Value::Object(map));
+    }
+    if shape.get(PINS).is_some() {
+        out.insert(PINS.to_owned(), json!(crate::pins::order(conn)?));
+    }
+    if let Some(items) = shape.get(INBOX).and_then(Value::as_object) {
+        let ids: Vec<String> = items.keys().cloned().collect();
+        out.insert(INBOX.to_owned(), inbox_states(conn, &ids)?);
     }
     if let Some(own) = shape.get("own") {
         let cooks: Vec<String> = own

@@ -382,6 +382,7 @@ impl Recipes {
                     count: row.cook_count,
                     last_on: row.last_cooked_at.map(|at| db::local_date(at, &tz)),
                 },
+                pinned: crate::pins::place(conn, &row.id)?,
                     warnings: household::check(&doc, Some(&doc), false).warnings,
                 linked,
                 scale: (view != View::Document).then_some(factor),
@@ -1023,4 +1024,234 @@ fn content_tx(
     result.seq = Some(seq);
     result.doc = Some(new);
     Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// The Crouton import's own history
+
+/// What [`Recipes::remove_import_history`] changed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImportHistoryRemoved {
+    /// Recipes with at least one of the three changes below.
+    pub recipes: u32,
+    /// Documents whose source no longer names Crouton (a new revision each).
+    pub sources: u32,
+    /// Notes fields that lost the importer's block.
+    pub notes: u32,
+    /// Stored Crouton texts no longer shown as the recipe's original.
+    pub originals: u32,
+    /// Recipes a change could not be written to; they are as they were.
+    pub skipped: u32,
+}
+
+/// The first line of the block the Crouton import appended to a recipe's
+/// notes: "Imported from Crouton on 2026-11-18." followed by one "Changes:"
+/// paragraph.
+const IMPORT_MARK: &str = "Imported from Crouton on ";
+const HISTORY_REMOVED: &str = "import_history_removed";
+
+/// `notes` without the importer's block: the owner's own words before it,
+/// and anything after the blank line that ends it. `None` when there is no
+/// such block.
+pub fn without_import_block(notes: &str) -> Option<String> {
+    let lines: Vec<&str> = notes.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with(IMPORT_MARK))?;
+    // The block runs to the next blank line.
+    let end = lines[start..]
+        .iter()
+        .position(|line| line.trim().is_empty())
+        .map_or(lines.len(), |blank| start + blank);
+    let own = lines[..start].join("\n");
+    let after = lines[end..].join("\n");
+    let kept = [own.trim_end(), after.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    Some(kept)
+}
+
+/// A source that no longer says the recipe came through Crouton: the page it
+/// was taken from when there is one, a person or publication when only a
+/// name is left, otherwise the owner's own.
+pub fn without_import_provenance(
+    source: &omni_recipe_format::Source,
+) -> omni_recipe_format::Source {
+    use omni_recipe_format::SourceKind;
+    let mut source = source.clone();
+    if source
+        .name
+        .as_deref()
+        .is_some_and(|name| name.trim().eq_ignore_ascii_case("crouton"))
+    {
+        source.name = None;
+    }
+    let has_page = source
+        .url
+        .as_deref()
+        .is_some_and(omni_recipe_format::is_web_url);
+    source.kind = if has_page {
+        SourceKind::Web
+    } else if source.name.is_some() || source.author.is_some() || source.detail.is_some() {
+        SourceKind::Person
+    } else {
+        SourceKind::Original
+    };
+    source
+}
+
+fn remove_import_history_tx(conn: &Connection, now: i64) -> R<Option<ImportHistoryRemoved>> {
+    if crate::schema::meta(conn, HISTORY_REMOVED)?.is_some() {
+        return Ok(None);
+    }
+    let actor = Actor::system();
+    let mut removed = ImportHistoryRemoved::default();
+    let mut statement = conn
+        .prepare("SELECT id FROM recipes_recipe WHERE state != 'trashed' ORDER BY id")
+        .map_err(sql)?;
+    let ids: Vec<String> = statement
+        .query_map([], |row| row.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for id in ids {
+        let Some(row) = db::recipe(conn, &id)? else {
+            continue;
+        };
+        let doc = doc_at(conn, &id, row.head_rev)?;
+        let imported = doc.source.kind == omni_recipe_format::SourceKind::Crouton;
+        let notes = without_import_block(&row.notes);
+        // The stored original of an imported recipe is the Crouton text.
+        let original = match &row.source_item {
+            Some(item) if imported => {
+                // Another recipe may show the same stored text (a merge
+                // hands a source on); then it stays.
+                let shared: bool = conn
+                    .query_row(
+                        "SELECT EXISTS (SELECT 1 FROM recipes_recipe WHERE source_item = ?1 AND id != ?2)",
+                        params![item, id],
+                        |row| row.get(0),
+                    )
+                    .map_err(sql)?;
+                inbox::item(conn, item)?.filter(|item| item.kind == "text" && !shared)
+            }
+            _ => None,
+        };
+        if !imported && notes.is_none() {
+            continue;
+        }
+        let mut changed = false;
+        if imported {
+            let mut cleaned = doc.clone();
+            cleaned.source = without_import_provenance(&doc.source);
+            let write = ContentWrite {
+                id: id.clone(),
+                expected: row.head_rev,
+                summary: "Remove Crouton import provenance".to_owned(),
+                // Nothing but the source changes; what the recipe holds stays.
+                keep_diet: true,
+                kind: ContentKind::Replace(Box::new(cleaned)),
+            };
+            match content_tx(conn, now, write, &actor, false) {
+                Ok(result) if result.saved => {
+                    removed.sources += 1;
+                    changed = true;
+                }
+                Ok(_) => {}
+                // A document the validator no longer takes keeps its source;
+                // its notes and stored original are still cleaned below.
+                Err(RecipesError::Rejected { .. }) => removed.skipped += 1,
+                Err(other) => return Err(other),
+            }
+        }
+        if notes.is_some() || original.is_some() {
+            let ids = [id.clone()];
+            let items: Vec<String> = original.iter().map(|item| item.id.clone()).collect();
+            // The link to the stored source is part of the state facet; a
+            // change to the notes alone must not stand in the way of undoing
+            // a later archive.
+            let mut facets: Vec<&str> = Vec::new();
+            if original.is_some() {
+                facets.push(crate::meta::STATE);
+            }
+            if notes.is_some() {
+                facets.push(crate::meta::NOTES);
+            }
+            let wrote = facets.clone();
+            let snapshot = |conn: &Connection| -> R<serde_json::Value> {
+                Ok(json!({
+                    "recipes": crate::meta::recipes_facets(conn, &ids, &facets)?,
+                    crate::meta::INBOX: crate::meta::inbox_states(conn, &items)?,
+                }))
+            };
+            let before = snapshot(conn)?;
+            let seq = next_seq(conn)?;
+            if let Some(notes) = &notes {
+                conn.execute(
+                    "UPDATE recipes_recipe SET notes = ?2, notes_rev = notes_rev + 1 WHERE id = ?1",
+                    params![id, notes],
+                )
+                .map_err(sql)?;
+                removed.notes += 1;
+            }
+            if let Some(item) = &original {
+                conn.execute(
+                    "UPDATE recipes_recipe SET source_item = NULL WHERE id = ?1",
+                    params![id],
+                )
+                .map_err(sql)?;
+                // Set aside like any discarded item: the purge removes it
+                // after the 30 days in which this can be undone.
+                conn.execute(
+                    "UPDATE recipes_inbox SET state = 'discarded', resolved_at = ?2 WHERE id = ?1",
+                    params![item.id, now],
+                )
+                .map_err(sql)?;
+                removed.originals += 1;
+            }
+            db::touch(conn, &id, seq, now)?;
+            refresh_fts(conn, &id)?;
+            log_change(
+                conn,
+                seq,
+                now,
+                &Change {
+                    actor: &actor,
+                    summary: format!(
+                        "Crouton import notes and stored original removed from {}",
+                        row.title
+                    ),
+                    kind: "meta",
+                    touched: json!({ id.clone(): wrote }),
+                    before,
+                    after: snapshot(conn)?,
+                },
+            )?;
+            changed = true;
+        }
+        removed.recipes += u32::from(changed);
+    }
+    crate::schema::set_meta(conn, HISTORY_REMOVED, &now.to_string())?;
+    Ok(Some(removed))
+}
+
+impl Recipes {
+    /// Removes what the Crouton import left about itself, once per library:
+    /// "crouton" as the kind of a recipe's source (and as its name), the
+    /// block the importer appended to the notes, and the Crouton text kept
+    /// as the stored original. The owner's own notes and the recipe stay.
+    /// Each recipe gets an ordinary revision for its source and one logged
+    /// change for the rest, so `recipes_undo` takes either back. `None`
+    /// when it has run before.
+    pub async fn remove_import_history(&self) -> R<Option<ImportHistoryRemoved>> {
+        let before = self.query(db::current_seq).await?;
+        let removed = self.transact(false, remove_import_history_tx).await?;
+        let seq = self.query(db::current_seq).await?;
+        if seq != before {
+            self.hub.library(seq);
+        }
+        Ok(removed)
+    }
 }

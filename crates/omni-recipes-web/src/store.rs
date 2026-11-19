@@ -142,6 +142,8 @@ pub struct Store {
     pub stale: RwSignal<Option<Stale>>,
     /// A notes field has the keyboard.
     pub editing: RwSignal<bool>,
+    /// The window's width in CSS pixels.
+    pub width: RwSignal<f64>,
     /// The request being written. It is here, not in the sheet, so a screen
     /// that is redrawn under the sheet does not lose it.
     pub draft: RwSignal<String>,
@@ -202,6 +204,7 @@ impl Store {
             requests: RwSignal::new(Vec::new()),
             stale: RwSignal::new(None),
             editing: RwSignal::new(false),
+            width: RwSignal::new(window_width()),
             draft: RwSignal::new(String::new()),
             preparing: RwSignal::new(None),
             online: RwSignal::new(window().navigator().on_line()),
@@ -298,6 +301,12 @@ impl Store {
         // (another window was in front) may have missed changes too.
         listen(&window, "focus", move |_| self.wake(false));
         listen(&window, "offline", move |_| self.online.set(false));
+        listen(&window, "resize", move |_| {
+            let width = window_width();
+            if (self.width.get_untracked() - width).abs() >= 1.0 {
+                self.width.set(width);
+            }
+        });
         listen(
             &crate::platform::document(),
             "visibilitychange",
@@ -643,6 +652,59 @@ impl Store {
             }
         });
         Some(before)
+    }
+
+    /// The pinned recipes the library shows, first to last.
+    pub fn pins(self) -> Vec<String> {
+        self.recipes
+            .with(|recipes| library::pinned(recipes.values().map(|recipe| &recipe.item)))
+    }
+
+    /// Sets the pinned recipes, in order. Archived recipes keep their pin
+    /// behind the ones listed, as the server holds it.
+    pub fn set_pins(self, ids: Vec<String>) {
+        let records: Vec<RecipeRecord> = self
+            .recipes
+            .with_untracked(|recipes| recipes.values().map(|recipe| recipe.rec.clone()).collect());
+        let mut hidden: Vec<(u32, String)> = records
+            .iter()
+            .filter(|rec| rec.state == RecipeState::Archived && !ids.contains(&rec.id))
+            .filter_map(|rec| Some((rec.pinned?, rec.id.clone())))
+            .collect();
+        hidden.sort();
+        let mut all = ids;
+        all.extend(hidden.into_iter().map(|(_, id)| id));
+        idb::atomic(|| {
+            for mut rec in records {
+                let place = all
+                    .iter()
+                    .position(|id| *id == rec.id)
+                    .and_then(|place| u32::try_from(place).ok());
+                if rec.pinned != place {
+                    rec.pinned = place;
+                    self.put_recipe(rec);
+                }
+            }
+            self.enqueue(Job::Op {
+                op: ClientOp {
+                    id: random_id("op_", 12),
+                    at: now_ms(),
+                    kind: ClientOpKind::Pins { ids: all },
+                },
+            });
+        });
+    }
+
+    /// Pins a recipe behind the ones already pinned, or unpins it.
+    pub fn pin(self, recipe: &str, pinned: bool) {
+        let mut ids: Vec<String> = self
+            .recipes
+            .with_untracked(|recipes| library::pinned(recipes.values().map(|recipe| &recipe.item)));
+        ids.retain(|id| id != recipe);
+        if pinned {
+            ids.push(recipe.to_owned());
+        }
+        self.set_pins(ids);
     }
 
     /// Archives, deletes or brings back. A deleted recipe stays in memory,
@@ -1301,6 +1363,14 @@ impl Store {
             Err(_) => idb::get(idb::KV, &key).await,
         }
     }
+}
+
+fn window_width() -> f64 {
+    window()
+        .inner_width()
+        .ok()
+        .and_then(|width| width.as_f64())
+        .unwrap_or(390.0)
 }
 
 /// The document stored with a session, decoded.

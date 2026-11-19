@@ -96,7 +96,7 @@ at scale 1 always reads exactly as written.
 
 ## Tools
 
-All 23 are recommended `allow`: each changes only Omni's own recipe data and is
+All 24 are recommended `allow`: each changes only Omni's own recipe data and is
 reversible. `recipes_import_url` and `recipes_images_edit` (with `url`) fetch a
 public URL the caller supplies.
 
@@ -125,6 +125,7 @@ public URL the caller supplies.
 | `recipes_cook_update` | Append events: check, uncheck, note, timer, cancelTimer, rebase, finish, abandon |
 | `recipes_requests_list` | Requests the owner wrote in the app, by status and recipe, oldest first |
 | `recipes_request_update` | A request's status, note and the revision that answers it |
+| `recipes_pins` | The pinned recipes in order: read, or set the whole list |
 
 Behaviour every tool keeps:
 
@@ -339,6 +340,31 @@ ingredient without a quantity (to taste) cannot be given one.
   not swallow the alert. A timer that ended more than ten minutes ago (the
   server was down) is recorded as missed and not announced.
 
+## Pinned recipes
+
+The owner pins recipes to the top of the app's library and orders them by hand. The list is one
+ordered thing, stored in `recipes_pin` (`pins.rs`), so every device and every agent sees the
+same one.
+
+- The app sends the whole list (`ClientOpKind::Pins { ids }` through `POST /api/ops`): pinning,
+  unpinning and reordering are all "the list is now this". A recipe that was merged away is
+  pinned as the recipe it became. The app's list is taken as far as it goes (a recipe the
+  library no longer has is left out, the 61st is dropped), because the app sends it from what
+  it holds, possibly offline, and cannot send it again differently; an agent's list with such
+  an id is refused. At most 60.
+- Each recipe the app syncs carries `pinned`, its stored position (0 first). Only the recipes
+  whose stored position changed are stamped with the new sequence number, so another device
+  syncs just those. Positions are counted afresh only when the list is set, never behind a
+  recipe's back: a pinned recipe that goes to the trash leaves a gap, the ones behind it keep
+  the position every device already has, and the app orders by position.
+- Brought back from the trash before the list changes again, a recipe is where it was.
+  Archived recipes keep their pin; the app shows only active ones.
+- `recipes_pins` reads the list, or with `ids` sets it (dry run, `changeId`). `recipes_get` and
+  `recipes_search` show `pinned`, the place among the pinned recipes still in the library (1
+  first). Every change is one change-log entry on the key
+  `*pins`, so `recipes_undo` puts the earlier list back and refuses when a newer pin change
+  stands.
+
 ## Requests from the app
 
 The owner writes a request to the kitchen agent in the app ("Ask Kitchen…" in the overflow menu
@@ -407,6 +433,31 @@ and answer happens in the agent's own chat with the owner.
   `declined`); an open one stays. Request text is written in an app without a login: the tool
   descriptions mark it as untrusted, to be acted on only as a recipe change.
 
+## The Crouton import's history (removed)
+
+The Crouton import of 2026-11-18 left three traces of itself on each recipe: `kind: "crouton"`
+as the document's source (with the name "Crouton" where the crumb named no other source), a
+block appended to the notes ("Imported from Crouton on …" and a "Changes: …" paragraph), and
+the Crouton text as the stored original. A one-time step at boot removes them
+(`Recipes::remove_import_history`, guarded by `recipes_meta.import_history_removed`):
+
+- The source becomes `web` when it has a page address, `person` when only a name, author or
+  detail is left, otherwise `original`; "Crouton" as a name goes. One ordinary revision per
+  recipe, tool `system`, summary "Remove Crouton import provenance". Nothing else in the
+  document changes.
+- The notes lose the block and keep everything the owner wrote before (and after) it.
+- The link to the stored Crouton text is dropped and the inbox item set to `discarded`, so the
+  purge removes it 30 days later.
+- The notes and the link are one change-log entry per recipe, whose snapshot also holds the
+  inbox item's state: `recipes_undo` brings both back within 30 days, and undoing the revision
+  entry brings the source back.
+
+The guide now tells agents not to write such history into a recipe: no import date, change list
+or swap explanation in notes, summary, source or ingredient notes (that is what the revision
+summary and `recipes_history` are for), and `crouton` is a retired source kind that is read
+and never written. Once the step has run in production its code can be deleted; the `crouton`
+kind must stay readable for the old revisions.
+
 ## Storage
 
 Relational tables in `docstore.db`, written through `store.write`
@@ -426,6 +477,7 @@ also ensures them on first use, and a database from a newer build is refused.
 | `recipes_client_op` | Ids of the app's edits already applied |
 | `recipes_redirect` | Where a purged, merged-away recipe lives |
 | `recipes_request` | Requests written in the app, their status and outcome, and the state of each one's webhook notice |
+| `recipes_pin` | The pinned recipes and their order |
 | `recipes_timer_alert` | One row per ended timer: the alert reservation |
 | `recipes_meta` | `schema_version`, `seq`, `cook_seq`, backup bookkeeping |
 | `recipes_fts` | FTS5 index |
@@ -481,7 +533,7 @@ same tokeniser.
 |---|---|
 | `GET /api/sync?since=<seq>` | The library after `seq` (or all of it), `removed` ids, tags, open sessions |
 | `GET /api/events` | SSE: `hello`, then `library`, `session` and `requests` frames, with pings |
-| `POST /api/ops` | Notes, state and amount edits and requests, each applied once by id |
+| `POST /api/ops` | Notes, state and amount edits, the pinned list and requests, each applied once by id |
 | `GET /api/requests` | The requests written in the app, newest first |
 | `POST /api/cook`, `GET /api/cook/:id` | Start (idempotent by id) and read a session |
 | `POST /api/cook/:id/events` | Append events |

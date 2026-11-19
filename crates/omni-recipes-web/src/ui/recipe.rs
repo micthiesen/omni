@@ -157,9 +157,10 @@ fn ScaleControl(id: String, doc: Arc<RecipeDoc>) -> impl IntoView {
     let (get_id, set_id, step_id) = (id.clone(), id.clone(), id);
     let factor = move || store.scale(&get_id);
     let (yield_qty, unit) = (doc.r#yield.qty, doc.r#yield.unit.clone());
-    let stepper = move |delta: i32| {
-        let id = step_id.clone();
-        move |_| store.set_scale(&id, step_servings(yield_qty, store.scale(&id), delta))
+    let step_unit = unit.clone();
+    let stepper = move |up: bool| {
+        let (id, unit) = (step_id.clone(), step_unit.clone());
+        move |_| store.set_scale(&id, step_servings(yield_qty, &unit, store.scale(&id), up))
     };
     let servings = {
         let factor = factor.clone();
@@ -187,9 +188,9 @@ fn ScaleControl(id: String, doc: Arc<RecipeDoc>) -> impl IntoView {
                     .collect_view()}
             </div>
             <div class="stepper">
-                <button aria-label="Fewer servings" on:click=stepper(-1)>"−"</button>
+                <button aria-label="Fewer servings" on:click=stepper(false)>"−"</button>
                 <span data-testid="servings"><b>{servings}</b>" "{unit}</span>
-                <button aria-label="More servings" on:click=stepper(1)>"+"</button>
+                <button aria-label="More servings" on:click=stepper(true)>"+"</button>
             </div>
             <Show when=move || !same_scale(scaled(), 1.0)>
                 <p class="scale-note">"Times, temperatures and pan sizes do not scale."</p>
@@ -325,6 +326,8 @@ fn same_page(a: &Option<Arc<Recipe>>, b: &Option<Arc<Recipe>>) -> bool {
                 notes_rev: 0,
                 seq: 0,
                 updated_at: 0,
+                // Shown only in the menu, which reads it live.
+                pinned: None,
                 ..rec.clone()
             };
             strip(&a.rec) == strip(&b.rec)
@@ -569,6 +572,19 @@ pub fn RecipePage(id: String) -> impl IntoView {
                 <Sheet open=menu title="Recipe">
                     <div class="menu">
                         {kitchen_items(menu, asking)}
+                        {
+                            let (pin_id, label_id) = (rec.id.clone(), rec.id.clone());
+                            let is_pinned = move || store.recipe(&label_id).is_some_and(|recipe| recipe.rec.pinned.is_some());
+                            let label = is_pinned.clone();
+                            (!archived).then(|| view! {
+                                <button data-testid="pin" on:click=move |_| {
+                                    let pinned = is_pinned();
+                                    store.pin(&pin_id, !pinned);
+                                    menu.set(false);
+                                    store.show_toast(if pinned { "Unpinned" } else { "Pinned to the top of the library" }, None);
+                                }>{move || if label() { "Unpin" } else { "Pin" }}</button>
+                            })
+                        }
                         {if archived {
                             view! { <button on:click=move |_| change_state(RecipeState::Active, "Back in the library")>"Unarchive"</button> }.into_any()
                         } else {

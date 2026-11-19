@@ -270,6 +270,9 @@ pub struct Card {
     /// YYYY-MM-DD, the owner's local date.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_cooked_on: Option<String>,
+    /// Its place among the pinned recipes (1 is first); absent when not pinned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<u32>,
     /// Where the query matched.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#match: Option<String>,
@@ -389,6 +392,9 @@ pub struct GetOutput {
     pub images: Vec<ImageInfo>,
     pub time: TimeInfo,
     pub cooks: CookSummary,
+    /// Its place among the pinned recipes (1 is first); absent when not pinned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<u32>,
     pub warnings: Vec<Problem>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub linked: Vec<LinkedRecipe>,
@@ -1409,4 +1415,37 @@ pub struct RequestUpdateOutput {
     /// False when the request already was as asked.
     pub changed: bool,
     pub request: RequestInfo,
+}
+
+// ---------------------------------------------------------------------------
+// Pinned recipes
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+pub struct PinsInput {
+    /// Omit to read the list. With ids: the whole pinned list, first to
+    /// last; a recipe left out is unpinned, and an empty list unpins all.
+    #[schemars(length(max = 60))]
+    pub ids: Option<Vec<String>>,
+    pub dry_run: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PinInfo {
+    pub id: String,
+    pub title: String,
+    /// Archived recipes stay pinned but the app shows only active ones.
+    pub archived: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PinsOutput {
+    /// Pass to recipes_undo. Absent on a read, a dry run or when nothing changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_id: Option<String>,
+    /// The pinned recipes, first to last.
+    pub pins: Vec<PinInfo>,
 }

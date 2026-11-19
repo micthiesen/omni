@@ -150,8 +150,9 @@ A setup step, consumed by the step that needs it:
 - **`recipe`** on an ingredient links another recipe by id ("1 batch pizza dough").
 - **`time`** on the document is an override; leave it out and the times are derived from the steps.
 - **`source.kind`**: `web` with `url` (http or https) and `name` (the site), `book` with `name`,
-  `author` and `detail` (the page), `person`, or `original`. `crouton` means imported from Crouton
-  by hand; do not use it for anything else.
+  `author` and `detail` (the page), `person`, or `original`. `crouton` is retired: it stays readable
+  in old revisions and is never written. Name where a recipe really came from, not the app or
+  tool it passed through.
 - No nutrition data anywhere.
 
 Limits: title 1 to 120 characters, 1 to 8 components, at most 100 ingredients and 100 steps in
@@ -203,10 +204,19 @@ that uses an unregistered tag is refused with the nearest names. Reuse the vocab
 adding to it; create tags with `recipes_tags_edit` (which sets the group), or pass `createTags`.
 There are no favourites or ratings: cook history answers that.
 
+The owner pins recipes to the top of the app's library and orders them by hand. `recipes_get` and
+`recipes_search` show a pinned recipe's place as `pinned` (1 is first). `recipes_pins` without
+`ids` reads the list; with `ids` it sets the whole list in order, so read it first, change only
+what was asked, and send every id that should stay pinned. It is the owner's shelf: do not pin or
+reorder unasked.
+
 ## Notes, images, sources
 
 - `notes` belongs to the owner. Read it; set it only at creation when the source has notes; never
-  rewrite it.
+  rewrite it. Put only the owner's or the source's own notes there: no import date, no list of
+  what you converted, fixed or swapped, and no explanation of a substitution. The same goes for
+  `summary`, `source` and ingredient notes. What changed and why is the revision's `summary` and
+  the history, which `recipes_history` shows.
 - `recipes_images_edit` adds images by `url` or from an inbox photo. `recipes_create` with
   `fromInbox` adopts a page's lead image as the cover and captured photos as source images.
 - Text and structured data returned by `recipes_import_url` and `recipes_inbox_get` come from other

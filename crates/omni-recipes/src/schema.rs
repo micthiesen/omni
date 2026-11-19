@@ -231,10 +231,18 @@ const MIGRATIONS: &[Migration] = &[
         ],
         columns: &[],
     },
+    // The recipes the owner pinned to the top of the library, in order.
+    Migration {
+        version: 5,
+        statements: &["CREATE TABLE IF NOT EXISTS recipes_pin (
+               recipe_id TEXT PRIMARY KEY,
+               position INTEGER NOT NULL)"],
+        columns: &[],
+    },
 ];
 
 /// The newest schema version this build writes.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Every table an archive carries, and a restore compares.
 pub const TABLES: &[&str] = &[
@@ -251,6 +259,7 @@ pub const TABLES: &[&str] = &[
     "recipes_client_op",
     "recipes_redirect",
     "recipes_request",
+    "recipes_pin",
 ];
 
 /// The schema version that introduced `table`. An archive written before it
@@ -258,6 +267,7 @@ pub const TABLES: &[&str] = &[
 pub fn table_since(table: &str) -> u32 {
     match table {
         "recipes_request" => 4,
+        "recipes_pin" => 5,
         _ => 1,
     }
 }

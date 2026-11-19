@@ -26,6 +26,7 @@ pub mod library;
 pub mod mcp;
 pub mod meta;
 pub mod organize;
+pub mod pins;
 pub mod requests;
 pub mod review;
 pub mod schema;
@@ -95,6 +96,24 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, SubsystemError> {
                 Box::pin(async move {
                     if let Err(error) = init.ready().await {
                         tracing::warn!(target: LOG, "Recipe library unavailable: {}", error.tool_text());
+                        return Ok::<(), BootError>(());
+                    }
+                    match init.remove_import_history().await {
+                        Ok(Some(removed)) => tracing::info!(
+                            target: LOG,
+                            "Removed Crouton import history: {} recipes changed ({} sources, {} notes, {} stored originals), {} left as they were",
+                            removed.recipes,
+                            removed.sources,
+                            removed.notes,
+                            removed.originals,
+                            removed.skipped
+                        ),
+                        Ok(None) => {}
+                        Err(error) => tracing::warn!(
+                            target: LOG,
+                            "Crouton import history was not removed: {}",
+                            error.tool_text()
+                        ),
                     }
                     Ok::<(), BootError>(())
                 })

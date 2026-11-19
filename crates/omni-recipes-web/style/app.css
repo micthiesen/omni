@@ -1928,3 +1928,254 @@ body:has(.sheet.open) .stack {
   padding: 0;
   white-space: normal;
 }
+
+/* --- Library: masonry, card menu, pinned ---------------------------------- */
+
+/* Columns of cards at their own heights: no row stretches a short card, so
+   the columns end ragged. `logic::library::column` deals the cards. */
+.grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.grid-col {
+  display: grid;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 22px;
+}
+
+.card-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+/* The menu button sits on the cover's corner, a 44px target with a small
+   visible disc. */
+.card-more {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: #fff;
+}
+
+.card-more .icon {
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border-radius: 50%;
+  background: rgb(20 12 6 / 46%);
+}
+
+.pinned {
+  margin-bottom: 26px;
+}
+
+.pinned h2 {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font: 600 13.5px/1.2 system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A pinned card is held to be moved: no selection, no link preview. */
+.pinned .card-wrap {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pinned .card-wrap a {
+  -webkit-touch-callout: none;
+}
+
+/* A link or a picture that is pressed and moved must not start the
+   system's own drag (iOS lifts a link after a long press, WebKit drags one
+   with the mouse): it would take the pointer away from the reorder. */
+.card-wrap a,
+.card-wrap img {
+  -webkit-user-drag: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 70;
+  transform: scale(1.04) rotate(-1.2deg);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  background: var(--bg);
+  opacity: 0.97;
+  pointer-events: none;
+}
+
+.drag-ghost .card-wrap {
+  padding-bottom: 8px;
+}
+
+.menu button:disabled {
+  opacity: 0.38;
+}
+
+.drag-ghost .card-more {
+  display: none;
+}
+
+.pinned .card-wrap.lifted {
+  opacity: 0.28;
+}
+
+/* Where the held card will go when it is let go. */
+.pinned .card-wrap.drop-here {
+  border-radius: 16px;
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* --- Amount sheet: plus and minus ----------------------------------------- */
+
+.amount-stepper {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  gap: 4px;
+  align-items: center;
+}
+
+.amount-stepper button {
+  width: 40px;
+  height: 48px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--raised);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.amount-stepper input {
+  min-width: 0;
+  padding: 0 8px;
+  text-align: center;
+}
+
+/* --- Cook mode: chart step sheet ------------------------------------------ */
+
+/* docs/fond/cook-chart-steps.md. A step cell of the cook-mode chart opens a
+   sheet on a tap and is marked done by a press and hold, so a long press must
+   neither select the label nor raise the iOS callout. */
+.charts.live .chart td {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* A cell is a button for the keyboard too; its ring stays inside the cell,
+   where the neighbouring cells cannot cover it. */
+.chart td:focus-visible {
+  outline-offset: -3px;
+}
+
+/* The hold was taken: one fade from the accent to the cell's new colour.
+   Colour only; the chart never transforms anything. */
+@keyframes cook-held {
+  from {
+    background-color: var(--accent);
+  }
+}
+
+.charts.live .chart td.held {
+  animation: cook-held 0.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .charts.live .chart td.held {
+    animation: none;
+  }
+}
+
+/* A running timer in its step cell: one more 18px line under the label, so
+   rows stay whole pixels and no column changes width. The line may use 6px
+   of the cell's padding on each side, which fits the mark beside minutes and
+   seconds in the narrowest (64px) column. The digits never break; a
+   countdown with hours in that column goes under its mark instead. */
+.chart .cell-timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 3px;
+  margin: 0 -6px;
+  color: var(--good);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart .cell-timer b {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.chart td.setup .cell-timer {
+  justify-content: flex-start;
+  margin-left: 0;
+}
+
+.chart .cell-timer .icon {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+
+.chart .cell-timer.late {
+  color: var(--danger);
+}
+
+/* The sheet reads at cook mode's size, like the Steps tab's card. */
+.step-sheet {
+  display: grid;
+  gap: 14px;
+  font-size: 20px;
+  line-height: 1.45;
+}
+
+.step-sheet > * {
+  min-width: 0;
+}
+
+.step-sheet .step-text {
+  font-size: 20px;
+}
+
+.step-sheet .step-done {
+  color: var(--good);
+}
+
+/* Mark done stays on screen when a long step makes the sheet scroll. Sticky
+   offsets are measured inside the sheet's padding, so the bar reaches down
+   over the sheet's bottom padding (the home indicator's room) and nothing
+   shows under the button; what scrolls behind it fades out above it. */
+.step-sheet .card-actions {
+  position: sticky;
+  bottom: calc(-18px - var(--safe-b));
+  margin-bottom: calc(-18px - var(--safe-b));
+  padding: 4px 0 calc(18px + var(--safe-b));
+  background: var(--surface);
+}
+
+.step-sheet .card-actions::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 14px;
+  background: linear-gradient(to top, var(--surface), transparent);
+  pointer-events: none;
+}

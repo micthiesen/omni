@@ -217,9 +217,17 @@ test('the library shows photo cards and typographic tiles', async ({ page }) => 
       await expect(cards.nth(n).locator('.cover.tile span')).not.toBeEmpty();
     }
   }
-  // Two columns on a phone.
-  const [first, second] = [await cards.nth(0).boundingBox(), await cards.nth(1).boundingBox()];
-  if (second) expect(Math.abs(first.y - second.y)).toBeLessThan(4);
+  // Two columns on a phone, side by side from the top.
+  const columns = page.locator('[data-testid=grid] .grid-col');
+  await expect(columns).toHaveCount(2);
+  const [first, second] = [
+    await columns.nth(0).locator('a.card').first().boundingBox(),
+    count > 1 ? await columns.nth(1).locator('a.card').first().boundingBox() : null,
+  ];
+  if (second) {
+    expect(Math.abs(first.y - second.y)).toBeLessThan(4);
+    expect(second.x).toBeGreaterThan(first.x + first.width);
+  }
   await page.evaluate(() => document.querySelector('.scroller').scrollTo(0, 0));
   await shot(page, 'library');
 });
@@ -610,7 +618,7 @@ test('cook mode: cross off in all three tabs, recipe notes, timer, reload, finis
   await expect(item).toHaveClass(/done/);
   await shot(page, 'cook-gather');
 
-  // Chart: the done step is dimmed, the current one outlined; tap to cross off.
+  // Chart: the done step is dimmed, the current one outlined; tap an input to cross it off.
   await page.getByRole('tab', { name: 'Chart' }).click();
   const chart = page.locator('[data-testid=chart]');
   await expect(chart.locator(`td.step[data-key="${firstStep}"], td.setup[data-key="${firstStep}"]`).first()).toHaveClass(/done/);
@@ -619,12 +627,21 @@ test('cook mode: cross off in all three tabs, recipe notes, timer, reload, finis
   await leaf.click();
   await expect(leaf).toHaveClass(/done/);
   const leafKey = await leaf.getAttribute('data-key');
+  // A step cell opens its details, where Mark done marks it; a press and
+  // hold on the cell un-marks it without the sheet (cook-chart.spec.js).
   const stepCell = chart.locator(`td.step[data-key="${secondStep}"]`);
   await stepCell.click();
+  await page.locator('.sheet.open [data-testid=sheet-done]').click();
+  await expect(page.locator('.sheet.open')).toHaveCount(0);
   await expect(stepCell).toHaveClass(/done/);
   await shot(page, 'cook-chart');
-  await stepCell.click();
+  const held = await stepCell.boundingBox();
+  await page.mouse.move(held.x + held.width / 2, held.y + held.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  await page.mouse.up();
   await expect(stepCell).not.toHaveClass(/done/);
+  await expect(page.locator('.sheet.open')).toHaveCount(0);
 
   // Everything is in the event log: a reload brings it all back.
   await flushed(page);

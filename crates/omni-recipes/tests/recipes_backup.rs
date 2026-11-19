@@ -100,6 +100,7 @@ async fn populated() -> Harness {
         json!({ "keep": lasagne, "absorb": [twin] }),
     )
     .await;
+    h.ok("recipes_pins", json!({ "ids": [lasagne] })).await;
     // A request written in the app, taken by an agent.
     let asked = post_json(
         &h.router(),
@@ -153,7 +154,7 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
         h.recipes.dump().await.unwrap(),
         restored_to.dump().await.unwrap(),
     );
-    assert_eq!(original.len(), 13);
+    assert_eq!(original.len(), 14);
     for (table, rows) in &original {
         assert_eq!(copy[table], *rows, "{table}");
         if table != "recipes_redirect" {
@@ -276,10 +277,9 @@ fn as_written_before_adjustments_were_retired(path: &std::path::Path) -> std::pa
     }
     // Requests came later still: an archive of that age has no such table.
     for part in ["tables", "counts", "checksums"] {
-        archive[part]
-            .as_object_mut()
-            .unwrap()
-            .remove("recipes_request");
+        for table in ["recipes_request", "recipes_pin"] {
+            archive[part].as_object_mut().unwrap().remove(table);
+        }
     }
     let old_path = path.with_file_name("fond-old-schema.json.gz");
     let mut encoder = flate2::write::GzEncoder::new(
@@ -458,7 +458,7 @@ async fn the_subsystem_registers_its_tools_tasks_and_host_app() {
     let app = TestApp::new().await;
     let subsystem = omni_recipes::subsystem(&app.ctx).unwrap();
     assert_eq!(subsystem.name, "recipes");
-    assert_eq!(subsystem.mcp_tools.len(), 23);
+    assert_eq!(subsystem.mcp_tools.len(), 24);
     let tasks: Vec<&str> = subsystem.tasks.iter().map(|task| task.name()).collect();
     assert_eq!(tasks, ["RecipesBackup", "RecipesPurge"]);
     let services: Vec<&str> = subsystem.services.iter().map(|s| s.name).collect();
@@ -482,5 +482,5 @@ async fn the_subsystem_registers_its_tools_tasks_and_host_app() {
     // An agent is told where the session opens.
     let recipes = omni_recipes::service(&ctx);
     let tools = omni_recipes::mcp::tools(std::sync::Arc::new(recipes)).unwrap();
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 24);
 }

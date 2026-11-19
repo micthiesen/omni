@@ -414,6 +414,9 @@ class State:
                 if op.get("type") == "request":
                     result = self.add_request(op)
                     asked = asked or result["ok"]
+                elif op.get("type") == "pins":
+                    result = self.set_pins(op)
+                    changed = changed or result["ok"]
                 else:
                     result = self.apply_op(op)
                     changed = changed or result["ok"]
@@ -424,6 +427,34 @@ class State:
             if asked:
                 self.broadcast("requests", {})
             return copy.deepcopy({"seq": self.seq, "results": results})
+
+    def set_pins(self, op):
+        """Sets the pinned list, in order; a recipe left out is unpinned."""
+        ids = op.get("ids")
+        if not isinstance(ids, list):
+            return {"id": op["id"], "ok": False, "error": "ids must be a list", "recipe": None}
+        # Like the server: a list from the app is taken without the recipes
+        # the library no longer has.
+        live = lambda i: i in self.recipes and self.recipes[i]["state"] != "trashed"
+        ids = [i for i in dict.fromkeys(ids) if live(i)][:60]
+        for recipe in self.recipes.values():
+            place = ids.index(recipe["id"]) if recipe["id"] in ids else None
+            if recipe.get("pinned") != place:
+                if place is None:
+                    recipe.pop("pinned", None)
+                else:
+                    recipe["pinned"] = place
+                self.touch(recipe)
+        return {"id": op["id"], "ok": True, "error": None, "recipe": None}
+
+    def mock_pins(self, body):
+        """Plays `recipes_pins` with ids: an agent or another device sets the list."""
+        with self.lock:
+            result = self.set_pins({"id": "mock", "ids": body.get("ids")})
+            if not result["ok"]:
+                raise ApiError(404, "unknown recipe")
+            self.emit_library()
+            return {"pins": body.get("ids")}
 
     def add_request(self, op):
         """Stores a request once by its id; a request changes no recipe."""
@@ -982,6 +1013,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/__mock/unimage",
                 "/__mock/request",
                 "/__mock/requests",
+                "/__mock/pins",
             ):
                 body = self.read_json()
                 if not isinstance(body, dict):

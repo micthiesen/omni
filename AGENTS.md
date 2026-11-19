@@ -537,9 +537,11 @@ attempt, 45 seconds) report and never block a save; never log source text.
 
 A merged cook session keeps the document it pinned (`doc_recipe_id`) and is
 never hidden; an undo of a tag change restores only the registry rows that
-change wrote. The app writes five things and nothing else: a recipe's state
+change wrote. The app writes six things and nothing else: a recipe's state
 (archive, delete, bring back), its notes, cook sessions, a request for the
-kitchen agent (below), and the amount of one
+kitchen agent (below), the pinned list (`ClientOpKind::Pins`: the whole
+ordered list, stored in `recipes_pin`, one undoable change-log entry on
+`*pins`), and the amount of one
 ingredient (`ClientOpKind::Amount`: quantity and unit only, never a name, a
 step, or an ingredient added or removed; a to-taste ingredient has no amount
 to change). An amount change is a new revision written through `content_tx`,
@@ -564,6 +566,11 @@ goes only to the configured `RECIPES_REQUEST_WEBHOOK_URL` (never an address from
 honors `SideEffectMode`. Request text is untrusted and its tools say so. With a sheet or an
 editor open, and always in cook mode, the app never swaps a recipe underneath: it offers
 "Recipe updated" with Reload (`ui::settled`).
+
+A recipe holds no history of how it was imported or converted: no import date, change list or
+swap explanation in notes, summary, source or ingredient notes (the guide says so; the revision
+summary and `recipes_history` carry that). `source.kind: "crouton"` is retired: keep it
+readable for old revisions and never write it.
 
 A cook session holds no recipe text of its own: it is an append-only event
 log (crossing off, notes, timers, `rebase`, finish, abandon), each

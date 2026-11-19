@@ -79,6 +79,7 @@ pub fn record(conn: &Connection, row: &RecipeRow) -> R<RecipeRecord> {
         created_at: row.created_at,
         updated_at: row.updated_at,
         seq: row.seq,
+        pinned: crate::pins::position(conn, &row.id)?,
         adjustments: Vec::new(),
     })
 }
@@ -150,6 +151,18 @@ fn apply_op(
         ClientOpKind::Notes { recipe_id, .. }
         | ClientOpKind::State { recipe_id, .. }
         | ClientOpKind::Amount { recipe_id, .. } => recipe_id,
+        // The pinned list is one thing, not a property of one recipe.
+        ClientOpKind::Pins { ids } => {
+            crate::pins::set(
+                conn,
+                now,
+                ids,
+                &Actor::app(),
+                "Pinned recipes changed in the app",
+                true,
+            )?;
+            return Ok((true, None, None));
+        }
         // A request changes no recipe: it is stored for the agent.
         ClientOpKind::Request {
             request_id,
@@ -266,7 +279,7 @@ fn apply_op(
                 return Ok((false, Some(message), Some(row.id)));
             }
         }
-        ClientOpKind::Request { .. } => {}
+        ClientOpKind::Request { .. } | ClientOpKind::Pins { .. } => {}
         ClientOpKind::State { state, .. } => {
             let wanted = match state {
                 RecipeState::Active => "active",
