@@ -2,7 +2,7 @@
 
 # Stage graph (BuildKit builds independent stages in parallel):
 #   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, obscura, silero,
-#              speaker, segmentation; parakeet from the previous image
+#              segmentation; speaker and parakeet from the previous image
 #   rust:      chef -> planner -> server-build (cook, then workspace build),
 #              or server-prebuilt from CI (SERVER_SOURCE)
 #                             \-> web (cook, then trunk twice: Omni and Fond) -> web-dist
@@ -75,11 +75,22 @@ RUN fetch-verified.sh \
   c36d490aff5ab924ca6c7aeec4d8f6bd3d22db6fa17611b9c5b17eae58ac3a20 \
   /models/silero_vad.int8.onnx
 
+# Two release assets were replaced upstream with different files under the same
+# names: the parakeet archive (files dated 2026-11-06, a re-exported model) and,
+# found on 2026-11-19 when the build cache no longer held it, the CAM++ speaker
+# model (one byte longer). Neither matches the SHA-256 pinned here any more. The
+# models production runs are copied from the last image built from the original
+# files, pinned by digest (its commit tag keeps it in the registry), and each
+# file is checked. Moving to a new export is a separate change that needs a
+# transcription or a voiceprint test.
+FROM ghcr.io/micthiesen/omni@sha256:f8e2e957ed62b2f12f35a33eb3c6b38dce4cb3eeb990b790edf0790e6e70eba5 AS models-source
+
 FROM fetch AS speaker
-RUN fetch-verified.sh \
-  https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx \
-  357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b \
+COPY --from=models-source \
+  /app/assets/livestream-intelligence/models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx \
   /models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
+RUN echo "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b  /models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx" \
+  | sha256sum -c -
 
 # pyannote segmentation 3.0 (MIT) for rolling-summary speaker diarization.
 FROM fetch AS segmentation
@@ -93,16 +104,10 @@ RUN fetch-verified.sh \
     sherpa-onnx-pyannote-segmentation-3-0/LICENSE \
   && rm /tmp/segmentation.tar.bz2
 
-# The parakeet release asset was replaced upstream (files dated 2026-11-06) with a
-# re-exported model (different encoder, decoder and joiner), so the archive no
-# longer matches the SHA-256 pinned here until then. The model production runs
-# is copied from the last image built from the original archive, pinned by
-# digest (its commit tag keeps it in the registry), and each file is checked.
-# Moving to the new export is a separate change that needs a transcription test.
-FROM ghcr.io/micthiesen/omni@sha256:f8e2e957ed62b2f12f35a33eb3c6b38dce4cb3eeb990b790edf0790e6e70eba5 AS parakeet-source
-
+# The parakeet model, from the same image as the speaker model above (the
+# re-exported upstream archive has a different encoder, decoder and joiner).
 FROM fetch AS parakeet
-COPY --from=parakeet-source \
+COPY --from=models-source \
   /app/assets/livestream-intelligence/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
   /models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
 RUN cd /models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
