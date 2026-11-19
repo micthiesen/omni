@@ -57,6 +57,8 @@ requests are stored and listed and no notice is sent. The Requests page is empty
 
 ## Webhook setup (for Chief)
 
+Done on 2026-11-19: see `PROGRESS-webhook.md`. The steps below are kept as the contract.
+
 Nothing was configured and no secret was created or read. Until this is done, requests are
 stored and visible and Kitchen finds them with `recipes_requests_list`. Requests still queued
 when the webhook is first configured are announced at that restart.

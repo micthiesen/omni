@@ -48,6 +48,50 @@ Rakazo service needed a restart.
 
 Nothing in the Omni repository changed except this report.
 
-## Restart, test and cleanup
+## Restart
 
-Added below once done.
+`docker compose up -d omni` on boris, under the maintenance lock, no prune.
+
+**It also recreated `plex`, which was not intended.** Compose brings a service's dependencies
+up to date before the service, `omni` depends on `plex`, and Compose judged the running plex
+container out of date, so it recreated it (05:10 MST). Plex took longer than Compose's wait to
+report healthy, so that first command failed and left `omni` created but stopped for about
+five minutes. `docker compose up -d --no-deps omni` then started it. Plex has been healthy
+since; radarr, sonarr and every Rakazo service were not touched. Anything playing on Plex at
+05:10 was interrupted. For an env-only change to Omni, use `--no-deps`.
+
+Boot log after the restart: "Recipe requests are announced to the configured webhook", with
+the host only. Build `faa7128`.
+
+## Test
+
+One request submitted through the app's own API (`POST /api/ops`), text "Test request, please
+decline. (Webhook check from the setup session; no recipe change wanted.)", id `req_14i9fk9a`:
+
+- Omni: "Recipe request notice delivered", `attempts=1`, 16 seconds after boot.
+- Rakazo: one run on Kitchen with trigger `webhook` (`cmwnil3ss000z07l7ax8u9xlz`), started in
+  the same second, completed after 60 seconds with no error.
+- Fond: the request went from `queued` to `declined` within 45 seconds, with Kitchen's note:
+  "Declined as asked: this was a webhook setup test with no recipe change wanted. Nothing
+  changed in the library."
+
+Not tested: the daily sweep has not fired yet (first run 2026-11-19 08:00 Vancouver), and a
+request that ends in a recipe change through Kitchen (the tools' side of that was tested in
+`PROGRESS-requests.md`).
+
+## Cleanup
+
+- The test request was deleted from `recipes_request` with Omni stopped (about 25 seconds),
+  after a copy of the database to
+  `~/compose/backups/omni-requests-cleanup-20261119-051738/`; `GET /api/requests` is empty.
+- The temporary Rakazo session is deleted (0 left), and the helper files and the key's
+  transit file on boris are removed (the key file shredded).
+- Left in place: Kitchen's one test run and whatever it posted in its chat. Rakazo's API has
+  no call to delete a run, and its database is not edited by hand.
+
+## Notes
+
+- Rotating Kitchen's webhook key in Rakazo means writing the new key into
+  `recipes-webhook.env` and `docker compose up -d --no-deps omni`.
+- Requests stay safe if Rakazo is down: Omni retries for 24 hours and the sweep picks up
+  anything still queued.
