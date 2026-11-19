@@ -207,6 +207,7 @@ test('the library shows photo cards and typographic tiles', async ({ page }) => 
   const cards = page.locator('[data-testid=grid] a.card');
   const count = await cards.count();
   expect(count).toBeGreaterThan(0);
+  test.setTimeout(60_000 + count * 2_000);
   for (let n = 0; n < count; n++) {
     const image = cards.nth(n).locator('.cover img');
     if (await image.count()) {
@@ -380,10 +381,11 @@ test('a wide chart scrolls sideways under a pinned ingredient column, and turns 
 });
 
 test('every recipe has a horizontal chart that fills the width, in the recipe and in cook mode', async ({ page }) => {
-  test.setTimeout(240_000);
   await openLibrary(page);
   const recipes = (await library(page)).filter((recipe) => recipe.state === 'active');
   expect(recipes.length).toBeGreaterThan(0);
+  // A real library has many more recipes than the mock's.
+  test.setTimeout(60_000 + recipes.length * 10_000);
   const openBefore = (await (await page.request.get('/api/sync')).json()).sessions.map((session) => session.id);
   for (const recipe of recipes) {
     const title = recipe.doc.title;

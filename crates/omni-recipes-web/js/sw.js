@@ -52,10 +52,43 @@ async function cacheImages(urls) {
   const cache = await caches.open(IMAGE_CACHE);
   for (const url of urls) {
     try {
-      if (!(await cache.match(url))) await cache.add(url);
+      if (!(await cache.match(url))) {
+        const response = await fetchImage(new Request(url));
+        if (response.ok) await cache.put(url, response);
+      }
     } catch {
       // Offline or gone: the image is fetched again when it is shown.
     }
+  }
+}
+
+// A long library asks for every cover at once, and the server refuses what
+// goes over its limit of requests in flight (503). Images go out a few at a
+// time, and a refused or failed one is asked for again.
+const IMAGE_FETCHES = 6;
+const IMAGE_TRIES = 4;
+let imageFetches = 0;
+const imageWaiters = [];
+
+async function fetchImage(request) {
+  if (imageFetches >= IMAGE_FETCHES) await new Promise((resolve) => imageWaiters.push(resolve));
+  else imageFetches += 1;
+  try {
+    for (let attempt = 1; ; attempt += 1) {
+      let response = null;
+      try {
+        response = await fetch(request.clone());
+      } catch (error) {
+        if (attempt === IMAGE_TRIES) throw error;
+      }
+      if (response && (response.status !== 503 || attempt === IMAGE_TRIES)) return response;
+      await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+    }
+  } finally {
+    // A waiter takes the slot over; otherwise it is free again.
+    const next = imageWaiters.shift();
+    if (next) next();
+    else imageFetches -= 1;
   }
 }
 
@@ -63,7 +96,7 @@ async function image(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request.url);
   if (cached) return cached;
-  const response = await fetch(request);
+  const response = await fetchImage(request);
   if (response.ok) await cache.put(request.url, response.clone());
   return response;
 }

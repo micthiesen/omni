@@ -102,6 +102,7 @@ pub fn install() {
             scroll_to_top();
         }
     });
+    retry_failed_images();
     let viewport = get(&window(), "visualViewport");
     let Ok(target) = viewport.clone().dyn_into::<web_sys::EventTarget>() else {
         return;
@@ -110,4 +111,49 @@ pub fn install() {
         let viewport = viewport.clone();
         listen(&target, name, move |_| follow_keyboard(&viewport));
     }
+}
+
+/// How often a picture that failed to load is asked for again.
+const IMAGE_RETRIES: u32 = 3;
+
+/// Asks again for a recipe picture that failed to load. The server refuses
+/// requests over its limit, and a long library can ask for more covers at
+/// once than that; the service worker paces them, but a page it does not
+/// control yet (the first visit) is on its own.
+fn retry_failed_images() {
+    use wasm_bindgen::closure::Closure;
+    let handler = Closure::<dyn FnMut(web_sys::Event)>::new(|event: web_sys::Event| {
+        let Some(image) = event
+            .target()
+            .and_then(|target| target.dyn_into::<web_sys::HtmlImageElement>().ok())
+        else {
+            return;
+        };
+        let src = image.get_attribute("src").unwrap_or_default();
+        if !(src.starts_with("/img/") || src.starts_with("/src/")) {
+            return;
+        }
+        let tried = image
+            .get_attribute("data-retry")
+            .and_then(|count| count.parse::<u32>().ok())
+            .unwrap_or(0);
+        if tried >= IMAGE_RETRIES {
+            return;
+        }
+        let _ = image.set_attribute("data-retry", &(tried + 1).to_string());
+        leptos::task::spawn_local(async move {
+            super::sleep(700 * (tried + 1)).await;
+            // Only if the page still shows this picture.
+            if image.is_connected() && image.get_attribute("src").as_deref() == Some(&src) {
+                image.set_src(&src);
+            }
+        });
+    });
+    // `error` does not bubble: it is caught on the way down.
+    let _ = document().add_event_listener_with_callback_and_bool(
+        "error",
+        handler.as_ref().unchecked_ref(),
+        true,
+    );
+    handler.forget();
 }

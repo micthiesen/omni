@@ -231,6 +231,13 @@ The server must serve `/sw.js` and `/` with `Cache-Control: no-cache`,
 `/sw.js` as JavaScript and `/manifest.webmanifest` as
 `application/manifest+json`.
 
+Images go out a few at a time. A long library asks for every cover at once,
+and the server refuses requests over its limit of 32 in flight with a 503.
+The service worker sends at most six image requests at a time and asks again
+for a refused or failed one (four tries); the page asks again for a picture
+that fails to load (three tries, `platform/shell.rs`), which covers a first
+visit the service worker does not control yet.
+
 ## Build
 
 ```bash

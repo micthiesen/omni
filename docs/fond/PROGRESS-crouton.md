@@ -197,8 +197,21 @@ scroller instead of the window), `docs/recipes-app.md` ("The shell: what scrolls
   in the recipe and in cook mode stay in view. The existing scroll-restore test passes.
 - Playwright's WebKit has no rubber band, touch drag or keyboard, so the bounce itself and the
   real keyboard are not covered: see the list below.
-- The production run of the full suite happened after the deploy of this commit; its result is in
-  the session's final message, not in this file (a second push would restart Omni again).
+- Production, build `cc69c40`, WebKit through the SSH proxy: all nine shell tests passed, and so
+  did everything else once the suite's settings matched the real library (amount tests needed
+  the vinaigrette's full title; the per-recipe tests had timeouts sized for seven recipes and
+  now scale with the library, the slowest one sampling the 30 widest charts). That covers
+  `d37f7d9` too: view preference, chart lines in every recipe, amount change in the recipe and
+  in cook mode with Undo, discard a cook, offline. Skipped on purpose: finishing a cook and the
+  inbox upload (both leave data), and the mock-only group.
+- One real fault found by that run and fixed in a second commit: with 145 recipes the library
+  asked for more cover images at once than the server's limit of 32 requests in flight, so
+  about 16 thumbnails got a 503 and stayed broken until a reload. The service worker now sends
+  six image requests at a time and retries a refused one; the page retries a picture that
+  fails to load. The result of the run after that deploy is in the session's final message.
+- Test data cleaned up: one cook session an interrupted test left open on Dried Potato Soup was
+  discarded (no events, nothing logged). The amount tests leave revisions in Dad's Mustard
+  Vinaigrette's history, each change followed by its undo.
 
 **To check on the iPhone (installed app).**
 

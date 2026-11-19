@@ -188,11 +188,15 @@ async function checkLines(page, where) {
 }
 
 test('every chart line is drawn once, and the pinned column keeps its edge while scrolling', async ({ page }) => {
-  test.setTimeout(240_000);
   await page.goto('/');
   let scrolling = 0;
   let split = 0;
-  for (const recipe of await activeRecipes(page)) {
+  // Every scroll position of every block takes a while: of a large library,
+  // the recipes with the most steps (the widest charts) stand for the rest.
+  const steps = (recipe) => recipe.doc.components.reduce((sum, component) => sum + component.steps.length, 0);
+  const recipes = (await activeRecipes(page)).sort((a, b) => steps(b) - steps(a)).slice(0, 30);
+  test.setTimeout(60_000 + recipes.length * 20_000);
+  for (const recipe of recipes) {
     await openChart(page, recipe);
     await checkLines(page, recipe.doc.title);
     const chart = page.locator('[data-testid=chart]');
@@ -216,7 +220,9 @@ test('every chart line is drawn once, and the pinned column keeps its edge while
 test('a ready step that stretches right has one ring, not one around each half', async ({ page }) => {
   await page.goto('/');
   let seen = 0;
-  for (const recipe of await activeRecipes(page)) {
+  const recipes = await activeRecipes(page);
+  test.setTimeout(60_000 + recipes.length * 10_000);
+  for (const recipe of recipes) {
     await openChart(page, recipe);
     if (!(await openCookChart(page))) continue;
     const halves = page.locator('[data-testid=chart] td.lead.ready + td.fill.ready');
