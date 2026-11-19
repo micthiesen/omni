@@ -47,7 +47,7 @@ async fn unknown_tags_are_refused_with_the_nearest_names() {
     let refused = h
         .err(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["Italian", "weeknights"] }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["Italian", "weeknights"] }),
         )
         .await;
     assert!(
@@ -62,7 +62,7 @@ async fn unknown_tags_are_refused_with_the_nearest_names() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["Italian", "weeknights", " Date Night "], "createTags": true }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["Italian", "weeknights", " Date Night "], "createTags": true }),
         )
         .await;
     let id = created["id"].as_str().unwrap();
@@ -91,7 +91,7 @@ async fn unknown_tags_are_refused_with_the_nearest_names() {
     assert_eq!(italian["count"], 1);
     assert_eq!(guide["library"]["active"], 1);
     assert_eq!(guide["library"]["neverCooked"], 1);
-    assert_eq!(guide["version"], "3");
+    assert_eq!(guide["version"], "4");
 
     let organize = h
         .err(
@@ -482,7 +482,7 @@ async fn a_merge_moves_everything_and_leaves_a_pointer() {
     let absorbed = h
         .ok(
             "recipes_create",
-            json!({ "document": other, "tags": ["chicken", "weeknight"], "notes": "Use more capers." }),
+            json!({ "keepDietConflicts": true, "document": other, "tags": ["chicken", "weeknight"], "notes": "Use more capers." }),
         )
         .await["id"]
         .as_str()
@@ -494,7 +494,7 @@ async fn a_merge_moves_everything_and_leaves_a_pointer() {
     )
     .await;
     let image = add_image(&h, &absorbed, 3).await;
-    // One finished cook with an adjustment on the recipe that will be absorbed.
+    // One finished cook on the recipe that will be absorbed.
     let session = h
         .ok("recipes_cook_start", json!({ "recipeId": absorbed }))
         .await["sessionId"]
@@ -504,7 +504,7 @@ async fn a_merge_moves_everything_and_leaves_a_pointer() {
     h.ok(
         "recipes_cook_update",
         json!({ "sessionId": session, "events": [
-            { "type": "adjust", "target": "simmer", "text": "Simmer 8 minutes." },
+            { "type": "note", "text": "Simmered 8 minutes." },
             { "type": "finish" }
         ] }),
     )
@@ -516,10 +516,7 @@ async fn a_merge_moves_everything_and_leaves_a_pointer() {
             json!({ "keep": keep, "absorb": [absorbed], "dryRun": true }),
         )
         .await;
-    assert_eq!(
-        dry["moved"],
-        json!({ "images": 1, "cooks": 1, "adjustments": 1, "tags": 1 })
-    );
+    assert_eq!(dry["moved"], json!({ "images": 1, "cooks": 1, "tags": 1 }));
     assert!(dry.get("changeId").is_none());
     assert_eq!(
         h.ok("recipes_get", json!({ "id": absorbed })).await["state"],
@@ -544,7 +541,10 @@ async fn a_merge_moves_everything_and_leaves_a_pointer() {
     );
     assert_eq!(kept["images"][0]["imageId"], image);
     assert_eq!(kept["cooks"]["count"], 1);
-    assert_eq!(kept["openAdjustments"][0]["text"], "Simmer 8 minutes.");
+    assert_eq!(
+        h.ok("recipes_cook_get", json!({ "recipeId": keep })).await["cooks"][0]["notes"],
+        json!(["Simmered 8 minutes."])
+    );
     assert!(kept.get("redirectedFrom").is_none());
 
     // The absorbed id reads as the kept recipe and refuses writes.
@@ -625,7 +625,7 @@ async fn a_merge_can_be_undone() {
     let absorbed = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(ENCHILADAS), "tags": ["chicken"], "notes": "Mild." }),
+            json!({ "keepDietConflicts": true, "document": doc(ENCHILADAS), "tags": ["chicken"], "notes": "Mild." }),
         )
         .await["id"]
         .as_str()

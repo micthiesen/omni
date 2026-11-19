@@ -479,7 +479,7 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             seq: 1,
-            adjustments: vec![],
+            adjustments: Vec::new(),
         }
     }
 

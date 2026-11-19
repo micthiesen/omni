@@ -53,6 +53,7 @@ SEED_RECIPES = [
 # Fixture photos with their average colour (measured from the JPEGs).
 FIXTURE_COLORS = {"dish-a.jpg": "#d5a764", "dish-b.jpg": "#bf9975"}
 UPLOAD_COLOR = "#b08968"
+RETIRED_EVENTS = ("adjust", "unadjust", "dismissAdjustment")
 
 TAG_GROUPS = [
     ("course", ["main-course", "dessert", "side"]),
@@ -61,12 +62,6 @@ TAG_GROUPS = [
     ("method", ["baking"]),
     ("occasion", ["weeknight", "weekend", "make-ahead"]),
 ]
-
-PICCATA_SEAR_ORIGINAL = (
-    "Heat 2 tbsp olive oil and 2 tbsp unsalted butter in a large skillet over "
-    "medium-high heat until the butter foams. Cook the dredged cutlets until "
-    "golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat."
-)
 
 PICCATA_ORIGINAL_TEXT = "\n".join(
     [
@@ -221,16 +216,6 @@ class State:
                     "url": "https://example.com/chicken-piccata",
                     "files": 0,
                 },
-                adjustments=[
-                    {
-                        "id": "adj_seed0001",
-                        "target": "sear",
-                        "original": PICCATA_SEAR_ORIGINAL,
-                        "text": "Sear 5 minutes per side; the new pan runs cool.",
-                        "sessionId": "cook_seed0001",
-                        "cookedAt": now - 2 * DAY,
-                    }
-                ],
             ),
             "rcp_cookies01": dict(
                 tags=["dessert", "baking", "american"],
@@ -295,7 +280,6 @@ class State:
                 "createdAt": created,
                 "updatedAt": created,
                 "seq": index + 1,
-                "adjustments": m.get("adjustments", []),
             }
 
         for item_id, kind, title, recipe_id, files in [
@@ -325,22 +309,6 @@ class State:
         self.sources["inb_cookies01"] = {
             0: self.fixtures["dish-a.jpg"],
             1: self.fixtures["dish-b.jpg"],
-        }
-
-        # Not in the sync answer (only active sessions are): it exists so the
-        # seeded piccata adjustment can be dismissed through its own session.
-        cooked = now - 2 * DAY
-        self.sessions["cook_seed0001"] = {
-            "id": "cook_seed0001",
-            "recipeId": "rcp_piccata01",
-            "revision": 1,
-            "scale": 1.0,
-            "state": "finished",
-            "startedAt": cooked - 30 * 60_000,
-            "finishedAt": cooked,
-            "lastEventAt": cooked,
-            "events": [],
-            "doc": copy.deepcopy(self.recipes["rcp_piccata01"]["doc"]),
         }
 
     def reset(self):
@@ -581,7 +549,11 @@ class State:
                 if any(e["clientEventId"] == event["clientEventId"] for e in session["events"]):
                     continue
                 kind = event["type"]
-                if session["state"] != "active" and kind != "dismissAdjustment":
+                # What an app from before overrides were retired may still
+                # send: accepted and dropped, like the server does.
+                if kind in RETIRED_EVENTS:
+                    continue
+                if session["state"] != "active":
                     continue
                 stored = dict(event)
                 stored["seq"] = session["events"][-1]["seq"] + 1 if session["events"] else 1
@@ -593,11 +565,9 @@ class State:
                     self.finish(session, event["at"])
                     library = True
                 elif kind == "abandon":
-                    # Discarded: closed at once, no cook, no adjustments.
+                    # Discarded: closed at once and no cook.
                     session["state"] = "abandoned"
                     session["finishedAt"] = event["at"]
-                elif kind == "dismissAdjustment":
-                    library = self.dismiss(session, event.get("id")) or library
                 elif kind == "rebase" and is_int(event.get("revision")):
                     session["revision"] = event["revision"]
                     session["doc"] = copy.deepcopy(self.recipes[session["recipeId"]]["doc"])
@@ -610,39 +580,10 @@ class State:
     def finish(self, session, at):
         session["state"] = "finished"
         session["finishedAt"] = at
-        in_force = {}
-        for event in session["events"]:
-            target = event.get("target")
-            if event["type"] == "adjust":
-                in_force.pop(target, None)
-                in_force[target] = event.get("text", "")
-            elif event["type"] == "unadjust":
-                in_force.pop(target, None)
         recipe = self.recipes[session["recipeId"]]
         recipe["cookCount"] += 1
         recipe["lastCookedAt"] = at
-        for target, text in in_force.items():
-            recipe["adjustments"].append(
-                {
-                    "id": rand_id("adj_"),
-                    "target": target,
-                    "original": f"(original text of {target})",
-                    "text": text,
-                    "sessionId": session["id"],
-                    "cookedAt": at,
-                }
-            )
         self.touch(recipe)
-
-    def dismiss(self, session, adjustment_id):
-        own = self.recipes[session["recipeId"]]
-        for recipe in [own] + [r for r in self.recipes.values() if r is not own]:
-            kept = [a for a in recipe["adjustments"] if a["id"] != adjustment_id]
-            if len(kept) != len(recipe["adjustments"]):
-                recipe["adjustments"] = kept
-                self.touch(recipe)
-                return True
-        return False
 
     def add_photo(self, session_id, data, upload_id=None):
         with self.lock:
@@ -749,17 +690,16 @@ class State:
 
     # -- dev helpers --------------------------------------------------------
 
-    def mock_adjust(self, body):
-        for key in ("sessionId", "target", "text"):
+    def mock_note(self, body):
+        for key in ("sessionId", "text"):
             if not isinstance(body.get(key), str):
-                raise ApiError(400, "sessionId, target and text are required")
+                raise ApiError(400, "sessionId and text are required")
         event = {
             "seq": 0,
             "clientEventId": rand_id("mock_", 12),
             "at": now_ms(),
             "actor": "agent",
-            "type": "adjust",
-            "target": body["target"],
+            "type": "note",
             "text": body["text"],
         }
         return self.append_events(body["sessionId"], {"events": [event]})
@@ -939,7 +879,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/__mock/reset":
                 self.read_json()
                 answer = state.reset()
-            elif path in ("/__mock/adjust", "/__mock/revise", "/__mock/import", "/__mock/unimage"):
+            elif path in ("/__mock/note", "/__mock/revise", "/__mock/import", "/__mock/unimage"):
                 body = self.read_json()
                 if not isinstance(body, dict):
                     raise ApiError(400, "body must be an object")

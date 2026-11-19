@@ -13,8 +13,6 @@ pub struct Projection {
     pub revision: u32,
     /// Step ids (done), ingredient ids (gathered) and `step/ref` keys (added).
     pub checked: BTreeSet<String>,
-    /// Session-only text by step or ingredient id.
-    pub adjusted: BTreeMap<String, String>,
     pub notes: Vec<String>,
     /// Running or rung timers by step id, as end times.
     pub timers: BTreeMap<String, Ms>,
@@ -36,12 +34,6 @@ pub fn project(session: &CookSession) -> Projection {
             CookEventKind::Uncheck { target } => {
                 state.checked.remove(target);
             }
-            CookEventKind::Adjust { target, text } => {
-                state.adjusted.insert(target.clone(), text.clone());
-            }
-            CookEventKind::Unadjust { target } => {
-                state.adjusted.remove(target);
-            }
             CookEventKind::Note { text } => state.notes.push(text.clone()),
             CookEventKind::Timer { step, ends_at } => {
                 state.timers.insert(step.clone(), *ends_at);
@@ -55,7 +47,7 @@ pub fn project(session: &CookSession) -> Projection {
                 state.finished = true;
                 state.timers.clear();
             }
-            CookEventKind::DismissAdjustment { .. } => {}
+            CookEventKind::Unknown => {}
         }
     }
     state
@@ -177,6 +169,16 @@ pub fn is_open(session: &CookSession) -> bool {
     !project(session).finished
 }
 
+/// Whether an open session of `recipe` moves along when the app replaces
+/// revision `replaced` of it: one that shows that revision, and the session
+/// the change was made from (`from`) wherever it was.
+pub fn follows(session: &CookSession, recipe: &str, replaced: u32, from: Option<&str>) -> bool {
+    let state = project(session);
+    session.recipe_id == recipe
+        && !state.finished
+        && (state.revision == replaced || from == Some(session.id.as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,23 +239,8 @@ mod tests {
     }
 
     #[test]
-    fn adjustments_timers_and_rebase_follow_the_log() {
+    fn timers_notes_and_rebase_follow_the_log() {
         let state = project(&session(vec![
-            CookEventKind::Adjust {
-                target: "sear".into(),
-                text: "first".into(),
-            },
-            CookEventKind::Adjust {
-                target: "sear".into(),
-                text: "second".into(),
-            },
-            CookEventKind::Adjust {
-                target: "lemon".into(),
-                text: "3 lemons".into(),
-            },
-            CookEventKind::Unadjust {
-                target: "lemon".into(),
-            },
             CookEventKind::Timer {
                 step: "simmer".into(),
                 ends_at: 500,
@@ -274,16 +261,54 @@ mod tests {
                 text: "smells right".into(),
             },
         ]));
-        assert_eq!(
-            state.adjusted.get("sear").map(String::as_str),
-            Some("second")
-        );
-        assert!(!state.adjusted.contains_key("lemon"));
         assert_eq!(state.timers.get("simmer"), Some(&900));
         assert!(!state.timers.contains_key("sear"));
         assert_eq!(state.revision, 5);
         assert_eq!(state.notes, ["smells right"]);
         assert!(!state.finished);
+    }
+
+    /// A phone that cooked before overrides were retired still holds their
+    /// events, in its stored sessions and in its outbox.
+    #[test]
+    fn retired_adjustment_events_still_decode_and_change_nothing() {
+        let stored = serde_json::json!({
+            "id": "cook_abcdefgh", "recipeId": "rcp_1", "revision": 3, "scale": 1.0,
+            "state": "active", "startedAt": 1, "finishedAt": null, "lastEventAt": 1,
+            "events": [
+                { "seq": 1, "clientEventId": "e0", "at": 1, "actor": "app",
+                  "type": "adjust", "target": "sear", "text": "Two batches." },
+                { "seq": 2, "clientEventId": "e1", "at": 2, "actor": "app",
+                  "type": "check", "target": "dredge" },
+                { "seq": 0, "clientEventId": "e2", "at": 3, "actor": "app",
+                  "type": "unadjust", "target": "sear" },
+                { "seq": 0, "clientEventId": "e3", "at": 4, "actor": "app",
+                  "type": "dismissAdjustment", "id": "adj_1" }
+            ]
+        });
+        let session: CookSession = serde_json::from_value(stored).unwrap();
+        assert_eq!(session.events.len(), 4);
+        assert_eq!(session.events[0].kind, CookEventKind::Unknown);
+        assert_eq!(session.events[3].kind, CookEventKind::Unknown);
+        let state = project(&session);
+        assert_eq!(state.checked, BTreeSet::from(["dredge".to_owned()]));
+        assert_eq!(state.revision, 3);
+        assert!(!state.finished);
+    }
+
+    #[test]
+    fn a_changed_recipe_takes_along_the_sessions_showing_it() {
+        let on_three = session(vec![check("dredge")]);
+        assert!(follows(&on_three, "rcp_1", 3, None));
+        assert!(!follows(&on_three, "rcp_2", 3, None));
+        // A session left on an older revision stays there, unless the change
+        // was made from it.
+        assert!(!follows(&on_three, "rcp_1", 4, None));
+        assert!(follows(&on_three, "rcp_1", 4, Some("cook_abcdefgh")));
+        let rebased = session(vec![CookEventKind::Rebase { revision: 4 }]);
+        assert!(follows(&rebased, "rcp_1", 4, None));
+        let finished = session(vec![CookEventKind::Finish { note: None }]);
+        assert!(!follows(&finished, "rcp_1", 3, Some("cook_abcdefgh")));
     }
 
     #[test]
@@ -366,8 +391,7 @@ mod tests {
             client_event_id: "agent1".into(),
             at: 5,
             actor: CookActor::Agent,
-            kind: CookEventKind::Adjust {
-                target: "sear".into(),
+            kind: CookEventKind::Note {
                 text: "lower heat".into(),
             },
         });
@@ -384,9 +408,6 @@ mod tests {
         let state = project(&merged);
         assert!(state.checked.contains("deglaze"));
         assert!(!state.checked.contains("sear"));
-        assert_eq!(
-            state.adjusted.get("sear").map(String::as_str),
-            Some("lower heat")
-        );
+        assert_eq!(state.notes, ["lower heat"]);
     }
 }

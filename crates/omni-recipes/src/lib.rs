@@ -15,6 +15,7 @@ pub mod events;
 pub mod fidelity;
 pub mod files;
 pub mod guide;
+pub mod household;
 pub mod http;
 pub mod hub;
 pub mod ids;

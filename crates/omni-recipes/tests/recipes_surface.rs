@@ -29,7 +29,7 @@ async fn every_unknown_tag_is_reported_at_once() {
     let refused = h
         .err(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["weeknights", "italien", "italian", "zzz"] }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["weeknights", "italien", "italian", "zzz"] }),
         )
         .await;
     assert_eq!(
@@ -39,7 +39,7 @@ async fn every_unknown_tag_is_reported_at_once() {
     let bad = h
         .err(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["a/b"] }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["a/b"] }),
         )
         .await;
     assert!(bad.starts_with("[validation] tag \"a/b\" must be 1 to 40 characters: letters, digits, hyphens, underscores"), "{bad}");
@@ -47,7 +47,7 @@ async fn every_unknown_tag_is_reported_at_once() {
     // Search says which tag filters name nothing instead of returning nothing silently.
     h.ok(
         "recipes_create",
-        json!({ "document": doc(PICCATA), "tags": ["italian"] }),
+        json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["italian"] }),
     )
     .await;
     let found = h
@@ -77,7 +77,7 @@ async fn every_content_write_returns_a_change_id_that_undo_takes() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "derivedFrom": base }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "derivedFrom": base }),
         )
         .await;
     let id = created["id"].as_str().unwrap().to_owned();
@@ -90,49 +90,32 @@ async fn every_content_write_returns_a_change_id_that_undo_takes() {
     let missing = h
         .err(
             "recipes_create",
-            json!({ "document": doc(COOKIES), "derivedFrom": "rcp_zzzzzzzz" }),
+            json!({ "keepDietConflicts": true, "document": doc(COOKIES), "derivedFrom": "rcp_zzzzzzzz" }),
         )
         .await;
     assert!(missing.starts_with("[not_found]"), "{missing}");
 
-    // A cook leaves an adjustment for an edit to fold in.
-    let session = h.ok("recipes_cook_start", json!({ "recipeId": id })).await["sessionId"].clone();
-    h.ok(
-        "recipes_cook_update",
-        json!({ "sessionId": session, "events": [
-            { "type": "adjust", "target": "simmer", "text": "Simmer 8 minutes." },
-            { "type": "finish" }
-        ] }),
-    )
-    .await;
-    let adjustment =
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"][0]["id"].clone();
     let edited = h
         .ok(
             "recipes_edit",
-            json!({ "id": id, "expectedRevision": 1, "summary": "Longer simmer", "resolves": [adjustment],
+            json!({ "id": id, "expectedRevision": 1, "summary": "Longer simmer",
                     "ops": [{ "op": "set", "target": "simmer", "fields": { "time": { "min": 8, "attention": "active" } } }] }),
         )
         .await;
     assert_eq!(edited["revision"], 2);
-    assert_eq!(
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"],
-        json!([])
-    );
-    // Undoing that edit puts the document back and reopens the adjustment.
+    // Undoing that edit puts the document back.
     h.ok("recipes_undo", json!({ "changeId": edited["changeId"] }))
         .await;
     let undone = h.ok("recipes_get", json!({ "id": id })).await;
     assert_eq!(undone["headRevision"], 3);
     assert_eq!(undone["document"], doc(PICCATA));
-    assert_eq!(undone["openAdjustments"][0]["id"], adjustment);
 
     let mut rewritten = doc(PICCATA);
     rewritten["title"] = json!("Piccata, rewritten");
     let replaced = h
         .ok(
             "recipes_replace",
-            json!({ "id": id, "expectedRevision": 3, "summary": "Retitle", "document": rewritten }),
+            json!({ "id": id, "expectedRevision": 3, "summary": "Retitle", "keepDietConflicts": true, "document": rewritten }),
         )
         .await;
     h.ok("recipes_undo", json!({ "changeId": replaced["changeId"] }))
@@ -248,7 +231,7 @@ async fn duplicates_are_found_by_either_url_and_follow_an_edited_source() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": with_url("Piccata", "https://example.com/recipes/piccata"), "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": with_url("Piccata", "https://example.com/recipes/piccata"), "fromInbox": item }),
         )
         .await;
     let id = created["id"].as_str().unwrap().to_owned();
@@ -259,7 +242,7 @@ async fn duplicates_are_found_by_either_url_and_follow_an_edited_source() {
         let refused = h
             .err(
                 "recipes_create",
-                json!({ "document": with_url("Again", url) }),
+                json!({ "keepDietConflicts": true, "document": with_url("Again", url) }),
             )
             .await;
         assert!(
@@ -278,7 +261,7 @@ async fn duplicates_are_found_by_either_url_and_follow_an_edited_source() {
     let moved = h
         .err(
             "recipes_create",
-            json!({ "document": with_url("Again", "https://example.com/new/piccata") }),
+            json!({ "keepDietConflicts": true, "document": with_url("Again", "https://example.com/new/piccata") }),
         )
         .await;
     assert!(moved.starts_with("[duplicate_source]"), "{moved}");
@@ -286,7 +269,7 @@ async fn duplicates_are_found_by_either_url_and_follow_an_edited_source() {
     let script = h
         .err(
             "recipes_create",
-            json!({ "document": with_url("Script", "javascript:alert(1)") }),
+            json!({ "keepDietConflicts": true, "document": with_url("Script", "javascript:alert(1)") }),
         )
         .await;
     assert!(script.contains("source.url: [bad_value]"), "{script}");

@@ -3,6 +3,7 @@
 pub mod device;
 pub mod idb;
 pub mod net;
+pub mod prefs;
 
 use omni_api::common::Ms;
 use wasm_bindgen::prelude::*;

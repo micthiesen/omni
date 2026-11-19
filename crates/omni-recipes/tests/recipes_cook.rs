@@ -1,6 +1,7 @@
 //! Cook sessions, from the app over HTTP and from agents over the tools:
 //! one event log, applied once per client event, projected into done, ready,
-//! timers and adjustments; finishing, idle close and timer alerts.
+//! timers and notes; rebasing to a newer revision, finishing, idle close and
+//! timer alerts.
 
 #![allow(
     clippy::unwrap_used,
@@ -111,14 +112,12 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     )
     .await;
 
-    // The agent helps mid-cook: an adjustment, a note and a timer.
+    // The agent helps mid-cook: a note and a timer.
     let updated = h
         .ok(
             "recipes_cook_update",
             json!({ "sessionId": "cook_2b7r9d4h", "events": [
                 { "type": "check", "target": "sear" },
-                { "type": "adjust", "target": "simmer", "text": "No capers: add 1 tbsp chopped green olives. Simmer as written." },
-                { "type": "adjust", "target": "lemon", "text": "3 lemons, they were small" },
                 { "type": "note", "text": "Pan ran hot." },
                 { "type": "timer", "step": "simmer", "minutes": 5 }
             ] }),
@@ -127,7 +126,7 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     let view = &updated["session"];
     assert_eq!(view["done"], json!(["dredge", "sear"]));
     assert_eq!(view["ready"], json!(["deglaze"]));
-    assert_eq!(view["adjustments"].as_array().unwrap().len(), 2);
+    assert!(view.get("adjustments").is_none());
     assert_eq!(view["notes"], json!(["Pan ran hot."]));
     assert_eq!(view["running"][0]["step"], "simmer");
     assert_eq!(view["running"][0]["remainingSec"], 300);
@@ -135,19 +134,25 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     // The app sees the agent's events on its next read.
     let read = get(&router, "/api/cook/cook_2b7r9d4h").await.json();
     let events = read["events"].as_array().unwrap();
-    assert_eq!(events.len(), 12);
+    assert_eq!(events.len(), 10);
     assert_eq!(events[8]["actor"], "agent");
-    assert_eq!(events[8]["type"], "adjust");
-    let timer = &events[11];
+    assert_eq!(events[8]["type"], "note");
+    let timer = &events[9];
     assert_eq!(timer["type"], "timer");
     assert_eq!(timer["endsAt"], json!(1_767_225_600_000_i64 + 300_000));
 
     // Events that name nothing are refused for an agent, with nothing applied.
     for (bad, code) in [
         (json!({ "type": "check", "target": "whisk" }), "[not_found]"),
+        // A session takes no text overrides: the tool's schema has no such events.
         (
-            json!({ "type": "adjust", "target": "sear/oil", "text": "x" }),
-            "[not_found]",
+            json!({ "type": "adjust", "target": "sear", "text": "x" }),
+            "/events/1",
+        ),
+        (json!({ "type": "unadjust", "target": "sear" }), "/events/1"),
+        (
+            json!({ "type": "dismissAdjustment", "id": "adj_zzzzzzzz" }),
+            "/events/1",
         ),
         (
             json!({ "type": "timer", "step": "nope", "minutes": 1 }),
@@ -170,12 +175,11 @@ async fn the_app_and_an_agent_cook_one_session_together() {
             .as_array()
             .unwrap()
             .len(),
-        12
+        10
     );
 
-    // The app undoes one adjustment and finishes.
+    // The app finishes.
     let finish = json!({ "events": [
-        event("ev-9", json!({ "type": "unadjust", "target": "lemon" })),
         event("ev-10", json!({ "type": "finish", "note": "Best one yet." })),
     ] });
     let finished = post_json(&router, "/api/cook/cook_2b7r9d4h/events", &finish)
@@ -184,26 +188,16 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     assert_eq!(finished["state"], "finished");
     assert!(finished["finishedAt"].is_number());
 
-    // The recipe did not change; the adjustment is on it, with the text the
-    // cook saw at the session's scale.
+    // Cooking changed nothing in the recipe but its cook count.
     let recipe = h.ok("recipes_get", json!({ "id": id })).await;
     assert_eq!(recipe["headRevision"], 1);
     assert_eq!(recipe["cooks"]["count"], 1);
-    let adjustments = recipe["openAdjustments"].as_array().unwrap();
-    assert_eq!(adjustments.len(), 1);
-    let adjustment = adjustments[0]["id"].as_str().unwrap().to_owned();
-    assert!(adjustment.starts_with("adj_"));
-    assert_eq!(adjustments[0]["target"], "simmer");
-    assert_eq!(adjustments[0]["sessionId"], "cook_2b7r9d4h");
-    assert_eq!(
-        adjustments[0]["original"],
-        "Add 270 ml chicken stock, the juice of 1½ lemons and 3 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes."
-    );
+    assert!(recipe.get("openAdjustments").is_none());
     let log = h.ok("recipes_cook_get", json!({ "recipeId": id })).await;
     assert_eq!(log["cooks"][0]["note"], "Best one yet.");
     assert_eq!(log["cooks"][0]["scale"], 1.5);
-    assert_eq!(log["cooks"][0]["adjustments"][0]["target"], "simmer");
-    assert_eq!(log["openAdjustments"][0]["id"], adjustment);
+    assert_eq!(log["cooks"][0]["notes"], json!(["Pan ran hot."]));
+    assert!(log.get("openAdjustments").is_none());
     assert_eq!(
         h.ok("recipes_cook_get", json!({})).await["active"],
         json!([])
@@ -216,7 +210,7 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     assert_eq!(published[0].dedup_key, "cook:cook_2b7r9d4h");
     assert_eq!(
         Value::Object(published[0].data.clone()),
-        json!({ "sessionId": "cook_2b7r9d4h", "recipeId": id, "title": "Chicken Piccata", "openAdjustments": 1 })
+        json!({ "sessionId": "cook_2b7r9d4h", "recipeId": id, "title": "Chicken Piccata" })
     );
     // Resending the finish changes nothing.
     post_json(&router, "/api/cook/cook_2b7r9d4h/events", &finish).await;
@@ -226,8 +220,8 @@ async fn the_app_and_an_agent_cook_one_session_together() {
         1
     );
 
-    // A closed session refuses everything from an agent but a dismissal; the
-    // app's late events are dropped.
+    // A closed session refuses every event from an agent; the app's late
+    // events are dropped.
     let closed = h
         .err(
             "recipes_cook_update",
@@ -241,33 +235,7 @@ async fn the_app_and_an_agent_cook_one_session_together() {
     let late = json!({ "events": [event("ev-11", json!({ "type": "check", "target": "serve" }))] });
     let dropped = post_json(&router, "/api/cook/cook_2b7r9d4h/events", &late).await;
     assert_eq!(dropped.status, 200);
-    assert_eq!(dropped.json()["events"].as_array().unwrap().len(), 14);
-
-    // An agent folds the adjustment into the recipe.
-    let unknown = h
-        .err(
-            "recipes_edit",
-            json!({ "id": id, "expectedRevision": 1, "summary": "x", "resolves": ["adj_zzzzzzzz"],
-                    "ops": [{ "op": "set", "target": "capers", "fields": { "optional": true } }] }),
-        )
-        .await;
-    assert!(unknown.starts_with("[not_found]"), "{unknown}");
-    let folded = h
-        .ok(
-            "recipes_edit",
-            json!({ "id": id, "expectedRevision": 1, "summary": "Olives instead of capers", "resolves": [adjustment],
-                    "ops": [{ "op": "set", "target": "capers", "fields": { "name": "green olives", "prep": "chopped" } }] }),
-        )
-        .await;
-    assert_eq!(folded["revision"], 2);
-    assert_eq!(
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"],
-        json!([])
-    );
-    assert_eq!(
-        h.ok("recipes_search", json!({ "query": "piccata" })).await["recipes"][0]["openAdjustments"],
-        0
-    );
+    assert_eq!(dropped.json()["events"].as_array().unwrap().len(), 11);
 }
 
 /// What the app's outbox relies on: a refusal that can never succeed is a 4xx
@@ -318,25 +286,34 @@ async fn the_apps_outbox_gets_statuses_it_can_act_on() {
     }
     assert_eq!(get(&router, "/api/cook/cook_missing1").await.status, 404);
 
-    // A dismissal is posted to the adjustment's own, finished session.
-    let finish = json!({ "events": [
+    // An app that has not updated yet still sends the retired adjustment
+    // events. They are accepted and dropped, so its outbox moves on and the
+    // events beside them in the batch are applied.
+    let stale = json!({ "events": [
         event("f-1", json!({ "type": "adjust", "target": "sear", "text": "Two batches." })),
-        event("f-2", json!({ "type": "finish" })),
+        event("f-2", json!({ "type": "check", "target": "sear" })),
+        event("f-3", json!({ "type": "unadjust", "target": "sear" })),
+        event("f-4", json!({ "type": "finish" })),
     ] });
-    post_json(&router, "/api/cook/cook_offline1/events", &finish).await;
-    let adjustment = h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"][0].clone();
-    assert_eq!(adjustment["sessionId"], "cook_offline1");
-    assert_eq!(
-        adjustment["original"],
-        "Heat 2 tbsp olive oil and 2 tbsp unsalted butter in a large skillet over medium-high heat until the butter foams. Cook the dredged cutlets until golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat."
-    );
-    let dismiss = json!({ "events": [event("d-1", json!({ "type": "dismissAdjustment", "id": adjustment["id"] }))] });
+    let applied = post_json(&router, "/api/cook/cook_offline1/events", &stale).await;
+    assert_eq!(applied.status, 200, "{}", applied.text());
+    let session = applied.json();
+    assert_eq!(session["state"], "finished");
+    let kinds: Vec<&str> = session["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["check", "check", "finish"]);
+    let recipe = h.ok("recipes_get", json!({ "id": id })).await;
+    assert_eq!(recipe["cooks"]["count"], 1);
+    assert_eq!(recipe["headRevision"], 1);
+    // The dismissal such an app sends to a finished session is answered too.
+    let dismiss = json!({ "events": [event("d-1", json!({ "type": "dismissAdjustment", "id": "adj_zzzzzzzz" }))] });
     let dismissed = post_json(&router, "/api/cook/cook_offline1/events", &dismiss).await;
     assert_eq!(dismissed.status, 200, "{}", dismissed.text());
-    assert_eq!(
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"],
-        json!([])
-    );
+    assert_eq!(dismissed.json()["events"].as_array().unwrap().len(), 3);
 
     // The ten-second undo of Delete: state active restores from the trash,
     // and unarchives.
@@ -368,7 +345,7 @@ async fn the_apps_outbox_gets_statuses_it_can_act_on() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn adjustments_can_be_dismissed_and_sessions_rebased() {
+async fn a_session_stays_pinned_until_it_is_rebased() {
     let h = Harness::new().await;
     let id = h.create(PICCATA).await;
     let session = h
@@ -407,7 +384,6 @@ async fn adjustments_can_be_dismissed_and_sessions_rebased() {
             json!({ "sessionId": sid, "events": [
                 { "type": "check", "target": "dredge" },
                 { "type": "rebase", "revision": 2 },
-                { "type": "adjust", "target": "serve", "text": "Serve with rice." },
                 { "type": "finish" }
             ] }),
         )
@@ -420,36 +396,6 @@ async fn adjustments_can_be_dismissed_and_sessions_rebased() {
     );
     assert_eq!(rebased["session"]["state"], "finished");
     assert_eq!(rebased["session"]["ready"], json!([]));
-
-    let adjustment = h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"][0]["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    // A rename re-points an open adjustment.
-    h.ok(
-        "recipes_edit",
-        json!({ "id": id, "expectedRevision": 2, "summary": "Rename the last step",
-                "ops": [{ "op": "rename", "target": "serve", "to": "plate" }] }),
-    )
-    .await;
-    assert_eq!(
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"][0]["target"],
-        "plate"
-    );
-    // Dismissal is valid on the finished session.
-    h.ok(
-        "recipes_cook_update",
-        json!({ "sessionId": sid, "events": [{ "type": "dismissAdjustment", "id": adjustment }] }),
-    )
-    .await;
-    assert_eq!(
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"],
-        json!([])
-    );
-    let twice = h
-        .err("recipes_cook_update", json!({ "sessionId": sid, "events": [{ "type": "dismissAdjustment", "id": adjustment }] }))
-        .await;
-    assert!(twice.starts_with("[not_found]"), "{twice}");
 
     let both = h
         .err(
@@ -482,14 +428,13 @@ async fn idle_sessions_close_after_eighteen_hours() {
         .as_str()
         .unwrap()
         .to_owned();
-    // Three of piccata's six steps, with an adjustment; one of the cookies' eight.
+    // Three of piccata's six steps; one of the cookies' eight.
     h.ok(
         "recipes_cook_update",
         json!({ "sessionId": half, "events": [
             { "type": "check", "target": "dredge" },
             { "type": "check", "target": "sear" },
-            { "type": "check", "target": "deglaze" },
-            { "type": "adjust", "target": "sear", "text": "Seared in two batches." }
+            { "type": "check", "target": "deglaze" }
         ] }),
     )
     .await;
@@ -509,15 +454,11 @@ async fn idle_sessions_close_after_eighteen_hours() {
     assert_eq!(h.recipes.tick().await.unwrap().closed, 2);
     assert_eq!(h.recipes.tick().await.unwrap().closed, 0);
 
-    // Half the steps done counts as a cook, with its adjustments.
+    // Half the steps done counts as a cook.
     let closed = h.ok("recipes_cook_get", json!({ "sessionId": half })).await;
     assert_eq!(closed["session"]["state"], "finished");
     let recipe = h.ok("recipes_get", json!({ "id": piccata })).await;
     assert_eq!(recipe["cooks"]["count"], 1);
-    assert_eq!(
-        recipe["openAdjustments"][0]["text"],
-        "Seared in two batches."
-    );
     // Fewer does not.
     let abandoned = h
         .ok("recipes_cook_get", json!({ "sessionId": barely }))
@@ -633,4 +574,161 @@ async fn an_ended_timer_is_announced_once_when_no_app_is_watching() {
     h.advance(Duration::from_secs(20 * 60)).await;
     assert_eq!(h.recipes.tick().await.unwrap().alerts, 0);
     assert_eq!(h.app.pushes.all().len(), 2);
+}
+
+fn amount_of(doc: &Value, id: &str) -> Value {
+    doc["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|component| component["ingredients"].as_array().unwrap())
+        .find(|ingredient| ingredient["id"] == id)
+        .unwrap()["qty"]
+        .clone()
+}
+
+/// A change made while cooking is a change to the recipe: the app writes the
+/// amount as a revision and moves its session to it.
+#[tokio::test(start_paused = true)]
+async fn an_amount_changed_while_cooking_is_a_revision_the_session_moves_to() {
+    let h = Harness::new().await;
+    let router = h.router();
+    let id = h.create(PICCATA).await;
+    let start =
+        json!({ "id": "cook_amounts1", "recipeId": id, "revision": 1, "scale": 2, "at": 1 });
+    assert_eq!(post_json(&router, "/api/cook", &start).await.status, 200);
+    let checked =
+        json!({ "events": [event("a-1", json!({ "type": "check", "target": "dredge" }))] });
+    post_json(&router, "/api/cook/cook_amounts1/events", &checked).await;
+
+    // The outbox sends the amount first, then the rebase to the revision it made.
+    let op = json!({ "ops": [{ "id": "op_cookamount01", "at": 1, "type": "amount", "recipeId": id,
+        "ingredientId": "capers", "qty": 3, "unit": "tbsp", "baseRevision": 1 }] });
+    let saved = post_json(&router, "/api/ops", &op).await.json();
+    assert_eq!(saved["results"][0]["ok"], true, "{saved}");
+    assert_eq!(saved["results"][0]["recipe"]["revision"], 2);
+    let rebase = json!({ "events": [event("a-2", json!({ "type": "rebase", "revision": 2 }))] });
+    let session = post_json(&router, "/api/cook/cook_amounts1/events", &rebase)
+        .await
+        .json();
+    assert_eq!(session["revision"], 2);
+    assert_eq!(amount_of(&session["doc"], "capers"), 3);
+    assert_eq!(session["scale"], 2.0, "the scale is the session's own");
+
+    // It is an ordinary revision, made by the app, and the session kept its place.
+    let history = h.ok("recipes_history", json!({ "id": id })).await;
+    assert_eq!(history["revisions"][0]["revision"], 2);
+    assert_eq!(history["revisions"][0]["tool"], "app");
+    let view = h
+        .ok("recipes_cook_get", json!({ "sessionId": "cook_amounts1" }))
+        .await;
+    assert_eq!(
+        (
+            view["session"]["revision"].clone(),
+            view["session"]["headRevision"].clone()
+        ),
+        (json!(2), json!(2))
+    );
+    assert_eq!(view["session"]["done"], json!(["dredge"]));
+    let stored = h.ok("recipes_get", json!({ "id": id })).await;
+    assert_eq!(amount_of(&stored["document"], "capers"), 3);
+
+    // Undo puts the amount back as one more revision; the session follows
+    // with another rebase.
+    let log = h.ok("recipes_history", json!({})).await;
+    let change = log["changes"][0]["changeId"].as_str().unwrap().to_owned();
+    let undone = h.ok("recipes_undo", json!({ "changeId": change })).await;
+    assert_eq!(undone["revision"], 3, "{undone}");
+    let stored = h.ok("recipes_get", json!({ "id": id })).await;
+    assert_eq!(amount_of(&stored["document"], "capers"), 2);
+    let rebase = json!({ "events": [event("a-3", json!({ "type": "rebase", "revision": 3 }))] });
+    let session = post_json(&router, "/api/cook/cook_amounts1/events", &rebase)
+        .await
+        .json();
+    assert_eq!(amount_of(&session["doc"], "capers"), 2);
+
+    // The app's own undo is the old amount sent as a new change.
+    let back = json!({ "ops": [{ "id": "op_cookamount02", "at": 2, "type": "amount", "recipeId": id,
+        "ingredientId": "capers", "qty": 4, "unit": "tbsp", "baseRevision": 3 }] });
+    let saved = post_json(&router, "/api/ops", &back).await.json();
+    assert_eq!(saved["results"][0]["recipe"]["revision"], 4, "{saved}");
+
+    // A rebase to a revision that was refused and never written is dropped.
+    let nowhere = json!({ "events": [event("a-4", json!({ "type": "rebase", "revision": 9 }))] });
+    let session = post_json(&router, "/api/cook/cook_amounts1/events", &nowhere).await;
+    assert_eq!(session.status, 200);
+    assert_eq!(session.json()["revision"], 3);
+}
+
+/// Sessions cooked before overrides were retired hold `adjust` events. The
+/// log is append-only, so they stay; every reader skips them.
+#[tokio::test(start_paused = true)]
+async fn a_log_with_retired_adjustment_events_still_reads_and_finishes() {
+    let h = Harness::new().await;
+    let router = h.router();
+    let id = h.create(PICCATA).await;
+    for session in ["cook_legacy01", "cook_legacy02"] {
+        let start = json!({ "id": session, "recipeId": id, "revision": 1, "scale": 1, "at": 1 });
+        assert_eq!(post_json(&router, "/api/cook", &start).await.status, 200);
+    }
+    let checked = json!({ "events": [
+        event("l-1", json!({ "type": "check", "target": "dredge" })),
+        event("l-2", json!({ "type": "finish", "note": "Last week." })),
+    ] });
+    post_json(&router, "/api/cook/cook_legacy01/events", &checked).await;
+    h.recipes
+        .store()
+        .write(|tx| {
+            for (session, seq, kind, payload) in [
+                ("cook_legacy01", 10, "adjust", json!({ "type": "adjust", "target": "sear", "text": "Two batches." })),
+                ("cook_legacy01", 11, "dismissAdjustment", json!({ "type": "dismissAdjustment", "id": "adj_aaaaaaaa" })),
+                ("cook_legacy02", 1, "adjust", json!({ "type": "adjust", "target": "sear", "text": "Two batches." })),
+                ("cook_legacy02", 2, "unadjust", json!({ "type": "unadjust", "target": "sear" })),
+            ] {
+                tx.connection()
+                    .execute(
+                        "INSERT INTO recipes_cook_event (session_id, seq, client_event_id, at, actor, type, payload)
+                         VALUES (?1, ?2, ?3, 0, 'app', ?4, ?5)",
+                        rusqlite::params![session, seq, format!("old-{session}-{seq}"), kind, payload.to_string()],
+                    )
+                    .unwrap();
+            }
+            Ok::<_, omni_store::StoreError>(())
+        })
+        .await
+        .unwrap();
+
+    // The finished session loads, for the app and for an agent.
+    let finished = get(&router, "/api/cook/cook_legacy01").await;
+    assert_eq!(finished.status, 200, "{}", finished.text());
+    assert_eq!(finished.json()["events"].as_array().unwrap().len(), 2);
+    let log = h.ok("recipes_cook_get", json!({ "recipeId": id })).await;
+    assert_eq!(log["cooks"][0]["note"], "Last week.");
+    let view = h
+        .ok("recipes_cook_get", json!({ "sessionId": "cook_legacy01" }))
+        .await;
+    assert_eq!(view["session"]["done"], json!(["dredge"]));
+
+    // The open one syncs to the app, takes new events after the old ones and finishes.
+    let synced = get(&router, "/api/sync").await.json();
+    assert_eq!(synced["sessions"][0]["id"], "cook_legacy02");
+    assert_eq!(synced["sessions"][0]["events"], json!([]));
+    assert_eq!(synced["recipes"][0]["adjustments"], json!([]));
+    let updated = h
+        .ok(
+            "recipes_cook_update",
+            json!({ "sessionId": "cook_legacy02", "events": [
+                { "type": "check", "target": "dredge" },
+                { "type": "finish" }
+            ] }),
+        )
+        .await;
+    assert_eq!(updated["session"]["state"], "finished");
+    assert_eq!(updated["session"]["done"], json!(["dredge"]));
+    let events = get(&router, "/api/cook/cook_legacy02").await.json()["events"].clone();
+    assert_eq!(events[0]["seq"], 3, "new events number after the old ones");
+    assert_eq!(
+        h.ok("recipes_get", json!({ "id": id })).await["cooks"]["count"],
+        2
+    );
 }

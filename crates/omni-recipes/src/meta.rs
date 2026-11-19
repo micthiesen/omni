@@ -3,7 +3,7 @@
 //!
 //! A snapshot holds, per recipe, only the facets a change writes (`state`,
 //! `tags`, `notes`, `images`, `cooks`), and optionally the whole tag registry
-//! and which recipe owns which cook sessions and adjustments. Applying a
+//! and which recipe owns which cook sessions. Applying a
 //! snapshot puts exactly those things back, so a change's `before` undoes it
 //! and its `after` redoes it.
 
@@ -83,29 +83,21 @@ pub fn recipes_facets(conn: &Connection, ids: &[String], facets: &[&str]) -> R<V
     Ok(Value::Object(out))
 }
 
-/// Which recipe owns each of the listed cook sessions and adjustments.
-pub fn ownership(conn: &Connection, cooks: &[String], adjustments: &[String]) -> R<Value> {
-    let owner = |table: &str, id: &str| -> R<Option<String>> {
-        rusqlite::OptionalExtension::optional(conn.query_row(
-            &format!("SELECT recipe_id FROM {table} WHERE id = ?1"),
+/// Which recipe owns each of the listed cook sessions.
+pub fn ownership(conn: &Connection, cooks: &[String]) -> R<Value> {
+    let mut cook_map = Map::new();
+    for id in cooks {
+        let owner: Option<String> = rusqlite::OptionalExtension::optional(conn.query_row(
+            "SELECT recipe_id FROM recipes_cook WHERE id = ?1",
             params![id],
             |row| row.get(0),
         ))
-        .map_err(sql)
-    };
-    let mut cook_map = Map::new();
-    for id in cooks {
-        if let Some(recipe) = owner("recipes_cook", id)? {
+        .map_err(sql)?;
+        if let Some(recipe) = owner {
             cook_map.insert(id.clone(), json!(recipe));
         }
     }
-    let mut adjustment_map = Map::new();
-    for id in adjustments {
-        if let Some(recipe) = owner("recipes_adjustment", id)? {
-            adjustment_map.insert(id.clone(), json!(recipe));
-        }
-    }
-    Ok(json!({ "cooks": cook_map, "adjustments": adjustment_map }))
+    Ok(json!({ "cooks": cook_map }))
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -212,22 +204,18 @@ pub fn apply(conn: &Connection, snapshot: &Value, seq: u64, now: i64) -> R<Vec<S
         refresh_fts(conn, id)?;
         written.push(id.clone());
     }
-    if let Some(own) = snapshot.get("own") {
-        for (table, key) in [
-            ("recipes_cook", "cooks"),
-            ("recipes_adjustment", "adjustments"),
-        ] {
-            let Some(map) = own.get(key).and_then(Value::as_object) else {
-                continue;
-            };
-            for (id, recipe) in map {
-                conn.execute(
-                    &format!("UPDATE {table} SET recipe_id = ?2 WHERE id = ?1"),
-                    params![id, recipe.as_str()],
-                )
-                .map_err(sql)?;
-            }
-        }
+    // A snapshot written before adjustment records were retired also lists
+    // their owners; there is nothing left to move for those.
+    let cooks = snapshot
+        .get("own")
+        .and_then(|own| own.get("cooks"))
+        .and_then(Value::as_object);
+    for (id, recipe) in cooks.into_iter().flatten() {
+        conn.execute(
+            "UPDATE recipes_cook SET recipe_id = ?2 WHERE id = ?1",
+            params![id, recipe.as_str()],
+        )
+        .map_err(sql)?;
     }
     Ok(written)
 }
@@ -277,16 +265,12 @@ pub fn like(conn: &Connection, shape: &Value) -> R<Value> {
         out.insert("recipes".to_owned(), Value::Object(map));
     }
     if let Some(own) = shape.get("own") {
-        let keys = |key: &str| -> Vec<String> {
-            own.get(key)
-                .and_then(Value::as_object)
-                .map(|map| map.keys().cloned().collect())
-                .unwrap_or_default()
-        };
-        out.insert(
-            "own".to_owned(),
-            ownership(conn, &keys("cooks"), &keys("adjustments"))?,
-        );
+        let cooks: Vec<String> = own
+            .get("cooks")
+            .and_then(Value::as_object)
+            .map(|map| map.keys().cloned().collect())
+            .unwrap_or_default();
+        out.insert("own".to_owned(), ownership(conn, &cooks)?);
     }
     Ok(Value::Object(out))
 }

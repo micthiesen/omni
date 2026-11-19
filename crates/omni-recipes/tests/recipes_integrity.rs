@@ -45,7 +45,7 @@ async fn a_merge_moves_sessions_without_changing_what_they_show() {
     h.ok(
         "recipes_cook_update",
         json!({ "sessionId": finished, "events": [
-            { "type": "adjust", "target": "bake", "text": "Baked 12 minutes." },
+            { "type": "note", "text": "Baked 12 minutes." },
             { "type": "finish" }
         ] }),
     )
@@ -91,7 +91,7 @@ async fn a_merge_moves_sessions_without_changing_what_they_show() {
             "recipes_cook_update",
             json!({ "sessionId": active, "events": [
                 { "type": "check", "target": "dry" },
-                { "type": "adjust", "target": "cream", "text": "Creamed 6 minutes." },
+                { "type": "note", "text": "Creamed 6 minutes." },
                 { "type": "finish", "note": "Still cookies." }
             ] }),
         )
@@ -100,17 +100,14 @@ async fn a_merge_moves_sessions_without_changing_what_they_show() {
     let kept = h.ok("recipes_get", json!({ "id": keep })).await;
     assert_eq!(kept["cooks"]["count"], 2);
     assert_eq!(kept["headRevision"], 3);
-    // The moved adjustments stay listed with their own text, flagged: their
-    // steps are not in the kept recipe.
-    let adjustments = kept["openAdjustments"].as_array().unwrap();
-    assert_eq!(adjustments.len(), 2);
-    for adjustment in adjustments {
-        assert_eq!(adjustment["targetMissing"], true, "{adjustment}");
-        assert!(adjustment["original"].as_str().unwrap().len() > 20);
-    }
-    let mut texts: Vec<&str> = adjustments
+    // The moved cooks keep the notes taken during them.
+    let log = h.ok("recipes_cook_get", json!({ "recipeId": keep })).await;
+    let mut texts: Vec<&str> = log["cooks"]
+        .as_array()
+        .unwrap()
         .iter()
-        .map(|adjustment| adjustment["text"].as_str().unwrap())
+        .flat_map(|cook| cook["notes"].as_array().unwrap())
+        .map(|note| note.as_str().unwrap())
         .collect();
     texts.sort_unstable();
     assert_eq!(texts, ["Baked 12 minutes.", "Creamed 6 minutes."]);
@@ -151,7 +148,6 @@ async fn a_merge_moves_sessions_without_changing_what_they_show() {
     assert_eq!(h.recipes.purge().await.unwrap().recipes, 1);
     let log = h.ok("recipes_cook_get", json!({ "recipeId": keep })).await;
     assert_eq!(log["cooks"].as_array().unwrap().len(), 2);
-    assert_eq!(log["openAdjustments"].as_array().unwrap().len(), 2);
     let old = h
         .ok("recipes_cook_get", json!({ "sessionId": finished }))
         .await;
@@ -326,7 +322,7 @@ async fn undoing_a_tag_change_leaves_newer_tags_alone() {
         .await;
     h.ok(
         "recipes_create",
-        json!({ "document": doc(LASAGNE), "tags": ["dessert"], "createTags": true }),
+        json!({ "keepDietConflicts": true, "document": doc(LASAGNE), "tags": ["dessert"], "createTags": true }),
     )
     .await;
     let conflict = h
@@ -431,7 +427,7 @@ async fn a_source_shared_by_two_recipes_outlives_either() {
     let first = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "fromInbox": item }),
         )
         .await["id"]
         .as_str()
@@ -442,7 +438,7 @@ async fn a_source_shared_by_two_recipes_outlives_either() {
     let second = h
         .ok(
             "recipes_create",
-            json!({ "document": variation, "fromInbox": item, "allowDuplicate": true }),
+            json!({ "keepDietConflicts": true, "document": variation, "fromInbox": item, "allowDuplicate": true }),
         )
         .await["id"]
         .as_str()
@@ -472,7 +468,7 @@ async fn a_source_shared_by_two_recipes_outlives_either() {
     let sourced = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(ENCHILADAS), "sourceText": "Enchiladas\n4 flour tortillas" }),
+            json!({ "keepDietConflicts": true, "document": doc(ENCHILADAS), "sourceText": "Enchiladas\n4 flour tortillas" }),
         )
         .await;
     let source =

@@ -3,7 +3,7 @@
 //! and a small three-step one,
 //! created through the same service the tools use. The first also gets what
 //! the app's other screens need: notes, a stored source text, one finished
-//! cook with a photo and an adjustment, and there is one photo waiting in the
+//! cook with a photo and a note, and there is one photo waiting in the
 //! inbox. Nothing here is real data.
 
 use omni_api::fond::{CookActor, CookEventKind};
@@ -93,6 +93,8 @@ pub async fn seed(ctx: &AppContext) -> anyhow::Result<()> {
                     source_text: (index == 0).then(|| SOURCE_TEXT.to_owned()),
                     derived_from: None,
                     allow_duplicate: None,
+                    // The preview's samples are the design's fixtures, meat included.
+                    keep_diet_conflicts: Some(true),
                     review: Some(false),
                     dry_run: None,
                 },
@@ -131,10 +133,9 @@ pub async fn seed(ctx: &AppContext) -> anyhow::Result<()> {
                 &session.id,
                 vec![
                     event(
-                        "preview-adjust",
-                        CookEventKind::Adjust {
-                            target: "sear".to_owned(),
-                            text: "Sear 5 minutes per side; the new pan runs cool.".to_owned(),
+                        "preview-note",
+                        CookEventKind::Note {
+                            text: "Seared 5 minutes per side; the new pan runs cool.".to_owned(),
                         },
                     ),
                     event("preview-finish", CookEventKind::Finish { note: None }),

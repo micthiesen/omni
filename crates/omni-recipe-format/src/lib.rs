@@ -6,9 +6,11 @@
 pub mod amount;
 pub mod chart;
 pub mod cook;
+pub mod diet;
 pub mod format;
 pub mod index;
 pub mod list;
+pub mod measure;
 pub mod model;
 pub mod ops;
 mod py;
@@ -27,6 +29,7 @@ pub use cook::{
     InputLabel, depends_on, equipment, gather_list, meanwhile, ready_steps, step_inputs,
     step_sources,
 };
+pub use diet::{DietFlag, DietKind, diet_flag, diet_problems};
 pub use index::{Index, Kind, Node, Use};
 pub use list::{
     IngredientGroup, IngredientLine, ListStep, ListView, ingredient_groups, ingredient_line,

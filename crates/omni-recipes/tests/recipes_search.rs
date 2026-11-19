@@ -155,7 +155,7 @@ async fn text_search_covers_every_field() {
     assert_eq!(card["revision"], 1);
     assert_eq!(card["hasImage"], false);
     assert_eq!(card["cookCount"], 0);
-    assert_eq!(card["openAdjustments"], 0);
+    assert!(card.get("openAdjustments").is_none());
     assert!(
         card["match"]
             .as_str()

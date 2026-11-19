@@ -6,7 +6,7 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use omni_api::fond::{Adjustment, ImageVariant, Original, RecipeRecord, RecipeState, paths};
+use omni_api::fond::{ImageVariant, Original, RecipeRecord, RecipeState, paths};
 use omni_recipe_format::{Cell, Index, Kind, RecipeDoc, Segment, equipment, list_view};
 use wasm_bindgen::JsCast;
 
@@ -15,7 +15,8 @@ use super::chart::Chart;
 use super::{Connection, Link, Sheet, back, icon, navigate, replace};
 use crate::logic::session::is_open;
 use crate::logic::{Route, SCALES, gallery, same_scale, step_servings, tile_color};
-use crate::store::{Recipe, Store, Undo, use_store};
+use crate::platform::prefs::{self, RecipeView};
+use crate::store::{Recipe, Undo, use_store};
 
 /// Step text with ingredient amounts, times and temperatures in bold.
 pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
@@ -34,24 +35,6 @@ pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
         .collect()
 }
 
-/// "Last time" callouts for one step or ingredient.
-pub fn last_time(store: Store, rec: &RecipeRecord, target: &str) -> Vec<AnyView> {
-    rec.adjustments
-        .iter()
-        .filter(|adjustment| adjustment.target == target)
-        .map(|adjustment: &Adjustment| {
-            let (rec, id) = (rec.clone(), adjustment.id.clone());
-            view! {
-                <aside class="last-time">
-                    <p><b>"Last time: "</b>{adjustment.text.clone()}</p>
-                    <button class="link" on:click=move |_| store.dismiss_adjustment(&rec, &id)>"Dismiss"</button>
-                </aside>
-            }
-            .into_any()
-        })
-        .collect()
-}
-
 /// Sizes a notes field to its text.
 fn fit(area: &web_sys::HtmlTextAreaElement) {
     let style = web_sys::HtmlElement::style(area);
@@ -59,8 +42,10 @@ fn fit(area: &web_sys::HtmlTextAreaElement) {
     let _ = style.set_property("height", &format!("{}px", area.scroll_height() + 2));
 }
 
+/// The recipe's notes field. Cook mode shows it in a sheet that has its own
+/// title (`heading` false).
 #[component]
-fn Notes(id: String) -> impl IntoView {
+pub fn Notes(id: String, #[prop(default = true)] heading: bool) -> impl IntoView {
     let store = use_store();
     let area = NodeRef::<html::Textarea>::new();
     let recipe = id.clone();
@@ -80,7 +65,7 @@ fn Notes(id: String) -> impl IntoView {
     });
     view! {
         <section class="notes">
-            <h2>"Notes"</h2>
+            {heading.then(|| view! { <h2>"Notes"</h2> })}
             <textarea
                 node_ref=area
                 rows="3"
@@ -202,13 +187,7 @@ fn ScaleControl(id: String, doc: Arc<RecipeDoc>) -> impl IntoView {
 }
 
 /// One step in full, for the chart's tap sheet.
-fn step_detail(
-    store: Store,
-    recipe: &Recipe,
-    doc: &RecipeDoc,
-    factor: f64,
-    step_id: &str,
-) -> Option<AnyView> {
+fn step_detail(doc: &RecipeDoc, factor: f64, step_id: &str) -> Option<AnyView> {
     let list = list_view(doc, factor);
     let step = list.steps.iter().find(|step| step.id == step_id)?;
     let ix = Index::build(doc);
@@ -219,7 +198,6 @@ fn step_detail(
             <p class="step-text">{segments_view(&step.segments)}</p>
             {source.until.clone().map(|until| view! { <p class="until"><b>"Until: "</b>{until}</p> })}
             {source.tip.clone().map(|tip| view! { <p class="tip">{tip}</p> })}
-            {last_time(store, &recipe.rec, step_id)}
         }
         .into_any(),
     )
@@ -227,13 +205,11 @@ fn step_detail(
 
 #[component]
 fn ListBody(
-    recipe: Arc<Recipe>,
     doc: Arc<RecipeDoc>,
     factor: f64,
     /// Opens the amount sheet for an ingredient id.
     on_amount: Callback<String>,
 ) -> impl IntoView {
-    let store = use_store();
     let list = list_view(&doc, factor);
     let ix = Index::build(&doc);
     let multi = doc.components.len() > 1;
@@ -266,7 +242,6 @@ fn ListBody(
                                         on:click=move |_| on_amount.run(id.clone())>{icon("edit")}</button>
                                 })}
                             </span>
-                            {last_time(store, &recipe.rec, &line.id)}
                         </li>
                     }
                 })
@@ -301,7 +276,6 @@ fn ListBody(
                     <div>
                         <p>{segments_view(&step.segments)}</p>
                         {source.and_then(|s| s.tip.clone()).map(|tip| view! { <p class="tip">{tip}</p> })}
-                        {last_time(store, &recipe.rec, &step.id)}
                     </div>
                 </div>
             }
@@ -347,7 +321,11 @@ pub fn RecipePage(id: String) -> impl IntoView {
         },
         |old, new| !old.is_some_and(|old| new.is_some_and(|new| same_page(old, new))),
     );
-    let chart = RwSignal::new(false);
+    let chart = RwSignal::new(prefs::recipe_view() == Some(RecipeView::Chart));
+    let show = move |view: RecipeView| {
+        chart.set(view == RecipeView::Chart);
+        prefs::set_recipe_view(view);
+    };
     let menu = RwSignal::new(false);
     let amount_open = RwSignal::new(false);
     let amount_target = RwSignal::new(None::<AmountTarget>);
@@ -456,8 +434,8 @@ pub fn RecipePage(id: String) -> impl IntoView {
                 .flatten()
                 .collect::<Vec<_>>()
                 .join(" · ");
-            let (body_recipe, body_doc, body_id) = (recipe.clone(), doc.clone(), scale_id.clone());
-            let (sheet_recipe, sheet_doc, sheet_id) = (recipe.clone(), doc.clone(), scale_id.clone());
+            let (body_doc, body_id) = (doc.clone(), scale_id.clone());
+            let (sheet_doc, sheet_id) = (doc.clone(), scale_id.clone());
             let archived = rec.state == RecipeState::Archived;
             view! {
                 <main class="page recipe">
@@ -482,9 +460,9 @@ pub fn RecipePage(id: String) -> impl IntoView {
 
                         <div class="seg wide" role="tablist">
                             <button role="tab" class:on=move || !chart.get() aria-selected=move || (!chart.get()).to_string()
-                                on:click=move |_| chart.set(false)>"Steps"</button>
+                                on:click=move |_| show(RecipeView::Steps)>"Steps"</button>
                             <button role="tab" class:on=move || chart.get() aria-selected=move || chart.get().to_string()
-                                on:click=move |_| chart.set(true)>"Chart"</button>
+                                on:click=move |_| show(RecipeView::Chart)>"Chart"</button>
                         </div>
                         {move || {
                             let factor = store.scale(&body_id);
@@ -505,10 +483,11 @@ pub fn RecipePage(id: String) -> impl IntoView {
                                     amount_target.set(Some(AmountTarget {
                                         recipe: recipe_id.clone(),
                                         ingredient,
+                                        session: None,
                                     }));
                                     amount_open.set(true);
                                 });
-                                view! { <ListBody recipe=body_recipe.clone() doc=body_doc.clone() factor=factor on_amount=on_amount/> }.into_any()
+                                view! { <ListBody doc=body_doc.clone() factor=factor on_amount=on_amount/> }.into_any()
                             }
                         }}
 
@@ -548,7 +527,7 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         Index::build(&doc).step(&id).map(|step| step.action.clone()).unwrap_or_default()
                     }
                 })>
-                    {move || step_detail(store, &sheet_recipe, &sheet_doc, store.scale(&sheet_id), &step.get())}
+                    {move || step_detail(&sheet_doc, store.scale(&sheet_id), &step.get())}
                 </Sheet>
             }
             .into_any()

@@ -152,6 +152,22 @@ pub fn use_qty<'a>(ix: &'a Index<'_>, input: &'a Input, factor: f64) -> UseQty<'
     }
 }
 
+/// A share of a step's result as a cook says it: "⅔", "1/6", "2/5". Shares
+/// with no vulgar-fraction glyph read as a plain ratio, never a decimal.
+fn fmt_share(value: f64) -> String {
+    let glyph = fmt_number(value, None);
+    if !glyph.contains('.') {
+        return glyph;
+    }
+    for denominator in 2..=12_u32 {
+        let numerator = (value * f64::from(denominator)).round();
+        if numerator >= 1.0 && (value - numerator / f64::from(denominator)).abs() < 1e-3 {
+            return format!("{numerator}/{denominator}");
+        }
+    }
+    glyph
+}
+
 pub(crate) fn fraction_value(fraction: &str) -> f64 {
     parse_fraction(fraction).unwrap_or(0.0)
 }
@@ -201,10 +217,7 @@ pub fn use_label(ix: &Index<'_>, input: &Input, factor: f64, prose: bool) -> Str
         None => id.to_owned(),
     };
     if let Some(fraction) = &input.fraction {
-        format!(
-            "{} of the {name}",
-            fmt_number(fraction_value(fraction), None)
-        )
+        format!("{} of the {name}", fmt_share(fraction_value(fraction)))
     } else if input.rest {
         if prose {
             format!("the remaining {name}")
@@ -333,6 +346,15 @@ pub fn chart_label(step: &Step) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_share_reads_as_a_fraction_never_a_decimal() {
+        assert_eq!(fmt_share(2.0 / 3.0), "⅔");
+        assert_eq!(fmt_share(0.5), "½");
+        assert_eq!(fmt_share(1.0 / 6.0), "1/6");
+        assert_eq!(fmt_share(0.4), "2/5");
+        assert_eq!(fmt_share(5.0 / 6.0), "5/6");
+    }
 
     #[test]
     fn placeholders_do_not_nest() {

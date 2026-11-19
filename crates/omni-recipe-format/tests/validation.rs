@@ -448,3 +448,32 @@ fn a_step_without_a_time_and_a_web_source_without_a_url_warn() {
         assert_eq!(validate(&doc).warnings, []);
     }
 }
+
+#[test]
+fn an_amount_that_is_awkward_to_measure_is_a_warning() {
+    let mut doc = piccata();
+    // wine: 120 ml, a standard half cup.
+    doc.components[0].ingredients[6].qty = Some(67.0);
+    let report = validate(&doc);
+    assert!(report.is_valid());
+    assert_eq!(
+        line(&report, Code::AwkwardAmount),
+        "ingredients.wine: [awkward_amount] 67 ml dry white wine is awkward to measure Hint: use \
+         75 ml, a cup or spoon measure, or weigh it in grams"
+    );
+}
+
+#[test]
+fn spoons_are_judged_per_use_when_steps_share_an_ingredient() {
+    // Butter: 4 tbsp, 2 into the pan and the rest into the sauce.
+    let mut doc = piccata();
+    doc.components[0].ingredients[5].qty = Some(6.0);
+    assert_eq!(validate(&doc).warnings, []);
+    // Six tablespoons into the pan at once is a job for the scale.
+    input_mut(&mut doc, "sear", "butter").qty = Some(5.0);
+    assert_eq!(
+        line(&validate(&doc), Code::AwkwardAmount),
+        "steps.sear.inputs.butter: [awkward_amount] 5 tbsp unsalted butter is awkward to measure \
+         Hint: more than 4 tbsp at once is easier weighed in grams or measured in a cup"
+    );
+}

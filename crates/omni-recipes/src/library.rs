@@ -3,7 +3,7 @@
 
 use omni_recipe_format::{
     Code, Level, Marks, Op, Problem, RecipeDoc, Report, apply_ops, chart_ascii, chart_blocks,
-    diff_summary, diff_summary_with_ops, render_list, validate,
+    diff_summary, diff_summary_with_ops, render_list,
 };
 use omni_store::{DocOps as _, StoreError};
 use rusqlite::{Connection, params};
@@ -15,12 +15,13 @@ use crate::api::{
     RevertOutput, RevisionInfo, SourceInfo, View, WriteOutput,
 };
 use crate::db::{
-    self, Actor, CURRENT_FORMAT, Change, ImageRow, RecipeRow, adjustment_infos, doc_at, encode_doc,
-    image_infos, images_of, iso, live_recipe_for_write, log_change, next_seq, normal_url,
-    recipe_for_read, refresh_fts, tags_of, time_info, touched_one,
+    self, Actor, CURRENT_FORMAT, Change, ImageRow, RecipeRow, doc_at, encode_doc, image_infos,
+    images_of, iso, live_recipe_for_write, log_change, next_seq, normal_url, recipe_for_read,
+    refresh_fts, tags_of, time_info, touched_one,
 };
 use crate::error::{R, RecipesError, invalid, not_found, reject, sql};
 use crate::fidelity;
+use crate::household;
 use crate::ids;
 use crate::inbox::{self, Snapshot};
 use crate::service::Recipes;
@@ -132,7 +133,7 @@ impl Recipes {
         self.ready().await?;
         let dry = input.dry_run.unwrap_or(false);
         let doc = input.document;
-        let report = validate(&doc);
+        let report = household::check(&doc, None, input.keep_diet_conflicts.unwrap_or(false));
         let time = time_info(&doc);
         if !report.is_valid() && !dry {
             return Err(invalid_recipe(&report));
@@ -247,7 +248,7 @@ impl Recipes {
             id: input.id,
             expected: input.expected_revision,
             summary: input.summary,
-            resolves: input.resolves.unwrap_or_default(),
+            keep_diet: input.keep_diet_conflicts.unwrap_or(false),
             kind: ContentKind::Edit(input.ops),
         };
         let result = self
@@ -262,7 +263,7 @@ impl Recipes {
             id: input.id,
             expected: input.expected_revision,
             summary: input.summary,
-            resolves: input.resolves.unwrap_or_default(),
+            keep_diet: input.keep_diet_conflicts.unwrap_or(false),
             kind: ContentKind::Replace(Box::new(input.document)),
         };
         let result = self.write_content(write, actor, dry).await?;
@@ -290,7 +291,8 @@ impl Recipes {
             id: input.id,
             expected: input.expected_revision,
             summary: format!("Revert to revision {}", input.to_revision),
-            resolves: Vec::new(),
+            // An earlier revision of this recipe is the owner's own history.
+            keep_diet: true,
             kind: ContentKind::Revert(input.to_revision),
         };
         let result = self
@@ -380,8 +382,7 @@ impl Recipes {
                     count: row.cook_count,
                     last_on: row.last_cooked_at.map(|at| db::local_date(at, &tz)),
                 },
-                open_adjustments: adjustment_infos(conn, &row, &tz)?,
-                warnings: validate(&doc).warnings,
+                    warnings: household::check(&doc, Some(&doc), false).warnings,
                 linked,
                 scale: (view != View::Document).then_some(factor),
                 text: (view == View::Text).then(|| render_list(&doc, factor)),
@@ -760,7 +761,8 @@ struct ContentWrite {
     id: String,
     expected: u32,
     summary: String,
-    resolves: Vec<String>,
+    /// The owner asked to keep ingredients outside the household diet.
+    keep_diet: bool,
     kind: ContentKind,
 }
 
@@ -774,7 +776,6 @@ struct ContentResult {
     text: String,
     seq: Option<u64>,
     change_id: Option<String>,
-    resolved: Vec<String>,
     doc: Option<RecipeDoc>,
     source_item: Option<String>,
 }
@@ -788,7 +789,6 @@ impl ContentResult {
             change_id: self.change_id,
             problems: self.problems,
             changes: self.changes,
-            resolved: self.resolved,
             warnings: self.warnings,
             fidelity,
             text: self.text,
@@ -925,7 +925,7 @@ pub(crate) fn app_amount(
             "App: {}",
             omni_recipe_format::amount_summary(&head, ingredient, qty, unit)
         ),
-        resolves: Vec::new(),
+        keep_diet: false,
         kind: ContentKind::Edit(ops),
     };
     // Everything `content_tx` refuses, it refuses before it writes.
@@ -957,14 +957,8 @@ fn content_tx(
         return Err(revision_conflict(conn, &row, write.expected)?);
     }
     let old = doc_at(conn, &row.id, row.head_rev)?;
-    let mut renames: Vec<(String, String)> = Vec::new();
     let new = match &write.kind {
         ContentKind::Edit(ops) => {
-            for op in ops {
-                if let Op::Rename { target, to } = op {
-                    renames.push((target.clone(), to.clone()));
-                }
-            }
             apply_ops(&old, ops).map_err(|error| reject("op_failed", error.to_string()))?
         }
         ContentKind::Replace(doc) => (**doc).clone(),
@@ -978,7 +972,7 @@ fn content_tx(
             doc_at(conn, &row.id, *to)?
         }
     };
-    let report = validate(&new);
+    let report = household::check(&new, Some(&old), write.keep_diet);
     let mut result = ContentResult {
         id: row.id.clone(),
         revision: row.head_rev,
@@ -989,7 +983,6 @@ fn content_tx(
         text: String::new(),
         seq: None,
         change_id: None,
-        resolved: Vec::new(),
         doc: None,
         source_item: row.source_item.clone(),
     };
@@ -1006,46 +999,12 @@ fn content_tx(
         _ => diff_summary(&old, &new),
     };
     result.text = render_list(&new, 1.0);
-    for adjustment in &write.resolves {
-        let open: Option<String> = rusqlite::OptionalExtension::optional(conn.query_row(
-            "SELECT id FROM recipes_adjustment WHERE id = ?1 AND recipe_id = ?2 AND state = 'open'",
-            params![adjustment, row.id],
-            |row| row.get(0),
-        ))
-        .map_err(sql)?;
-        if open.is_none() {
-            return Err(not_found(format!(
-                "{} has no open adjustment {adjustment:?}",
-                row.id
-            )));
-        }
-    }
-    if new == old && write.resolves.is_empty() {
+    if new == old {
         result.doc = Some(new);
         return Ok(result);
     }
     let seq = next_seq(conn)?;
-    let revision = if new == old {
-        db::touch(conn, &row.id, seq, now)?;
-        row.head_rev
-    } else {
-        write_revision(conn, now, seq, &row, &new, &write.summary, actor)?
-    };
-    for (from, to) in &renames {
-        conn.execute(
-            "UPDATE recipes_adjustment SET target = ?3
-             WHERE recipe_id = ?1 AND state = 'open' AND target = ?2",
-            params![row.id, from, to],
-        )
-        .map_err(sql)?;
-    }
-    for adjustment in &write.resolves {
-        conn.execute(
-            "UPDATE recipes_adjustment SET state = 'resolved', resolved_rev = ?2 WHERE id = ?1",
-            params![adjustment, revision],
-        )
-        .map_err(sql)?;
-    }
+    let revision = write_revision(conn, now, seq, &row, &new, &write.summary, actor)?;
     result.change_id = Some(log_change(
         conn,
         seq,
@@ -1056,11 +1015,10 @@ fn content_tx(
             kind: "content",
             touched: touched_one(&row.id, &["content"]),
             before: json!({ "recipe": row.id, "rev": row.head_rev }),
-            after: json!({ "recipe": row.id, "rev": revision, "resolved": write.resolves }),
+            after: json!({ "recipe": row.id, "rev": revision }),
         },
     )?);
     result.saved = true;
-    result.resolved.clone_from(&write.resolves);
     result.revision = revision;
     result.seq = Some(seq);
     result.doc = Some(new);

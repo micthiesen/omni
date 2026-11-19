@@ -14,10 +14,11 @@ use omni_recipe_format::{
 
 use super::amount::{AmountSheet, AmountTarget};
 use super::chart::{CellMark, Chart};
-use super::recipe::segments_view;
+use super::recipe::{Notes, segments_view};
 use super::{Connection, Link, Sheet, back, icon, remaining, replace};
 use crate::logic::Route;
 use crate::logic::session::{Projection, project};
+use crate::platform::prefs::{self, RecipeView};
 use crate::platform::{device, now_ms};
 use crate::store::{Store, use_store};
 
@@ -26,17 +27,6 @@ enum Tab {
     Gather,
     Steps,
     Chart,
-}
-
-/// What the Adjust sheet is editing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Target {
-    id: String,
-    title: String,
-    original: String,
-    /// Ingredients whose amount in the recipe itself can be changed from
-    /// here: id and name.
-    amounts: Vec<(String, String)>,
 }
 
 /// What every piece of the cook screen shares. The stored values belong to
@@ -52,9 +42,13 @@ struct Ctx {
     scale: f64,
     chosen: RwSignal<Option<String>>,
     tab: RwSignal<Tab>,
-    target: RwSignal<Option<Target>>,
-    adjusting: RwSignal<bool>,
-    showing_original: RwSignal<Option<String>>,
+    amount_open: RwSignal<bool>,
+    amount_target: RwSignal<Option<AmountTarget>>,
+    /// The ingredients of the step whose amounts are being chosen from: id
+    /// and name.
+    amount_choices: RwSignal<Vec<(String, String)>>,
+    choosing_amount: RwSignal<bool>,
+    notes_open: RwSignal<bool>,
 }
 
 impl Ctx {
@@ -66,16 +60,20 @@ impl Ctx {
         self.send(self.state.with_untracked(|state| state.toggle(target)));
     }
 
-    fn adjusted(self, target: &str) -> Option<String> {
-        self.state.with(|state| state.adjusted.get(target).cloned())
-    }
-
-    fn open_adjust(self, target: Target) {
-        self.target.set(Some(target));
-        self.adjusting.set(true);
+    /// Opens the amount sheet for an ingredient. What it saves is a revision
+    /// of the recipe, which this session then moves to.
+    fn change_amount(self, ingredient: String) {
+        self.amount_target.set(Some(AmountTarget {
+            recipe: self.recipe.get_value(),
+            ingredient,
+            session: Some(self.session.get_value()),
+        }));
+        self.choosing_amount.set(false);
+        self.amount_open.set(true);
     }
 
     /// Those of `ids` that are ingredients with an amount, with their names.
+    /// An ingredient to taste has no amount to change.
     fn amounts(self, ids: &[String]) -> Vec<(String, String)> {
         let doc = self.doc.get_value();
         let ix = Index::build(&doc);
@@ -107,67 +105,6 @@ impl Ctx {
     }
 }
 
-/// The marker under an adjusted item (with its original one tap away) and
-/// the previous cook's adjustments with "Use again".
-fn adjust_notes(ctx: Ctx, target: String, original: String) -> impl IntoView {
-    let (marker_target, last_target) = (target.clone(), target);
-    let marker = move || {
-        let target = marker_target.clone();
-        ctx.adjusted(&target).map(|_| {
-            let (toggle, shown) = (target.clone(), target.clone());
-            let original = original.clone();
-            view! {
-                <p class="adjusted">
-                    <span class="mark">"Adjusted"</span>
-                    <button class="link" on:click=move |_| ctx.showing_original.update(|open| {
-                        *open = if open.as_deref() == Some(toggle.as_str()) { None } else { Some(toggle.clone()) };
-                    })>
-                        {
-                            let shown = shown.clone();
-                            move || if ctx.showing_original.get().as_deref() == Some(shown.as_str()) { "Hide original" } else { "Original" }
-                        }
-                    </button>
-                    <button class="link" on:click={
-                        let target = target.clone();
-                        move |_| ctx.send(CookEventKind::Unadjust { target: target.clone() })
-                    }>"Undo"</button>
-                </p>
-                <Show when=move || ctx.showing_original.get().as_deref() == Some(shown.as_str())>
-                    <p class="orig">{original.clone()}</p>
-                </Show>
-            }
-        })
-    };
-    let last = move || {
-        let target = last_target.clone();
-        let current = ctx.adjusted(&target);
-        let earlier = ctx
-            .store
-            .recipe(&ctx.recipe.get_value())
-            .map(|recipe| recipe.rec.adjustments.clone())
-            .unwrap_or_default();
-        earlier
-            .into_iter()
-            .filter(|adjustment| {
-                adjustment.target == target && current.as_deref() != Some(adjustment.text.as_str())
-            })
-            .map(|adjustment| {
-                let (target, text) = (adjustment.target.clone(), adjustment.text.clone());
-                view! {
-                    <aside class="last-time">
-                        <p><b>"Last time: "</b>{adjustment.text.clone()}</p>
-                        <button class="link" on:click=move |_| ctx.send(CookEventKind::Adjust {
-                            target: target.clone(),
-                            text: text.clone(),
-                        })>"Use again"</button>
-                    </aside>
-                }
-            })
-            .collect_view()
-    };
-    view! { {marker}{last} }
-}
-
 fn gather(ctx: Ctx) -> impl IntoView {
     gather_list(&ctx.doc.get_value(), ctx.scale)
         .into_iter()
@@ -176,8 +113,8 @@ fn gather(ctx: Ctx) -> impl IntoView {
                 .lines
                 .into_iter()
                 .map(|line| {
-                    let (id, done_id, text_id) = (line.id.clone(), line.id.clone(), line.id.clone());
-                    let (original, edit_original, edit_id) = (line.text.clone(), line.text.clone(), line.id.clone());
+                    let (id, done_id) = (line.id.clone(), line.id.clone());
+                    let editable = ctx.amounts(std::slice::from_ref(&line.id)).pop();
                     view! {
                         <li class:optional=line.optional>
                             <div class="row">
@@ -185,16 +122,14 @@ fn gather(ctx: Ctx) -> impl IntoView {
                                     class:done=move || ctx.state.with(|state| state.checked.contains(&done_id))
                                     on:click=move |_| ctx.toggle(&id)>
                                     <span class="box">{icon("check")}</span>
-                                    <span class="txt">{move || ctx.adjusted(&text_id).unwrap_or_else(|| original.clone())}</span>
+                                    <span class="txt">{line.text.clone()}</span>
                                 </button>
-                                <button class="icon-btn quiet" aria-label="Adjust" on:click=move |_| ctx.open_adjust(Target {
-                                    id: edit_id.clone(),
-                                    title: "Adjust ingredient".to_owned(),
-                                    original: edit_original.clone(),
-                                    amounts: ctx.amounts(std::slice::from_ref(&edit_id)),
-                                })>{icon("edit")}</button>
+                                {editable.map(|(ingredient, name)| view! {
+                                    <button class="icon-btn quiet" data-testid="edit-amount"
+                                        aria-label=format!("Change amount of {name}")
+                                        on:click=move |_| ctx.change_amount(ingredient.clone())>{icon("edit")}</button>
+                                })}
                             </div>
-                            {adjust_notes(ctx, line.id.clone(), line.text.clone())}
                         </li>
                     }
                 })
@@ -286,11 +221,6 @@ fn step_card(ctx: Ctx) -> impl IntoView {
         let all_done = state.progress(&doc).0 == total;
         let before = (listed.number > 1).then(|| list.steps[listed.number - 2].id.clone());
         let after = list.steps.get(listed.number).map(|step| step.id.clone());
-        let adjusted = state.adjusted.get(&current).cloned();
-        let text = match &adjusted {
-            Some(text) => text.clone().into_any(),
-            None => segments_view(&listed.segments).into_any(),
-        };
         let chips = step_inputs(&ix, step, ctx.scale)
             .into_iter()
             .map(|input| {
@@ -335,12 +265,13 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                 .into_any(),
             }
         });
-        let (done_id, edit_id, edit_text) = (current.clone(), current.clone(), listed.text.clone());
-        let edit_inputs: Vec<String> = step
+        let done_id = current.clone();
+        let inputs: Vec<String> = step
             .inputs
             .iter()
             .map(|input| input.r#ref.clone())
             .collect();
+        let amounts = ctx.amounts(&inputs);
         let go_next = next.clone();
         let next_line = next.as_ref().map(|id| ctx.step_label(id));
         Some(view! {
@@ -353,19 +284,27 @@ fn step_card(ctx: Ctx) -> impl IntoView {
                         on:click=move |_| ctx.chosen.set(after.clone())>{icon("next")}</button>
                 </header>
                 <h2>{ctx.step_label(&current)}</h2>
-                <p class="step-text" data-testid="step-text">{text}</p>
-                {adjust_notes(ctx, current.clone(), listed.text.clone())}
+                <p class="step-text" data-testid="step-text">{segments_view(&listed.segments)}</p>
                 <div class="chips">{chips}</div>
                 {step.until.clone().map(|until| view! { <p class="until"><b>"Until "</b>{until}</p> })}
                 {step.tip.clone().map(|tip| view! { <p class="tip">{tip}</p> })}
                 {timer}
+                <div class="step-tools">
+                    {(!amounts.is_empty()).then(|| view! {
+                        <button class="btn ghost small" data-testid="step-amounts" on:click=move |_| {
+                            // One ingredient needs no list to choose from.
+                            if let [(ingredient, _)] = amounts.as_slice() {
+                                ctx.change_amount(ingredient.clone());
+                            } else {
+                                ctx.amount_choices.set(amounts.clone());
+                                ctx.choosing_amount.set(true);
+                            }
+                        }>{icon("edit")}"Amounts"</button>
+                    })}
+                    <button class="btn ghost small" data-testid="recipe-notes"
+                        on:click=move |_| ctx.notes_open.set(true)>"Recipe notes"</button>
+                </div>
                 <div class="card-actions">
-                    <button class="btn ghost" data-testid="adjust" on:click=move |_| ctx.open_adjust(Target {
-                        id: edit_id.clone(),
-                        title: "Adjust step".to_owned(),
-                        original: edit_text.clone(),
-                        amounts: ctx.amounts(&edit_inputs),
-                    })>{icon("edit")}"Adjust"</button>
                     {if is_done {
                         view! {
                             <button class="btn ghost" on:click=move |_| ctx.toggle(&done_id)>"Not done"</button>
@@ -413,18 +352,21 @@ pub fn CookPage(id: String) -> impl IntoView {
         })
     });
     let finished = Memo::new(move |_| state.with(|state| state.finished));
-    let tab = RwSignal::new(Tab::Steps);
+    let recipe_id = Memo::new(move |_| session.with(|s| s.as_ref().map(|s| s.recipe_id.clone())));
+    let tab = RwSignal::new(match prefs::recipe_view() {
+        Some(RecipeView::Chart) => Tab::Chart,
+        _ => Tab::Steps,
+    });
     let chosen = RwSignal::new(None::<String>);
-    let target = RwSignal::new(None::<Target>);
-    let adjusting = RwSignal::new(false);
+    let amount_choices = RwSignal::new(Vec::<(String, String)>::new());
+    let choosing_amount = RwSignal::new(false);
+    let notes_open = RwSignal::new(false);
     let finishing = RwSignal::new(false);
     let discarding = RwSignal::new(false);
     let leaving = RwSignal::new(false);
     let leave_discarding = RwSignal::new(false);
     let amount_open = RwSignal::new(false);
     let amount_target = RwSignal::new(None::<AmountTarget>);
-    let showing_original = RwSignal::new(None::<String>);
-    let adjust_area = NodeRef::<html::Textarea>::new();
     let finish_note = NodeRef::<html::Input>::new();
     let finish_photo = NodeRef::<html::Input>::new();
     let photo_name = RwSignal::new(String::new());
@@ -433,38 +375,12 @@ pub fn CookPage(id: String) -> impl IntoView {
     if session.get_untracked().is_none() {
         spawn_local(async move { store.refresh_session(id).await });
     }
-    Effect::new(move |_| {
-        if adjusting.get()
-            && let (Some(target), Some(area)) = (target.get(), adjust_area.get())
-        {
-            let text = state.with_untracked(|state| state.adjusted.get(&target.id).cloned());
-            area.set_value(&text.unwrap_or(target.original));
-        }
-    });
 
     let send = move |kind: CookEventKind| store.cook_event(&session_id.get_value(), kind);
     let recipe_route = move || {
         session
             .with_untracked(|s| s.as_ref().map(|s| s.recipe_id.clone()))
             .map_or(Route::Library, Route::Recipe)
-    };
-    let save_adjustment = move |_| {
-        let (Some(target), Some(area)) = (target.get_untracked(), adjust_area.get_untracked())
-        else {
-            return;
-        };
-        let text = area.value().trim().to_owned();
-        if text.is_empty() || text == target.original {
-            if state.with_untracked(|state| state.adjusted.contains_key(&target.id)) {
-                send(CookEventKind::Unadjust { target: target.id });
-            }
-        } else {
-            send(CookEventKind::Adjust {
-                target: target.id,
-                text,
-            });
-        }
-        adjusting.set(false);
     };
     let finish = move |_| {
         if busy.get_untracked() {
@@ -562,9 +478,11 @@ pub fn CookPage(id: String) -> impl IntoView {
                     scale,
                     chosen,
                     tab,
-                    target,
-                    adjusting,
-                    showing_original,
+                    amount_open,
+                    amount_target,
+                    amount_choices,
+                    choosing_amount,
+                    notes_open,
                 };
                 let head_revision = store
                     .recipes
@@ -592,7 +510,15 @@ pub fn CookPage(id: String) -> impl IntoView {
                 let tapped = Callback::new(move |cell: Cell| ctx.toggle(&cell.key));
                 let tab_button = move |this: Tab, label: &'static str| view! {
                     <button role="tab" class:on=move || tab.get() == this aria-selected=move || (tab.get() == this).to_string()
-                        on:click=move |_| tab.set(this)>{label}</button>
+                        on:click=move |_| {
+                            tab.set(this);
+                            // Gather is a stop on the way, not a way to read the recipe.
+                            match this {
+                                Tab::Steps => prefs::set_recipe_view(RecipeView::Steps),
+                                Tab::Chart => prefs::set_recipe_view(RecipeView::Chart),
+                                Tab::Gather => {}
+                            }
+                        }>{label}</button>
                 };
                 view! {
                     <nav class="seg wide tabs" role="tablist">
@@ -631,43 +557,35 @@ pub fn CookPage(id: String) -> impl IntoView {
                 .into_any()
             }}
         </main>
-        <Sheet open=adjusting title=Signal::derive(move || target.get().map(|t| t.title).unwrap_or_default())>
-            <p class="muted">"Adjust is for this cook only. The recipe itself does not change."</p>
-            <textarea node_ref=adjust_area class="adjust-text" rows="5" aria-label="Adjusted text"></textarea>
-            <div class="sheet-actions">
-                <button class="btn ghost" on:click=move |_| {
-                    if let (Some(target), Some(area)) = (target.get_untracked(), adjust_area.get_untracked()) {
-                        area.set_value(&target.original);
-                    }
-                }>"Reset to original"</button>
-                <button class="btn primary" data-testid="save-adjust" on:click=save_adjustment>"Save"</button>
+        <Sheet open=choosing_amount title="Change an amount">
+            <div class="menu">
+                {move || amount_choices
+                    .get()
+                    .into_iter()
+                    .map(|(ingredient, name)| view! {
+                        <button data-testid="change-amount" on:click=move |_| {
+                            if let Some(recipe) = recipe_id.get() {
+                                amount_target.set(Some(AmountTarget {
+                                    recipe,
+                                    ingredient: ingredient.clone(),
+                                    session: Some(session_id.get_value()),
+                                }));
+                                choosing_amount.set(false);
+                                amount_open.set(true);
+                            }
+                        }>{name}</button>
+                    })
+                    .collect_view()}
             </div>
+        </Sheet>
+        <Sheet open=notes_open title="Recipe notes">
+            <p class="muted">"Notes are kept with the recipe."</p>
+            // Built when opened, so the field is sized to its text on screen.
             {move || {
-                let amounts = target.get().map(|target| target.amounts).unwrap_or_default();
-                let recipe = session.with(|s| s.as_ref().map(|s| s.recipe_id.clone()));
-                (!amounts.is_empty()).then(|| view! {
-                    <div class="recipe-change">
-                        <p class="muted">"Or change the recipe from now on:"</p>
-                        {amounts
-                            .into_iter()
-                            .map(|(ingredient, name)| {
-                                let recipe = recipe.clone();
-                                view! {
-                                    <button class="btn ghost" data-testid="change-amount" on:click=move |_| {
-                                        if let Some(recipe) = recipe.clone() {
-                                            amount_target.set(Some(AmountTarget {
-                                                recipe,
-                                                ingredient: ingredient.clone(),
-                                            }));
-                                            adjusting.set(false);
-                                            amount_open.set(true);
-                                        }
-                                    }>{format!("Change amount of {name} in recipe…")}</button>
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                })
+                notes_open
+                    .get()
+                    .then(|| recipe_id.get().map(|id| view! { <Notes id=id heading=false/> }))
+                    .flatten()
             }}
         </Sheet>
         <AmountSheet open=amount_open target=amount_target/>
@@ -699,21 +617,6 @@ pub fn CookPage(id: String) -> impl IntoView {
             </Show>
         </Sheet>
         <Sheet open=finishing title="Finish cooking">
-            {move || {
-                let adjusted = state.with(|state| state.adjusted.clone());
-                if adjusted.is_empty() {
-                    view! { <p class="muted">"Cooked as written: nothing was adjusted."</p> }.into_any()
-                } else {
-                    view! {
-                        <h3 class="group">"Adjusted this time"</h3>
-                        <ul class="adjusted-list">
-                            {adjusted.into_values().map(|text| view! { <li>{text}</li> }).collect_view()}
-                        </ul>
-                        <p class="muted">"These stay on the recipe as “Last time” until an agent folds them in."</p>
-                    }
-                    .into_any()
-                }
-            }}
             <label class="field">
                 <span>"How did it go?"</span>
                 <input node_ref=finish_note type="text" maxlength="200" placeholder="One line, optional" enterkeyhint="done"/>

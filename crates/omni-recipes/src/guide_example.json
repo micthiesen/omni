@@ -1,6 +1,6 @@
 {
-  "title": "Chicken Piccata",
-  "summary": "Pan-seared cutlets in a lemon, caper and butter pan sauce.",
+  "title": "Cauliflower Piccata",
+  "summary": "Pan-seared cauliflower slabs in a lemon, caper and butter pan sauce.",
   "yield": {
     "qty": 4,
     "unit": "servings"
@@ -14,11 +14,10 @@
       "id": "piccata",
       "ingredients": [
         {
-          "id": "chicken",
-          "qty": 500,
-          "unit": "g",
-          "name": "boneless, skinless chicken breasts",
-          "prep": "halved horizontally into cutlets"
+          "id": "cauliflower",
+          "qty": 1,
+          "name": "large cauliflower",
+          "prep": "cut through the core into 2 cm slabs"
         },
         {
           "id": "salt",
@@ -68,7 +67,7 @@
           "id": "stock",
           "qty": 180,
           "unit": "ml",
-          "name": "chicken stock",
+          "name": "vegetable stock",
           "alt": {
             "qty": 0.75,
             "unit": "cup"
@@ -99,10 +98,10 @@
         {
           "id": "dredge",
           "action": "season, dredge",
-          "output": "dredged cutlets",
+          "output": "dredged cauliflower",
           "inputs": [
             {
-              "ref": "chicken"
+              "ref": "cauliflower"
             },
             {
               "ref": "salt"
@@ -118,12 +117,12 @@
             "min": 5,
             "attention": "active"
           },
-          "text": "Season {chicken} on both sides with {salt} and {pepper}. Dredge in {flour} and shake off the excess."
+          "text": "Season {cauliflower} on both sides with {salt} and {pepper}. Dredge in {flour} and shake off the excess."
         },
         {
           "id": "sear",
           "action": "sear",
-          "output": "seared cutlets",
+          "output": "seared cauliflower",
           "byproducts": [
             {
               "id": "fond",
@@ -144,15 +143,15 @@
             }
           ],
           "time": {
-            "min": 6,
-            "max": 8,
+            "min": 8,
+            "max": 10,
             "attention": "active"
           },
-          "until": "golden",
+          "until": "deep golden and just tender",
           "equipment": [
             "12-inch skillet"
           ],
-          "text": "Heat {oil} and {butter} in a large skillet over medium-high heat until the butter foams. Cook {dredge} until golden, 3 to 4 minutes per side, then move to a plate. Keep the pan on the heat."
+          "text": "Heat {oil} and {butter} in a large skillet over medium-high heat until the butter foams. Cook {dredge} until deep golden and just tender, 4 to 5 minutes per side, then move to a plate. Keep the pan on the heat."
         },
         {
           "id": "deglaze",
@@ -226,7 +225,7 @@
         {
           "id": "serve",
           "action": "sauce, garnish",
-          "output": "chicken piccata",
+          "output": "cauliflower piccata",
           "inputs": [
             {
               "ref": "sear"
@@ -247,7 +246,7 @@
             "min": 2,
             "attention": "active"
           },
-          "text": "Return {sear} to the pan and spoon {mount} over them to warm through, about 1 minute. Scatter with {parsley} and serve with {lemon}."
+          "text": "Return {sear} to the pan and spoon {mount} over it to warm through, about 1 minute. Scatter with {parsley} and serve with {lemon}."
         }
       ]
     }

@@ -83,6 +83,7 @@ async fn sync_is_full_first_and_incremental_after() {
     );
     assert_eq!(record["cookCount"], 0);
     assert_eq!(record["images"], json!([]));
+    // Kept empty for apps installed before adjustments were removed.
     assert_eq!(record["adjustments"], json!([]));
     let seq = full["seq"].as_u64().unwrap();
 
@@ -247,7 +248,7 @@ async fn the_apps_edits_apply_once_and_agents_can_undo_them() {
     let with_source = h
         .ok(
             "recipes_create",
-            json!({ "document": common::doc(COOKIES), "sourceText": "Cookies\n225 g butter" }),
+            json!({ "keepDietConflicts": true, "document": common::doc(COOKIES), "sourceText": "Cookies\n225 g butter" }),
         )
         .await;
     let original = get(

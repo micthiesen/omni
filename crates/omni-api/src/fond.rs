@@ -193,8 +193,11 @@ pub struct RecipeRecord {
     pub created_at: Ms,
     pub updated_at: Ms,
     pub seq: u64,
-    /// Open adjustments from earlier cooks, oldest first.
-    pub adjustments: Vec<Adjustment>,
+    /// Always empty. An app installed before cook-only adjustments were
+    /// removed requires the key to decode a sync, and would show a frozen
+    /// library until it updates itself.
+    #[serde(default)]
+    pub adjustments: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -247,21 +250,6 @@ pub struct Tag {
     pub description: Option<String>,
     /// Active recipes carrying the tag.
     pub count: u32,
-}
-
-/// What one cook changed, kept on the recipe until an agent folds it in or it
-/// is dismissed.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Adjustment {
-    pub id: String,
-    /// A step or ingredient id.
-    pub target: String,
-    /// The rendered text the cook saw before changing it.
-    pub original: String,
-    pub text: String,
-    pub session_id: String,
-    pub cooked_at: Ms,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -334,15 +322,6 @@ pub enum CookEventKind {
     Uncheck {
         target: String,
     },
-    /// Replaces the rendered text of a step or ingredient for this session.
-    Adjust {
-        target: String,
-        text: String,
-    },
-    /// Removes this session's adjustment of `target`.
-    Unadjust {
-        target: String,
-    },
     Note {
         text: String,
     },
@@ -365,12 +344,14 @@ pub enum CookEventKind {
         note: Option<String>,
     },
     /// Discards the session: it closes as abandoned at once, counts as no
-    /// cook, leaves no adjustments and drops its timers.
+    /// cook and drops its timers.
     Abandon {},
-    /// Closes an open adjustment record; valid on a finished session too.
-    DismissAdjustment {
-        id: String,
-    },
+    /// A kind this build does not have: one a newer build wrote, or one of
+    /// the retired `adjust`, `unadjust` and `dismissAdjustment`, which old
+    /// logs and an app not yet updated still hold. Every reader skips it and
+    /// the server never stores it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// `POST /api/cook`. Repeating a request with the same `id` returns the

@@ -15,10 +15,10 @@ use common::{COOKIES, Harness, LASAGNE, PICCATA, jpeg, post_json, upload};
 use omni_recipes::Recipes;
 use omni_recipes::archive::{BackupOutcome, verify_file};
 use omni_testkit::TestApp;
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// A library with every kind of row: revisions, tags, images, an inbox item
-/// of each state, a finished cook with adjustments, an active cook, a merge
+/// of each state, a finished cook with a note, an active cook, a merge
 /// and a change log.
 async fn populated() -> Harness {
     let h = Harness::new().await;
@@ -28,7 +28,7 @@ async fn populated() -> Harness {
     let piccata = h
         .ok(
             "recipes_create",
-            json!({ "document": common::doc(PICCATA), "tags": ["italian"], "sourceText": "Piccata\n4 tbsp butter", "notes": "Good." }),
+            json!({ "keepDietConflicts": true, "document": common::doc(PICCATA), "tags": ["italian"], "sourceText": "Piccata\n4 tbsp butter", "notes": "Good." }),
         )
         .await["id"]
         .as_str()
@@ -75,7 +75,7 @@ async fn populated() -> Harness {
         "recipes_cook_update",
         json!({ "sessionId": "cook_aaaaaaaa", "events": [
             { "type": "check", "target": "dredge" },
-            { "type": "adjust", "target": "sear", "text": "Two batches." },
+            { "type": "note", "text": "Two batches." },
             { "type": "finish", "note": "Fine." }
         ] }),
     )
@@ -86,7 +86,12 @@ async fn populated() -> Harness {
         .await;
     let mut twin = common::doc(LASAGNE);
     twin["title"] = json!("Lasagne (duplicate)");
-    let twin = h.ok("recipes_create", json!({ "document": twin })).await["id"]
+    let twin = h
+        .ok(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": twin }),
+        )
+        .await["id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -119,7 +124,7 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
     assert_eq!(verified.counts["recipes_recipe"], 4);
     assert_eq!(verified.counts["recipes_revision"], 5);
     assert_eq!(verified.counts["recipes_cook"], 2);
-    assert_eq!(verified.counts["recipes_adjustment"], 1);
+    assert!(verified.counts.get("recipes_adjustment").is_none());
     assert_eq!(verified.counts["recipes_inbox"], 3);
 
     // Restore into a second, empty store.
@@ -132,7 +137,7 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
         h.recipes.dump().await.unwrap(),
         restored_to.dump().await.unwrap(),
     );
-    assert_eq!(original.len(), 13);
+    assert_eq!(original.len(), 12);
     for (table, rows) in &original {
         assert_eq!(copy[table], *rows, "{table}");
         if table != "recipes_redirect" {
@@ -168,7 +173,6 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
     assert_eq!(found["total"], 1);
     assert_eq!(found["recipes"][0]["revision"], 2);
     assert_eq!(found["recipes"][0]["cookCount"], 1);
-    assert_eq!(found["recipes"][0]["openAdjustments"], 1);
     let history = call("recipes_history", json!({})).await;
     assert!(history["total"].as_u64().unwrap() >= 8);
     assert_eq!(restored_to.sync(None, None).await.unwrap().seq, seq);
@@ -199,6 +203,147 @@ async fn an_archive_restores_into_an_empty_library_table_for_table() {
     h.recipes.files().remove(&digest).unwrap();
     assert!(verify_file(&path, Some(h.recipes.dir())).is_err());
     assert!(verify_file(&path, None).is_ok());
+}
+
+/// An archive as a build before schema version 3 wrote it: it carries the
+/// `recipes_adjustment` table, `adjust` events in the cook log and change-log
+/// rows that mention adjustments.
+fn as_written_before_adjustments_were_retired(path: &std::path::Path) -> std::path::PathBuf {
+    use std::io::{Read as _, Write as _};
+
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(std::fs::File::open(path).unwrap())
+        .read_to_string(&mut text)
+        .unwrap();
+    let mut archive: Value = serde_json::from_str(&text).unwrap();
+    archive["schemaVersion"] = json!(2);
+    let piccata = archive["tables"]["recipes_cook"][0]["recipe_id"].clone();
+    archive["tables"]["recipes_adjustment"] = json!([{
+        "id": "adj_aaaaaaaa", "session_id": "cook_aaaaaaaa", "recipe_id": piccata,
+        "target": "sear", "original": "Sear the cutlets.", "text": "Two batches.",
+        "state": "open", "resolved_rev": null, "created_at": 5
+    }]);
+    let events = archive["tables"]["recipes_cook_event"]
+        .as_array_mut()
+        .unwrap();
+    let mut old = events
+        .iter()
+        .find(|event| event["session_id"] == "cook_aaaaaaaa")
+        .unwrap()
+        .clone();
+    old["seq"] = json!(99);
+    old["client_event_id"] = json!("old-adjust");
+    old["type"] = json!("adjust");
+    old["payload"] =
+        json!(json!({ "type": "adjust", "target": "sear", "text": "Two batches." }).to_string());
+    let at = events
+        .iter()
+        .rposition(|event| event["session_id"] == "cook_aaaaaaaa")
+        .unwrap();
+    events.insert(at + 1, old);
+    for change in archive["tables"]["recipes_change"].as_array_mut().unwrap() {
+        for side in ["before", "after"] {
+            let mut snapshot: Value = serde_json::from_str(change[side].as_str().unwrap()).unwrap();
+            if snapshot.get("own").is_some() {
+                snapshot["own"]["adjustments"] = json!({ "adj_aaaaaaaa": piccata });
+            } else if change["kind"] == "content" && side == "after" {
+                snapshot["resolved"] = json!(["adj_aaaaaaaa"]);
+            }
+            change[side] = json!(snapshot.to_string());
+        }
+    }
+    for table in ["recipes_adjustment", "recipes_cook_event", "recipes_change"] {
+        let rows = archive["tables"][table].clone();
+        archive["counts"][table] = json!(rows.as_array().unwrap().len());
+        archive["checksums"][table] =
+            json!(omni_recipes::db::sha256_hex(rows.to_string().as_bytes()));
+    }
+    let old_path = path.with_file_name("fond-old-schema.json.gz");
+    let mut encoder = flate2::write::GzEncoder::new(
+        std::fs::File::create(&old_path).unwrap(),
+        flate2::Compression::default(),
+    );
+    encoder.write_all(archive.to_string().as_bytes()).unwrap();
+    encoder.finish().unwrap();
+    old_path
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_archive_from_before_adjustments_were_retired_restores() {
+    let h = populated().await;
+    assert!(matches!(
+        h.recipes.backup().await.unwrap(),
+        BackupOutcome::Written { .. }
+    ));
+    let written = h.recipes.archive_files().unwrap()[0].clone();
+    let old = as_written_before_adjustments_were_retired(&written);
+    let verified = verify_file(&old, Some(h.recipes.dir())).unwrap();
+    assert_eq!(verified.counts["recipes_adjustment"], 1);
+
+    let other = TestApp::new().await;
+    let restored_to = Recipes::from_context(&other.ctx);
+    let restored = restored_to.restore(old).await.unwrap();
+    assert!(restored.counts.get("recipes_adjustment").is_none());
+    assert_eq!(restored.counts["recipes_cook"], 2);
+    let copy = restored_to.dump().await.unwrap();
+    assert!(copy.get("recipes_adjustment").is_none());
+    // The cook log is history and came back whole, the old event included.
+    let original = h.recipes.dump().await.unwrap();
+    assert_eq!(
+        copy["recipes_cook_event"].as_array().unwrap().len(),
+        original["recipes_cook_event"].as_array().unwrap().len() + 1
+    );
+    for table in ["recipes_recipe", "recipes_revision", "recipes_cook"] {
+        assert_eq!(copy[table], original[table], "{table}");
+    }
+
+    // The finished cook reads without its override, and the old change-log
+    // rows that mention adjustments can still be undone.
+    let tools = omni_recipes::mcp::tools(std::sync::Arc::new(restored_to.clone())).unwrap();
+    let call = |name: &'static str, arguments: Value| {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.meta.name == name)
+            .unwrap()
+            .clone();
+        async move {
+            let context = omni_mcp_kit::ToolContext {
+                call_id: "restore".to_owned(),
+                cancel: tokio_util::sync::CancellationToken::new(),
+            };
+            match tool.handler.call(arguments, context).await {
+                Ok(omni_mcp_kit::ToolOutput::Structured(map)) => Value::Object(map),
+                Ok(omni_mcp_kit::ToolOutput::Custom { structured, .. }) => {
+                    Value::Object(structured)
+                }
+                Err(error) => panic!("{name}: {error:?}"),
+            }
+        }
+    };
+    let session = call("recipes_cook_get", json!({ "sessionId": "cook_aaaaaaaa" })).await;
+    assert_eq!(session["session"]["state"], "finished");
+    assert_eq!(
+        session["session"]["notes"],
+        json!(["Two batches.", "Fine."])
+    );
+    let log = call("recipes_history", json!({ "limit": 100 })).await;
+    let change = |summary: &str| {
+        log["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|change| change["summary"].as_str().unwrap().starts_with(summary))
+            .unwrap_or_else(|| panic!("no change {summary:?} in {log}"))["changeId"]
+            .clone()
+    };
+    let unmerged = call("recipes_undo", json!({ "changeId": change("Merge ") })).await;
+    assert_eq!(unmerged["restored"], 2, "{unmerged}");
+    let unedited = call(
+        "recipes_undo",
+        json!({ "changeId": change("More parsley") }),
+    )
+    .await;
+    assert_eq!(unedited["revision"], 3, "{unedited}");
 }
 
 #[tokio::test(start_paused = true)]

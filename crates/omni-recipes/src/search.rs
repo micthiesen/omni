@@ -248,8 +248,6 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
             has_image: !images_of(conn, &row.id)?.is_empty(),
             cook_count: row.cook_count,
             last_cooked_on: row.last_cooked_at.map(|at| db::local_date(at, tz)),
-            open_adjustments: u32::try_from(db::open_adjustments(conn, &row.id)?.len())
-                .unwrap_or(u32::MAX),
             r#match: snippet
                 .map(|snippet| snippet.split_whitespace().collect::<Vec<_>>().join(" "))
                 .filter(|snippet| !snippet.is_empty()),

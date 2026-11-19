@@ -220,6 +220,4 @@ pub struct RecipesCookFinished {
     pub session_id: String,
     pub recipe_id: String,
     pub title: Option<String>,
-    /// Adjustments on the recipe that no revision has folded in yet.
-    pub open_adjustments: u32,
 }

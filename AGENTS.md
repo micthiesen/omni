@@ -517,6 +517,16 @@ the real write and rolls it back: it must change, announce and review nothing.
 A refused document lists every problem at once (`Report::refusal_text`).
 Tags come only from the registry (seven groups, nothing seeded).
 
+The household's standing rules are code (`omni-recipes/src/household.rs`, with the checks in
+`omni-recipe-format`'s `diet` and `measure`) and reach every agent through `recipes_guide`, the
+`diet` field of fetch and inbox results, and the tool descriptions. The diet is bivalve
+vegetarian: a write that introduces meat, fish or a hidden animal product is refused with
+`diet_conflict` unless `keepDietConflicts`, which is only for an ingredient the owner asked to
+keep; a conflict the recipe already had is a warning, and a revert or an app amount change never
+refuses. Amounts follow the measuring guideline (grams, spoons, counts, friendly numbers);
+off-grid amounts are `awkward_amount` warnings and never block. A stored amount reads exactly as
+written; only scaled amounts are reshaped (`measure::friendly`).
+
 Pages are fetched only through the `PageFetcher` port (unset is
 `[fetch_failed]`) and images only through the SSRF-guarded public client;
 both, and uploaded photos, are untrusted: typed by magic bytes, decoded through
@@ -541,10 +551,15 @@ taken from pages is untrusted and every tool that returns it says so.
 `RecipesPurge` writes a verified archive to `archives/purge` before it removes
 any recipe.
 
-Cooking never edits a recipe. A session is an append-only event log, each
-`clientEventId` applied once; finishing turns overrides into adjustment records
-that only a revision with `resolves` or a dismissal closes; an `abandon`
-event discards the session at once with no cook, adjustments or timer alerts. A timer alert is
+A cook session holds no recipe text of its own: it is an append-only event
+log (crossing off, notes, timers, `rebase`, finish, abandon), each
+`clientEventId` applied once, shown at a scale that never becomes a recipe
+change. A change made while cooking is a recipe revision (the app's amount
+change, an agent's `recipes_edit`) and a `rebase` event moves the session to
+it. The retired `adjust`, `unadjust` and `dismissAdjustment` events stay in
+old logs and every reader skips them; the app route accepts and drops them
+(`CookEventKind::Unknown`), never refuses a batch for one. An `abandon`
+event discards the session at once with no cook or timer alerts. A timer alert is
 reserved in `recipes_timer_alert` before it is sent and is never resent; with
 an app client connected it waits 30 seconds for the app to answer the timer.
 

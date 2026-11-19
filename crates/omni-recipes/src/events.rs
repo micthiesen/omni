@@ -53,7 +53,6 @@ pub fn cook_finished(
     session_id: &str,
     recipe_id: &str,
     title: &str,
-    open_adjustments: u32,
     at: i64,
 ) -> Option<EventPublication> {
     publication(
@@ -64,7 +63,6 @@ pub fn cook_finished(
             session_id: session_id.to_owned(),
             recipe_id: recipe_id.to_owned(),
             title: bounded_title(title),
-            open_adjustments,
         },
     )
 }

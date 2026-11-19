@@ -8,7 +8,6 @@ pub const CHANGE: &str = "chg_";
 pub const INBOX: &str = "inb_";
 pub const COOK: &str = "cook_";
 pub const IMAGE: &str = "img_";
-pub const ADJUSTMENT: &str = "adj_";
 
 /// A new random id with `prefix`.
 pub fn new_id(prefix: &str) -> String {
@@ -64,7 +63,7 @@ mod tests {
 
     #[test]
     fn ids_have_the_prefix_and_eight_base32_characters() {
-        for prefix in [RECIPE, CHANGE, INBOX, COOK, IMAGE, ADJUSTMENT] {
+        for prefix in [RECIPE, CHANGE, INBOX, COOK, IMAGE] {
             let id = new_id(prefix);
             assert!(is_id(&id, prefix), "{id}");
             assert_ne!(id, new_id(prefix));

@@ -14,6 +14,9 @@ use crate::store::{Store, use_store};
 pub struct AmountTarget {
     pub recipe: String,
     pub ingredient: String,
+    /// The cook session the sheet was opened from. It moves to the changed
+    /// recipe, and its scale is the one on screen.
+    pub session: Option<String>,
 }
 
 /// What the sheet would save, or why it cannot.
@@ -67,9 +70,13 @@ fn sentence(text: &str) -> String {
 
 /// Saves an amount and offers to put the old one back.
 fn save(store: Store, target: &AmountTarget, qty: f64, unit: Option<String>) {
-    let Some((old_qty, old_unit)) =
-        store.change_amount(&target.recipe, &target.ingredient, qty, unit)
-    else {
+    let Some((old_qty, old_unit)) = store.change_amount(
+        &target.recipe,
+        &target.ingredient,
+        qty,
+        unit,
+        target.session.as_deref(),
+    ) else {
         return;
     };
     let target = target.clone();
@@ -81,6 +88,7 @@ fn save(store: Store, target: &AmountTarget, qty: f64, unit: Option<String>) {
                 &target.ingredient,
                 old_qty,
                 old_unit.clone(),
+                target.session.as_deref(),
             );
         })),
     );
@@ -125,7 +133,15 @@ pub fn AmountSheet(open: RwSignal<bool>, target: RwSignal<Option<AmountTarget>>)
     });
     let scaled = move || {
         let target = target.get()?;
-        let factor = store.scale(&target.recipe);
+        let factor = target
+            .session
+            .as_ref()
+            .and_then(|id| {
+                store
+                    .sessions
+                    .with(|sessions| sessions.get(id).map(|session| session.scale))
+            })
+            .unwrap_or_else(|| store.scale(&target.recipe));
         #[allow(clippy::float_cmp)]
         if factor == 1.0 {
             return None;

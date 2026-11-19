@@ -526,7 +526,7 @@ test('archive and delete each offer an undo', async ({ page }) => {
   await expect(card(page, RECIPES.chart)).toBeVisible();
 });
 
-test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', async ({ page }) => {
+test('cook mode: cross off in all three tabs, recipe notes, timer, reload, finish', async ({ page }) => {
   await openRecipe(page, RECIPES.cook);
   await page.locator('[data-testid=cook]').click();
   await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
@@ -545,16 +545,30 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   const secondStep = await stepCard.getAttribute('data-step');
   await expect(page.locator('[data-testid=next]')).toContainText(/Next|last step|Nothing/);
 
-  // Adjust the step for this cook only.
-  const adjusted = `Adjusted by e2e ${Date.now()}`;
-  await page.locator('[data-testid=adjust]').click();
-  await page.getByLabel('Adjusted text').fill(adjusted);
-  await shot(page, 'cook-adjust');
-  await page.locator('[data-testid=save-adjust]').click();
-  await expect(page.locator('[data-testid=step-text]')).toHaveText(adjusted);
-  await expect(stepCard.locator('.adjusted .mark')).toBeVisible();
-  await stepCard.getByRole('button', { name: 'Original', exact: true }).click();
-  await expect(stepCard.locator('.orig')).not.toBeEmpty();
+  // The step reads as the recipe has it; nothing offers a change that is
+  // not saved to the recipe.
+  const stepText = await page.locator('[data-testid=step-text]').innerText();
+  await expect(page.locator('[data-testid=adjust]')).toHaveCount(0);
+  await expect(page.locator('.cook').getByRole('button', { name: /adjust/i })).toHaveCount(0);
+
+  // Recipe notes are one tap away, and they are the recipe's own notes.
+  await page.locator('[data-testid=recipe-notes]').click();
+  const notesSheet = page.locator('.sheet.open');
+  await expect(notesSheet.locator('h2')).toHaveText('Recipe notes');
+  const cookNotes = notesSheet.getByLabel('Notes');
+  const notesBefore = (await library(page)).find((recipe) => recipe.doc.title === RECIPES.cook).notes;
+  await expect(cookNotes).toHaveValue(notesBefore);
+  const notesAdded = `${notesBefore}\nNoted while cooking ${Date.now()}`.trim();
+  await cookNotes.fill(notesAdded);
+  await cookNotes.blur();
+  await shot(page, 'cook-recipe-notes');
+  await flushed(page);
+  const noted = (await library(page)).find((recipe) => recipe.doc.title === RECIPES.cook);
+  expect(noted.notes).toBe(notesAdded);
+  await cookNotes.fill(notesBefore);
+  await cookNotes.blur();
+  await flushed(page);
+  await notesSheet.getByRole('button', { name: 'Close' }).click();
 
   // Timer, when this step has a time.
   const timer = page.locator('[data-testid=timer]');
@@ -610,8 +624,10 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   // Everything is in the event log: a reload brings it all back.
   await flushed(page);
   await page.goto(cookUrl);
+  // The cook reopens in the view last read, which was the chart.
+  await page.getByRole('tab', { name: 'Steps' }).click();
   await expect(page.locator('.card-step')).toHaveAttribute('data-step', secondStep);
-  await expect(page.locator('[data-testid=step-text]')).toHaveText(adjusted);
+  await expect(page.locator('[data-testid=step-text]')).toHaveText(stepText);
   if (await page.locator('[data-testid=countdown]').count()) {
     await expect(page.locator('[data-testid=countdown]')).toHaveText(/^\d+:\d\d(:\d\d)?$/);
     await page.locator('.card-step').getByRole('button', { name: 'Cancel' }).click();
@@ -632,7 +648,7 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   test.skip(!!process.env.FOND_E2E_SKIP_FINISH, 'finishing a cook is switched off');
   await page.locator('[data-testid=finish]').click();
   const sheet = page.locator('.sheet.open');
-  await expect(sheet.locator('.adjusted-list')).toContainText(adjusted);
+  await expect(sheet).not.toContainText(/adjusted|as written/i);
   await sheet.getByPlaceholder('One line, optional').fill('e2e run');
   await sheet.locator('input[type=file]').setInputFiles({ name: 'dish.png', mimeType: 'image/png', buffer: tinyPng() });
   await shot(page, 'cook-finish');
@@ -646,13 +662,7 @@ test('cook mode: cross off in all three tabs, adjust, timer, reload, finish', as
   await expect.poll(() => photos.last().getAttribute('src')).toMatch(/^\/img\/[0-9a-f]{64}\/full\.jpg$/);
   const lastPhoto = await photos.last().getAttribute('src');
   expect((await page.request.get(lastPhoto)).headers()['content-type']).toBe('image/jpeg');
-  // The adjustment is now a "Last time" callout on its step; dismiss it again.
-  const callout = page.locator('.last-time').filter({ hasText: adjusted });
-  await expect(callout).toBeVisible();
-  await callout.scrollIntoViewIfNeeded();
-  await shot(page, 'recipe-last-time');
-  await callout.getByRole('button', { name: 'Dismiss' }).click();
-  await expect(callout).toHaveCount(0);
+  await expect(page.locator('main.recipe')).not.toContainText('Last time');
   await flushed(page);
   await page.goto('/');
   await expect(page.locator('.cooking-card').filter({ hasText: RECIPES.cook })).toHaveCount(0);
@@ -798,37 +808,97 @@ test.describe('changing an amount', () => {
     expect((await amountOf(page, RECIPES.amount, RECIPES.ingredient)).revision).toBe(before.revision);
   });
 
-  test('from cook mode: Adjust is this cook, Change amount is the recipe', async ({ page }) => {
+  test('from cook mode: the amount is saved to the recipe, cook mode shows it at once, and Undo restores it', async ({ page }) => {
     await openRecipe(page, RECIPES.amount);
-    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
+    // The cook runs at double; the scale is how it is shown, never what is saved.
+    await page.locator('.scale .seg button', { hasText: /^2$/ }).click();
     const before = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    const recipeLine = page.locator(`.list .ingredients li[data-ingredient="${RECIPES.ingredient}"] .txt`);
+    const recipeLineBefore = await recipeLine.innerText();
     test.skip((await page.locator('[data-testid=cook]').innerText()).trim() !== 'Cook', 'a cook of this recipe is open');
     await page.locator('[data-testid=cook]').click();
     await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+    const sessionId = page.url().split('/').pop();
+    const session = async () => (await page.request.get(`/api/cook/${sessionId}`)).json();
+
+    // The step view reaches the same sheet for the ingredients its step uses.
+    for (let n = 0; n < 12 && !(await page.locator('[data-testid=step-amounts]').count()); n += 1) {
+      await page.getByRole('button', { name: 'Following step' }).click();
+    }
+    await page.locator('[data-testid=step-amounts]').click();
+    const choice = page.locator('.sheet.open [data-testid=change-amount]');
+    if (await choice.count()) await choice.first().click();
+    await expect(page.locator('.sheet.open [data-testid=amount-note]')).toContainText('This changes the recipe from now on');
+    await page.locator('.sheet.open').getByRole('button', { name: 'Cancel' }).click();
+
     await page.getByRole('tab', { name: 'Gather' }).click();
     const row = page.locator('.gather li').filter({ has: page.locator(`.check[data-target="${RECIPES.ingredient}"]`) });
-    await row.getByRole('button', { name: 'Adjust' }).click();
-    const adjust = page.locator('.sheet.open');
-    await expect(adjust).toContainText('Adjust is for this cook only');
-    await expect(adjust).toContainText('Or change the recipe from now on');
-    await shot(page, 'cook-adjust-or-change');
-    await adjust.locator('[data-testid=change-amount]').click();
+    const line = row.locator('.check .txt');
+    const lineBefore = await line.innerText();
+    await row.locator('[data-testid=edit-amount]').click();
     const sheet = page.locator('.sheet.open');
+    await expect(sheet).toContainText('This changes the recipe from now on');
+    await expect(sheet.locator('[data-testid=amount-scaled]')).toContainText('as written');
     await expect(sheet.locator('[data-testid=amount-qty]')).toHaveValue(String(before.qty));
     await sheet.getByRole('button', { name: '2×' }).click();
+    await shot(page, 'cook-change-amount');
     await sheet.locator('[data-testid=amount-save]').click();
+
+    // Cook mode shows the new amount at once, with nothing to switch to.
+    await expect(line).not.toHaveText(lineBefore);
+    await expect(page.locator('[data-testid=outdated]')).toHaveCount(0);
     await expect(page.locator('[data-testid=toast]')).toContainText('Amount changed');
+    await shot(page, 'cook-amount-changed');
     await flushed(page);
+    // It is a new revision of the recipe, and the session is on it.
     const saved = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
     expect(saved.qty).toBe(before.qty * 2);
-    // The cook keeps the revision it started on and is told there is a newer one.
-    await expect(page.locator('.cook')).toContainText(/updated since you started/i);
-    // Put the amount back and leave nothing cooking.
+    expect(saved.revision).toBe(before.revision + 1);
+    expect((await session()).revision).toBe(saved.revision);
+    await expect(page.locator('[data-testid=outdated]')).toHaveCount(0);
+
+    // Undo is one more revision, and the cook follows it back.
     await page.locator('[data-testid=toast]').getByRole('button', { name: 'Undo' }).click();
+    await expect(line).toHaveText(lineBefore);
     await flushed(page);
-    expect((await amountOf(page, RECIPES.amount, RECIPES.ingredient)).qty).toBe(before.qty);
+    const undone = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(undone.qty).toBe(before.qty);
+    expect(undone.revision).toBe(before.revision + 2);
+    expect((await session()).revision).toBe(undone.revision);
+
+    // Changed again and left open: the recipe page shows what cook mode saved,
+    // and a reload of the cook still does.
+    await row.locator('[data-testid=edit-amount]').click();
+    await page.locator('.sheet.open').getByRole('button', { name: '2×' }).click();
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(line).not.toHaveText(lineBefore);
+    const lineAfter = await line.innerText();
+    await flushed(page);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Gather' }).click();
+    await expect(line).toHaveText(lineAfter);
+    await page.locator('[data-testid=leave]').click();
+    await page.locator('[data-testid=leave-keep]').click();
+    await expect(page.locator('main.recipe h1')).toHaveText(RECIPES.amount);
+    await expect(recipeLine).not.toHaveText(recipeLineBefore);
+
+    // Put the amount back from the recipe page; the open cook moves with it.
+    await page.locator(`li[data-ingredient="${RECIPES.ingredient}"] [data-testid=edit-amount]`).click();
+    await page.locator('.sheet.open [data-testid=amount-qty]').fill(String(before.qty));
+    await page.locator('.sheet.open [data-testid=amount-save]').click();
+    await expect(recipeLine).toHaveText(recipeLineBefore);
+    await flushed(page);
+    const restored = await amountOf(page, RECIPES.amount, RECIPES.ingredient);
+    expect(restored.qty).toBe(before.qty);
+    expect(restored.unit).toBe(before.unit);
+    expect((await session()).revision).toBe(restored.revision);
+    await page.locator('[data-testid=cook]').click();
+    await expect(page).toHaveURL(new RegExp(`/cook/${sessionId}$`));
+    await page.getByRole('tab', { name: 'Gather' }).click();
+    await expect(line).toHaveText(lineBefore);
     await discardCook(page);
     await flushed(page);
+    await page.locator('.scale .seg button', { hasText: /^1$/ }).click();
   });
 
   test('offline: the change shows at once and reaches the server on reconnect', async ({ page, context }) => {

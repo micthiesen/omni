@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{COOKIES, ENCHILADAS, Harness, LASAGNE, PICCATA, doc, jpeg};
+use common::{COOKIES, ENCHILADAS, Harness, LASAGNE, PICCATA, doc, jpeg, only_kept_diet_conflicts};
 use omni_ai::{ContentPart, GenerateResponse, ModelRole};
 use omni_http::public::PublicHttpClient;
 use omni_runtime::AppContext;
@@ -164,7 +164,7 @@ async fn a_url_import_becomes_a_recipe_in_two_calls() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": web_piccata(), "tags": ["main", "italian"], "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": web_piccata(), "tags": ["main", "italian"], "fromInbox": item }),
         )
         .await;
     assert_eq!(created["saved"], true);
@@ -175,7 +175,7 @@ async fn a_url_import_becomes_a_recipe_in_two_calls() {
         created["time"],
         json!({ "activeMin": 25, "totalMin": 25, "complete": true })
     );
-    assert_eq!(created["warnings"], json!([]));
+    assert!(only_kept_diet_conflicts(&created["warnings"]));
     let fidelity = &created["fidelity"];
     assert_eq!(fidelity["checked"], true);
     assert_eq!(fidelity["sourceIngredientLines"], 11);
@@ -211,7 +211,7 @@ async fn a_url_import_becomes_a_recipe_in_two_calls() {
     let again = h
         .err(
             "recipes_create",
-            json!({ "document": web_piccata(), "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": web_piccata(), "fromInbox": item }),
         )
         .await;
     assert!(again.starts_with("[duplicate_source]"), "{again}");
@@ -219,7 +219,10 @@ async fn a_url_import_becomes_a_recipe_in_two_calls() {
     let mut retitled = web_piccata();
     retitled["title"] = json!("Piccata Again");
     let by_url = h
-        .err("recipes_create", json!({ "document": retitled }))
+        .err(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": retitled }),
+        )
         .await;
     assert!(
         by_url.starts_with("[duplicate_source] a recipe from this source URL"),
@@ -233,7 +236,7 @@ async fn a_url_import_becomes_a_recipe_in_two_calls() {
     let allowed = h
         .ok(
             "recipes_create",
-            json!({ "document": retitled, "allowDuplicate": true }),
+            json!({ "keepDietConflicts": true, "document": retitled, "allowDuplicate": true }),
         )
         .await;
     assert_eq!(allowed["saved"], true);
@@ -355,7 +358,7 @@ async fn pasted_text_is_stored_as_the_source_and_compared() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "sourceText": PASTED, "notes": "Mum's version." }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "sourceText": PASTED, "notes": "Mum's version." }),
         )
         .await;
     let fidelity = &created["fidelity"];
@@ -383,7 +386,10 @@ async fn pasted_text_is_stored_as_the_source_and_compared() {
 
     // Without a source there is nothing to compare, and nothing is reviewed.
     let bare = h
-        .ok("recipes_create", json!({ "document": doc(COOKIES) }))
+        .ok(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": doc(COOKIES) }),
+        )
         .await;
     assert_eq!(
         bare["fidelity"],
@@ -395,7 +401,7 @@ async fn pasted_text_is_stored_as_the_source_and_compared() {
     let both = h
         .err(
             "recipes_create",
-            json!({ "document": doc(LASAGNE), "sourceText": "x", "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": doc(LASAGNE), "sourceText": "x", "fromInbox": item }),
         )
         .await;
     assert!(both.starts_with("[validation]"), "{both}");
@@ -427,9 +433,12 @@ async fn the_four_sample_recipes_render_byte_for_byte() {
         ),
     ] {
         let created = h
-            .ok("recipes_create", json!({ "document": doc(json) }))
+            .ok(
+                "recipes_create",
+                json!({ "keepDietConflicts": true, "document": doc(json) }),
+            )
             .await;
-        assert_eq!(created["warnings"], json!([]));
+        assert!(only_kept_diet_conflicts(&created["warnings"]));
         assert_eq!(created["text"].as_str().unwrap(), list);
         let id = created["id"].as_str().unwrap();
         let text = h
@@ -450,7 +459,10 @@ async fn the_four_sample_recipes_render_byte_for_byte() {
 
     // The exact same document again is a duplicate: a retried create is harmless.
     let retried = h
-        .err("recipes_create", json!({ "document": doc(PICCATA) }))
+        .err(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA) }),
+        )
         .await;
     assert!(
         retried.starts_with("[duplicate_source] this exact document"),
@@ -475,7 +487,7 @@ async fn the_model_review_reports_issues_and_never_blocks_a_save() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "sourceText": PASTED }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "sourceText": PASTED }),
         )
         .await;
     assert_eq!(
@@ -527,7 +539,7 @@ async fn the_model_review_reports_issues_and_never_blocks_a_save() {
         let replaced = h
             .ok(
                 "recipes_replace",
-                json!({ "id": id, "expectedRevision": revision, "summary": "Reword", "document": document }),
+                json!({ "id": id, "expectedRevision": revision, "summary": "Reword", "keepDietConflicts": true, "document": document }),
             )
             .await;
         revision += 1;
@@ -545,7 +557,7 @@ async fn the_model_review_reports_issues_and_never_blocks_a_save() {
     let dry = |review: Option<bool>| {
         let mut arguments = json!({
             "id": id, "expectedRevision": revision, "summary": "x",
-            "document": doc(PICCATA), "dryRun": true,
+            "keepDietConflicts": true, "document": doc(PICCATA), "dryRun": true,
         });
         if let Some(review) = review {
             arguments["review"] = json!(review);
@@ -570,7 +582,7 @@ async fn the_model_review_reports_issues_and_never_blocks_a_save() {
             "recipes_replace",
             json!({
                 "id": id, "expectedRevision": revision, "summary": "Back to the original",
-                "document": doc(PICCATA), "review": false,
+                "keepDietConflicts": true, "document": doc(PICCATA), "review": false,
             }),
         )
         .await;
@@ -604,7 +616,7 @@ async fn a_photo_source_is_reviewed_from_the_photos() {
     let created = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "fromInbox": item }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "fromInbox": item }),
         )
         .await;
     // Nothing a program can compare; the model looked at the photos.

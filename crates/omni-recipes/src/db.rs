@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
-use crate::api::{AdjustmentInfo, ImageInfo, TimeInfo};
+use crate::api::{ImageInfo, TimeInfo};
 use crate::error::{R, corrupt, not_found, reject, sql};
 use crate::ids;
 use crate::schema::{meta_u64, set_meta};
@@ -419,70 +419,6 @@ pub fn image_infos(row: &RecipeRow, images: &[ImageRow]) -> Vec<ImageInfo> {
             cover: cover.as_deref() == Some(image.id.as_str()),
         })
         .collect()
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AdjustmentRow {
-    pub id: String,
-    pub session_id: String,
-    pub recipe_id: String,
-    pub target: String,
-    pub original: String,
-    pub text: String,
-    pub state: String,
-    pub created_at: i64,
-}
-
-pub fn open_adjustments(conn: &Connection, id: &str) -> R<Vec<AdjustmentRow>> {
-    let mut statement = conn
-        .prepare_cached(
-            "SELECT id, session_id, recipe_id, target, original, text, state, created_at
-             FROM recipes_adjustment WHERE recipe_id = ?1 AND state = 'open'
-             ORDER BY created_at, id",
-        )
-        .map_err(sql)?;
-    let rows = statement
-        .query_map(params![id], |row| {
-            Ok(AdjustmentRow {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                recipe_id: row.get(2)?,
-                target: row.get(3)?,
-                original: row.get(4)?,
-                text: row.get(5)?,
-                state: row.get(6)?,
-                created_at: row.get(7)?,
-            })
-        })
-        .map_err(sql)?;
-    rows.collect::<Result<_, _>>().map_err(sql)
-}
-
-/// The open adjustments of `recipe` as tools show them, each flagged when
-/// its target is no longer in the newest revision.
-pub fn adjustment_infos(
-    conn: &Connection,
-    recipe: &RecipeRow,
-    tz: &jiff::tz::TimeZone,
-) -> R<Vec<AdjustmentInfo>> {
-    let rows = open_adjustments(conn, &recipe.id)?;
-    if rows.is_empty() {
-        return Ok(Vec::new());
-    }
-    let head = doc_at(conn, &recipe.id, recipe.head_rev)?;
-    let ix = omni_recipe_format::Index::build(&head);
-    Ok(rows
-        .iter()
-        .map(|row| AdjustmentInfo {
-            id: row.id.clone(),
-            target: row.target.clone(),
-            original: row.original.clone(),
-            text: row.text.clone(),
-            session_id: row.session_id.clone(),
-            cooked_on: local_date(row.created_at, tz),
-            target_missing: ix.step(&row.target).is_none() && ix.ingredient(&row.target).is_none(),
-        })
-        .collect())
 }
 
 /// Rewrites the recipe's full-text row from its head revision, tags and notes.

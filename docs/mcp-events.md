@@ -279,12 +279,11 @@ finished it, or it closed after 18 idle hours with at least half its steps
 done. An abandoned session does not fire.
 
 - Arguments: none.
-- Payload: `sessionId`, `recipeId`, `title` (the recipe's), `openAdjustments`
-  (changes cooks made that no revision has folded in yet).
+- Payload: `sessionId`, `recipeId`, `title` (the recipe's).
 - Dedup key: `cook:<sessionId>`.
 - Source: `crates/omni-recipes/src/cook.rs`, after the finish commits. A crash
   in between loses the event; the cook log holds the cook.
-- Polling: `recipes_cook_get` (a recipe's cook log and open adjustments).
+- Polling: `recipes_cook_get` (a recipe's cook log).
 
 ## Other servers' events
 

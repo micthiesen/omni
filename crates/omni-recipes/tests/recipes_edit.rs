@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{Harness, PICCATA, doc};
+use common::{Harness, PICCATA, doc, only_kept_diet_conflicts};
 use serde_json::{Value, json};
 
 /// The edit of the design's worked example: no wine, more stock, double the
@@ -72,7 +72,7 @@ async fn the_piccata_edit_writes_one_revision_with_the_exact_change_list() {
         .await;
     assert_eq!(edited["saved"], true);
     assert_eq!(edited["revision"], 2);
-    assert_eq!(edited["warnings"], json!([]));
+    assert!(only_kept_diet_conflicts(&edited["warnings"]));
     assert_eq!(
         edited["changes"],
         json!([
@@ -127,11 +127,11 @@ async fn a_dry_run_returns_the_same_result_and_saves_nothing() {
     for (tool, arguments) in [
         (
             "recipes_create",
-            json!({ "document": doc(common::COOKIES), "dryRun": true }),
+            json!({ "keepDietConflicts": true, "document": doc(common::COOKIES), "dryRun": true }),
         ),
         (
             "recipes_replace",
-            json!({ "id": id, "expectedRevision": 2, "summary": "x", "document": doc(PICCATA), "dryRun": true }),
+            json!({ "id": id, "expectedRevision": 2, "summary": "x", "keepDietConflicts": true, "document": doc(PICCATA), "dryRun": true }),
         ),
         (
             "recipes_revert",
@@ -158,8 +158,13 @@ async fn a_dry_run_returns_the_same_result_and_saves_nothing() {
 #[tokio::test(start_paused = true)]
 async fn a_broken_draft_is_refused_with_every_problem_at_once() {
     let h = Harness::new().await;
+    // The household diet is not this test's subject.
+    let mut draft = broken_draft();
+    for (ingredient, name) in [(0, "cauliflower"), (7, "vegetable stock")] {
+        draft["components"][0]["ingredients"][ingredient]["name"] = json!(name);
+    }
     let refused = h
-        .err("recipes_create", json!({ "document": broken_draft() }))
+        .err("recipes_create", json!({ "document": draft.clone() }))
         .await;
     // Byte for byte the design prototype's refusal.
     assert_eq!(
@@ -171,7 +176,7 @@ async fn a_broken_draft_is_refused_with_every_problem_at_once() {
     let dry = h
         .ok(
             "recipes_create",
-            json!({ "document": broken_draft(), "dryRun": true }),
+            json!({ "document": draft, "dryRun": true }),
         )
         .await;
     assert_eq!(dry["saved"], false);
@@ -283,7 +288,7 @@ async fn replace_revert_history_and_diff() {
         .ok(
             "recipes_replace",
             json!({
-                "id": id, "expectedRevision": 1, "summary": "Retitle for six", "document": rewritten,
+                "id": id, "expectedRevision": 1, "summary": "Retitle for six", "keepDietConflicts": true, "document": rewritten,
             }),
         )
         .await;
@@ -339,7 +344,7 @@ async fn replace_revert_history_and_diff() {
     let same = h
         .ok(
             "recipes_replace",
-            json!({ "id": id, "expectedRevision": 3, "summary": "Nothing", "document": doc(PICCATA) }),
+            json!({ "id": id, "expectedRevision": 3, "summary": "Nothing", "keepDietConflicts": true, "document": doc(PICCATA) }),
         )
         .await;
     assert_eq!(same["saved"], false);
@@ -372,7 +377,7 @@ async fn views_scale_without_changing_the_recipe() {
         .await;
     let text = scaled["text"].as_str().unwrap();
     assert!(text.contains("- 750 g boneless, skinless chicken breasts"));
-    assert!(text.contains("270 ml (1⅛ cups) chicken stock"));
+    assert!(text.contains("270 ml (1 cup + 2 tbsp) chicken stock"));
     assert!(text.contains("the juice of 1½ lemons"));
     assert_eq!(scaled["scale"], 1.5);
     let six = h

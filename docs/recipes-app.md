@@ -111,9 +111,15 @@ Leaving cook mode with the close button asks what to do with the cook:
 
 **Amounts.** The one edit of a recipe the app makes is the amount of an
 ingredient (`ui/amount.rs`). Each ingredient line with an amount has a pencil;
-in cook mode the Adjust sheet of a Gather line or a step offers "Change
-amount of … in recipe…" below the session-only adjustment, and says which is
-which. The sheet takes a quantity ("2", "1.5", "1 1/2", "1½";
+in cook mode the pencil is on each Gather line with an amount, and a step
+offers "Amounts" for the ingredients it uses. Cook mode has nothing
+that changes a recipe for one cook only: the same sheet saves the same
+revision, and the open session moves to it at once (a `rebase` event queued
+behind the amount, `Store::change_amount`), so the new amount shows at the
+session's scale without the "updated since you started" notice. Undo sends
+the old amount back and the session follows again. A step also has "Recipe
+notes", the recipe's notes field in a sheet, for anything that is not an
+amount. The sheet takes a quantity ("2", "1.5", "1 1/2", "1½";
 `omni_recipe_format::parse_qty`), a unit from the known units, "(count)" or
 the ingredient's own, and the quick buttons ½×, ¾×, 1¼× and 2×; it previews
 the ingredient line and saves only what the format's validator accepts. The
@@ -132,8 +138,25 @@ wraps, and never narrower than 64px or its longest word; the ingredient
 column takes what is left, at least 130px, and when there is still room the
 steps share it, so a small chart fills the width. Only when even the
 narrowest columns do not fit does the block get wider than the screen and
-scroll sideways under the sticky ingredient column. On a short landscape
-screen Cook moves into the top bar so it never covers the chart.
+scroll sideways under the sticky ingredient column. Columns are rounded to
+whole pixels in `ui/chart.rs`. On a short landscape screen Cook moves into
+the top bar so it never covers the chart.
+
+**Chart lines.** Which lines the chart draws, which it leaves out, what is
+pinned while it scrolls and the WebKit behaviour the CSS works around are in
+`docs/fond/chart-borders.md`. In short: strong lines frame a block and every
+step, light lines separate the inputs of one step, an input that waits for a
+later step has no line inside it, and the pinned ingredient column gets an
+edge and a shadow of its own only while the block is scrolled sideways.
+Change that note with the chart's CSS.
+
+**View.** The recipe page reads as Steps or as Chart. The one chosen last is
+kept on the device (`platform/prefs.rs`, localStorage key `fond.view`) and
+every recipe opens in it; with nothing stored a recipe opens as Steps. Cook
+mode shares the choice: it opens on Chart when that was chosen last and on
+Steps otherwise, and its Steps and Chart tabs store the choice too. Gather is
+never stored. Storage that is blocked or throws reads as nothing stored and
+drops the write, so the toggle still works for that page.
 
 **Images.** `/img/*` and `/src/*` are immutable and cached by the service
 worker, cache-first, in `fond-img-v1`. After each sync the page asks the
@@ -203,20 +226,24 @@ FOND_DIST=../dist npx playwright test
 The mock server (Python standard library only) implements the contract in
 memory, seeded with the four golden recipes of `omni-recipe-format` and the
 preview seed's small three-step recipe, and has
-`/__mock/*` helpers to play an agent (`adjust`, `revise`, `import`, `reset`).
+`/__mock/*` helpers to play an agent (`note`, `revise`, `import`, `reset`).
 
 The browser tests run in WebKit at iPhone size and cover the library, search,
 the tag filter, both recipe views (asserting `rowspan`/`colspan` and that
 every chart table is tiled), the chart of every recipe in the library in the
 recipe view and in cook mode (no vertical or rotated text, no label that does
 not fit or breaks inside a word, a table that fills its container unless it
-scrolls), scaling, notes, archive and delete with undo, cook mode in all three
-tabs with adjust, timer, reload and finish, leaving and discarding a cook,
+scrolls), the chart's lines and pinned column at several sideways scroll
+positions (`chart-borders.spec.js`), the remembered view
+(`view-preference.spec.js`), scaling, notes, archive and delete with undo, cook mode in all three
+tabs with recipe notes, timer, reload and finish, leaving and discarding a cook,
 changing an amount (recipe view, scaled page, cook mode, offline), the inbox
 upload, the manifest and icons, and the app offline with writes sent on
 reconnect. `mock-only.spec.js` adds what needs the mock (it runs when
 `FOND_DIST` names the served dist directory): the update flow, a recipe revised
-during a cook, an agent's mid-cook adjustment, the "While … runs" offers, the
+during a cook, an agent's note, the retired adjustment events of an app not
+yet updated, the absence of any cook-only wording in the built app, the
+"While … runs" offers, the
 server-pinned session document, and an imported inbox item.
 The rest take the server from `FOND_BASE_URL`, so the same suite runs against
 a real Omni:
@@ -243,4 +270,6 @@ discard. The amount tests put the amount back, but each change and each undo
 is a revision in the recipe's history: `FOND_E2E_SKIP_AMOUNT=1` skips them,
 and `FOND_RECIPE_AMOUNT` and `FOND_AMOUNT_INGREDIENT` name the recipe and the
 ingredient id they edit (an ingredient whose amount the step text quotes). `FOND_SHOTS=<dir>` writes light
-and dark screenshots of each screen.
+and dark screenshots of each screen. `FOND_CHART_SHOTS=<dir>` writes every
+chart block of every recipe at each sideways scroll position, in the recipe
+view and in cook mode.

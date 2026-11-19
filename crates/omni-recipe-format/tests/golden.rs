@@ -371,7 +371,7 @@ fn a_stored_amount_reads_exactly_and_only_a_scaled_one_is_rounded() {
         "{scaled}"
     );
     assert!(
-        scaled.contains("- 170 ml (1⅛ cups) chicken stock"),
+        scaled.contains("- 170 ml (1 cup + 2 tbsp) chicken stock"),
         "{scaled}"
     );
     assert!(

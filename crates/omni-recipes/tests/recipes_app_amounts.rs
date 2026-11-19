@@ -333,8 +333,8 @@ async fn a_change_made_against_an_older_revision_applies_only_to_an_unmoved_amou
         "the agent's edit stays"
     );
 
-    // A session cooking the older revision keeps the document it pinned, and
-    // a cook's open adjustments are untouched.
+    // A session cooking the older revision keeps the document it pinned
+    // until a rebase moves it.
     let start =
         json!({ "id": "cook_amount01", "recipeId": id, "revision": 3, "scale": 1, "at": 1 });
     assert_eq!(post_json(&router, "/api/cook", &start).await.status, 200);

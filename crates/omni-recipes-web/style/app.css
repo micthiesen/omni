@@ -19,6 +19,7 @@
   --warn-ink: #6b4a0c;
   --danger: #a8321f;
   --shadow: 0 1px 2px rgb(60 40 20 / 8%), 0 6px 18px rgb(60 40 20 / 8%);
+  --chart-shade: rgb(60 40 20 / 16%);
   --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --safe-t: env(safe-area-inset-top, 0px);
@@ -46,6 +47,7 @@
     --warn-ink: #f2d58d;
     --danger: #ef8a76;
     --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 22px rgb(0 0 0 / 35%);
+    --chart-shade: rgb(0 0 0 / 45%);
   }
 }
 
@@ -315,20 +317,6 @@ img {
   color: var(--muted);
   font-size: 13.5px;
   font-weight: 400;
-}
-
-.recipe-change {
-  display: grid;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-.recipe-change .btn {
-  justify-content: flex-start;
-  padding: 10px 16px;
-  line-height: 1.3;
-  text-align: left;
 }
 
 .ingredients .line {
@@ -1166,24 +1154,6 @@ body:has(.sheet.open) .stack {
   font-weight: 700;
 }
 
-.last-time {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 4px 6px 4px 12px;
-  border-left: 3px solid var(--accent);
-  border-radius: 0 10px 10px 0;
-  background: var(--accent-soft);
-  font-size: 0.92em;
-  font-style: normal;
-}
-
-.last-time p {
-  flex: 1;
-  padding: 6px 0;
-}
-
 .need ul {
   display: flex;
   flex-wrap: wrap;
@@ -1198,8 +1168,7 @@ body:has(.sheet.open) .stack {
   font-size: 15px;
 }
 
-.notes textarea,
-.adjust-text {
+.notes textarea {
   display: block;
   width: 100%;
   min-height: 96px;
@@ -1210,11 +1179,6 @@ body:has(.sheet.open) .stack {
   background: var(--raised);
   line-height: 1.45;
   resize: none;
-}
-
-.adjust-text {
-  margin-top: 0;
-  min-height: 150px;
 }
 
 .disclose {
@@ -1328,6 +1292,12 @@ body:has(.sheet.open) .stack {
   text-transform: uppercase;
 }
 
+/* The lines and the pinned column follow docs/fond/chart-borders.md. */
+
+.chart-frame {
+  position: relative;
+}
+
 /* It bleeds into the right gutter only: the sticky ingredient column must sit
    on the scroller's own left edge, and padding there would show the steps
    sliding past beside it. */
@@ -1338,13 +1308,20 @@ body:has(.sheet.open) .stack {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Column widths come from the <col> elements (logic::chart_widths). */
+/* Column widths come from the <col> elements (logic::chart_widths), in whole
+   pixels. The line height is whole too, so every row is: with 17.5px lines
+   the horizontal rules land on half pixels and come out uneven on a 3x
+   screen. */
 .chart {
   table-layout: fixed;
   border-spacing: 0;
+  /* Separate, never collapse: a collapsed border belongs to the table grid,
+     so WebKit leaves it behind when a sticky cell moves. Each line is drawn
+     by exactly one cell: its right and its bottom, plus the frame's top on
+     the first row and its left on the ingredient column. */
   border-collapse: separate;
   font-size: 14px;
-  line-height: 1.25;
+  line-height: 18px;
 }
 
 .chart td {
@@ -1360,6 +1337,7 @@ body:has(.sheet.open) .stack {
   border-top: 1px solid var(--line-strong);
 }
 
+/* Opaque, so nothing shows through while steps pass under it. */
 .chart td.lead {
   position: sticky;
   left: 0;
@@ -1367,13 +1345,41 @@ body:has(.sheet.open) .stack {
   border-left: 1px solid var(--line-strong);
 }
 
+/* Inputs of one step: a lighter line than the one that ends the step. */
+.chart td.same-step {
+  border-bottom-color: var(--line);
+}
+
+/* An input that waits for a later step is one cell drawn as a pinned label
+   and an empty stretch: no line between the two. */
 .chart td.fill {
   padding: 0;
-  border-left: 0;
 }
 
 .chart td.lead:has(+ .fill) {
   border-right: 0;
+}
+
+/* The pinned column's own edge, shown only while the chart is scrolled
+   sideways: one line down the whole block (over the last pixel of the
+   column, where the unsplit rows already have theirs) and a shadow on what
+   passes under it. */
+.chart-edge {
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  z-index: 2;
+  width: 9px;
+  background:
+    linear-gradient(var(--line-strong), var(--line-strong)) left / 1px 100% no-repeat,
+    linear-gradient(to right, var(--chart-shade), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.chart-block.scrolled .chart-edge {
+  opacity: 1;
 }
 
 .chart td.step {
@@ -1418,6 +1424,21 @@ body:has(.sheet.open) .stack {
 .chart td.ready {
   box-shadow: inset 0 0 0 2px var(--accent);
   background: var(--accent-soft);
+}
+
+/* One ring around a split cell, not one around each half. */
+.chart td.lead.ready:has(+ .fill) {
+  box-shadow:
+    inset 0 2px 0 var(--accent),
+    inset 0 -2px 0 var(--accent),
+    inset 2px 0 0 var(--accent);
+}
+
+.chart td.fill.ready {
+  box-shadow:
+    inset 0 2px 0 var(--accent),
+    inset 0 -2px 0 var(--accent),
+    inset -2px 0 0 var(--accent);
 }
 
 /* --- Cook mode ----------------------------------------------------------- */
@@ -1587,9 +1608,14 @@ body:has(.sheet.open) .stack {
   flex: 1;
 }
 
+.step-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .card-actions {
   display: grid;
-  grid-template-columns: auto 1fr;
   gap: 10px;
 }
 
@@ -1605,33 +1631,6 @@ body:has(.sheet.open) .stack {
   text-align: center;
 }
 
-.adjusted {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  font-size: 15px;
-}
-
-.adjusted .mark {
-  padding: 2px 9px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.orig {
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--muted);
-  font-size: 17px;
-}
-
 .gather li {
   border-bottom: 1px solid var(--line);
 }
@@ -1643,12 +1642,6 @@ body:has(.sheet.open) .stack {
 
 .gather li.from-above {
   padding: 12px 0;
-}
-
-.gather li > .adjusted,
-.gather li > .orig,
-.gather li > .last-time {
-  margin: 0 0 10px 42px;
 }
 
 .check {
@@ -1684,13 +1677,6 @@ body:has(.sheet.open) .stack {
 .check.done .txt {
   color: var(--muted);
   text-decoration: line-through;
-}
-
-.adjusted-list {
-  display: grid;
-  gap: 6px;
-  padding-left: 20px;
-  list-style: disc;
 }
 
 .field {

@@ -3,8 +3,8 @@
 //! original of a recipe and the inbox list.
 
 use omni_api::fond::{
-    Adjustment, ClientOp, ClientOpKind, ImageInfo, InboxItem, InboxList, OpResult, OpsResponse,
-    Original, RecipeRecord, RecipeState, SourceRef, SyncResponse, Tag,
+    ClientOp, ClientOpKind, ImageInfo, InboxItem, InboxList, OpResult, OpsResponse, Original,
+    RecipeRecord, RecipeState, SourceRef, SyncResponse, Tag,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
@@ -12,7 +12,7 @@ use serde_json::json;
 use crate::cook;
 use crate::db::{
     self, Actor, CURRENT_FORMAT, Change, RECIPE_COLUMNS, RecipeRow, cover_of, doc_at, images_of,
-    log_change, next_seq, open_adjustments, recipe_for_read, recipe_from_row, refresh_fts, tags_of,
+    log_change, next_seq, recipe_for_read, recipe_from_row, refresh_fts, tags_of,
 };
 use crate::error::{R, corrupt, not_found, sql};
 use crate::inbox;
@@ -78,17 +78,7 @@ pub fn record(conn: &Connection, row: &RecipeRow) -> R<RecipeRecord> {
         created_at: row.created_at,
         updated_at: row.updated_at,
         seq: row.seq,
-        adjustments: open_adjustments(conn, &row.id)?
-            .into_iter()
-            .map(|row| Adjustment {
-                id: row.id,
-                target: row.target,
-                original: row.original,
-                text: row.text,
-                session_id: row.session_id,
-                cooked_at: row.created_at,
-            })
-            .collect(),
+        adjustments: Vec::new(),
     })
 }
 

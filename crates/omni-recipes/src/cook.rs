@@ -1,22 +1,21 @@
 //! Cook sessions: one pinned revision and scale, and an append-only event
 //! log that the app and agents both write. Every view is a projection of the
-//! log. Cooking never edits the recipe: finishing turns the session's
-//! overrides into adjustment records that a later revision folds in.
+//! log. A session holds no recipe text of its own: a change made while
+//! cooking is a recipe revision, and a `rebase` event moves the session to it.
 
 use omni_alerts::{PushOutcome, PushoverMessage};
 use omni_api::fond::{CookActor, CookEvent, CookEventKind, CookSession, CookState};
 use omni_config::PushoverChannel;
-use omni_recipe_format::{Index, RecipeDoc, ingredient_line, ready_steps, render_text};
+use omni_recipe_format::{Index, RecipeDoc, ready_steps};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 
 use crate::api::{
     ActiveCook, CookEventInput, CookGetInput, CookGetOutput, CookLogEntry, CookStartInput,
-    CookStartOutput, CookUpdateInput, CookUpdateOutput, SessionAdjustment, SessionView, TimerInfo,
+    CookStartOutput, CookUpdateInput, CookUpdateOutput, SessionView, TimerInfo,
 };
 use crate::db::{
-    self, Actor, Change, ImageRow, adjustment_infos, doc_at, iso, log_change, next_seq,
-    open_adjustments, recipe_for_read,
+    self, Actor, Change, ImageRow, doc_at, iso, log_change, next_seq, recipe_for_read,
 };
 use crate::error::{R, invalid, not_found, reject, sql};
 use crate::events;
@@ -114,15 +113,13 @@ fn kind_name(kind: &CookEventKind) -> &'static str {
     match kind {
         CookEventKind::Check { .. } => "check",
         CookEventKind::Uncheck { .. } => "uncheck",
-        CookEventKind::Adjust { .. } => "adjust",
-        CookEventKind::Unadjust { .. } => "unadjust",
         CookEventKind::Note { .. } => "note",
         CookEventKind::Timer { .. } => "timer",
         CookEventKind::CancelTimer { .. } => "cancelTimer",
         CookEventKind::Rebase { .. } => "rebase",
         CookEventKind::Finish { .. } => "finish",
         CookEventKind::Abandon {} => "abandon",
-        CookEventKind::DismissAdjustment { .. } => "dismissAdjustment",
+        CookEventKind::Unknown => "unknown",
     }
 }
 
@@ -150,9 +147,11 @@ pub fn session_events(conn: &Connection, id: &str) -> R<Vec<CookEvent>> {
         .map_err(sql)?;
     let mut events = Vec::with_capacity(rows.len());
     for (seq, client_event_id, at, actor, payload) in rows {
-        // An event a newer build wrote is skipped, not fatal.
-        let Ok(kind) = serde_json::from_str::<CookEventKind>(&payload) else {
-            continue;
+        // An event of a kind this build does not have (a newer build's, or a
+        // retired adjustment's) stays in the log and is skipped.
+        let kind = match serde_json::from_str::<CookEventKind>(&payload) {
+            Ok(CookEventKind::Unknown) | Err(_) => continue,
+            Ok(kind) => kind,
         };
         events.push(CookEvent {
             seq,
@@ -225,8 +224,6 @@ pub struct Projection {
     pub checked: Vec<String>,
     /// `(step, endsAt)` of the timers still running or rung.
     pub timers: Vec<(String, i64)>,
-    /// `(target, text)` of the overrides in force.
-    pub adjustments: Vec<(String, String)>,
     pub notes: Vec<String>,
 }
 
@@ -242,19 +239,6 @@ pub fn project(events: &[CookEvent]) -> Projection {
                 out.timers.retain(|(step, _)| step != target);
             }
             CookEventKind::Uncheck { target } => out.checked.retain(|known| known != target),
-            CookEventKind::Adjust { target, text } => {
-                match out
-                    .adjustments
-                    .iter_mut()
-                    .find(|(known, _)| known == target)
-                {
-                    Some(found) => found.1.clone_from(text),
-                    None => out.adjustments.push((target.clone(), text.clone())),
-                }
-            }
-            CookEventKind::Unadjust { target } => {
-                out.adjustments.retain(|(known, _)| known != target);
-            }
             CookEventKind::Note { text } => out.notes.push(text.clone()),
             CookEventKind::Timer { step, ends_at } => {
                 out.timers.retain(|(known, _)| known != step);
@@ -264,7 +248,7 @@ pub fn project(events: &[CookEvent]) -> Projection {
             CookEventKind::Finish { note } => out.notes.extend(note.clone()),
             // A discarded cook has nothing left to ring.
             CookEventKind::Abandon {} => out.timers.clear(),
-            CookEventKind::Rebase { .. } | CookEventKind::DismissAdjustment { .. } => {}
+            CookEventKind::Rebase { .. } | CookEventKind::Unknown => {}
         }
     }
     out
@@ -330,14 +314,6 @@ fn view(conn: &Connection, row: &SessionRow, now: i64) -> R<SessionView> {
                 remaining_sec: (ends_at - now).div_euclid(1000),
             })
             .collect(),
-        adjustments: projection
-            .adjustments
-            .iter()
-            .map(|(target, text)| SessionAdjustment {
-                target: target.clone(),
-                text: text.clone(),
-            })
-            .collect(),
         notes: projection.notes,
     })
 }
@@ -357,7 +333,6 @@ pub struct Finished {
     pub session_id: String,
     pub recipe_id: String,
     pub title: String,
-    pub open_adjustments: u32,
     pub at: i64,
 }
 
@@ -367,7 +342,7 @@ pub struct Appended {
     pub session: CookSession,
     /// The session's newest event number.
     pub seq: u32,
-    /// Set when the library changed too (a finish, a dismissal).
+    /// Set when the library changed too (a finish).
     pub library_seq: Option<u64>,
     pub finished: Option<Finished>,
 }
@@ -417,25 +392,14 @@ fn check_event(doc: &RecipeDoc, kind: &CookEventKind) -> R<()> {
                 )))
             }
         }
-        CookEventKind::Adjust { target, text } => {
-            text_ok(text)?;
-            if ix.step(target).is_some() || ix.ingredient(target).is_some() {
-                Ok(())
-            } else {
-                Err(not_found(format!(
-                    "{target:?} is not a step or an ingredient of the session's recipe"
-                )))
-            }
-        }
-        CookEventKind::Unadjust { .. } | CookEventKind::DismissAdjustment { .. } => Ok(()),
         CookEventKind::Note { text } => text_ok(text),
         CookEventKind::Timer { step, .. } | CookEventKind::CancelTimer { step } => step_ok(step),
-        CookEventKind::Rebase { .. } | CookEventKind::Abandon {} => Ok(()),
+        CookEventKind::Rebase { .. } | CookEventKind::Abandon {} | CookEventKind::Unknown => Ok(()),
         CookEventKind::Finish { note } => note.as_deref().map_or(Ok(()), text_ok),
     }
 }
 
-/// Closes `row`: `counts` makes it a cook (cook log, adjustment records).
+/// Closes `row`: `counts` makes it a cook in the recipe's cook log.
 fn finish_tx(
     conn: &Connection,
     now: i64,
@@ -456,32 +420,8 @@ fn finish_tx(
     }
     let recipe = db::recipe(conn, &row.recipe_id)?
         .ok_or_else(|| not_found(format!("no recipe has id {:?}", row.recipe_id)))?;
-    let doc = session_doc(conn, row)?;
-    let projection = project(&session_events(conn, &row.id)?);
-    let ix = Index::build(&doc);
     let ids = [recipe.id.clone()];
     let before = json!({ "recipes": meta::recipes_facets(conn, &ids, &[COOKS])? });
-    for (target, text) in &projection.adjustments {
-        let original = match (ix.step(target), ix.ingredient(target)) {
-            (Some(step), _) => render_text(&ix, step, row.scale),
-            (None, Some(ingredient)) => ingredient_line(&ix, ingredient, row.scale),
-            (None, None) => String::new(),
-        };
-        conn.execute(
-            "INSERT INTO recipes_adjustment (id, session_id, recipe_id, target, original, text, state, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7)",
-            params![
-                ids::new_id(ids::ADJUSTMENT),
-                row.id,
-                recipe.id,
-                target,
-                original,
-                text,
-                now
-            ],
-        )
-        .map_err(sql)?;
-    }
     conn.execute(
         "UPDATE recipes_recipe SET cook_count = cook_count + 1, last_cooked_at = ?2,
            updated_at = ?2, seq = ?3 WHERE id = ?1",
@@ -502,14 +442,12 @@ fn finish_tx(
             after,
         },
     )?;
-    let open = u32::try_from(open_adjustments(conn, &recipe.id)?.len()).unwrap_or(u32::MAX);
     Ok((
         seq,
         Some(Finished {
             session_id: row.id.clone(),
             recipe_id: recipe.id,
             title: recipe.title,
-            open_adjustments: open,
             at: now,
         }),
     ))
@@ -549,8 +487,11 @@ pub fn append_tx(
         if seen > 0 {
             continue;
         }
-        let dismissal = matches!(event.kind, CookEventKind::DismissAdjustment { .. });
-        if row.state != "active" && !dismissal {
+        // Accepted and dropped, so the rest of an old app's batch still lands.
+        if matches!(event.kind, CookEventKind::Unknown) {
+            continue;
+        }
+        if row.state != "active" {
             if strict {
                 return Err(reject(
                     "session_closed",
@@ -606,27 +547,6 @@ pub fn append_tx(
                     continue;
                 }
             }
-            CookEventKind::DismissAdjustment { id } => {
-                let changed = conn
-                    .execute(
-                        "UPDATE recipes_adjustment SET state = 'dismissed'
-                         WHERE id = ?1 AND recipe_id = ?2 AND state = 'open'",
-                        params![id, row.recipe_id],
-                    )
-                    .map_err(sql)?;
-                if changed == 0 {
-                    if strict {
-                        return Err(not_found(format!(
-                            "{} has no open adjustment {id:?}",
-                            row.recipe_id
-                        )));
-                    }
-                    continue;
-                }
-                let seq = next_seq(conn)?;
-                db::touch(conn, &row.recipe_id, seq, now)?;
-                library_seq = Some(seq);
-            }
             _ => {}
         }
         next += 1;
@@ -645,16 +565,14 @@ pub fn append_tx(
             ],
         )
         .map_err(sql)?;
-        if row.state == "active" {
-            conn.execute(
-                "UPDATE recipes_cook SET last_event_at = ?2 WHERE id = ?1",
-                params![row.id, now],
-            )
-            .map_err(sql)?;
-            row.last_event_at = now;
-        }
+        conn.execute(
+            "UPDATE recipes_cook SET last_event_at = ?2 WHERE id = ?1",
+            params![row.id, now],
+        )
+        .map_err(sql)?;
+        row.last_event_at = now;
         if matches!(event.kind, CookEventKind::Abandon {}) {
-            // Discarded: closed at once, no cook, no adjustments.
+            // Discarded: closed at once and no cook.
             let (seq, _) = finish_tx(conn, now, &row, None, false, actor)?;
             library_seq = Some(seq);
             row.state = "abandoned".to_owned();
@@ -781,13 +699,7 @@ impl Recipes {
         if let Some(done) = &appended.finished {
             events::publish(
                 &self.ports,
-                events::cook_finished(
-                    &done.session_id,
-                    &done.recipe_id,
-                    &done.title,
-                    done.open_adjustments,
-                    done.at,
-                ),
+                events::cook_finished(&done.session_id, &done.recipe_id, &done.title, done.at),
             )
             .await;
         }
@@ -970,7 +882,6 @@ impl Recipes {
                         .rev()
                 {
                     let events = session_events(conn, &row.id)?;
-                    let projection = project(&events);
                     cooks.push(CookLogEntry {
                         on: db::local_date(row.finished_at.unwrap_or(row.started_at), &tz),
                         scale: row.scale,
@@ -982,17 +893,11 @@ impl Recipes {
                                 _ => None,
                             })
                             .collect(),
-                        adjustments: projection
-                            .adjustments
-                            .into_iter()
-                            .map(|(target, text)| SessionAdjustment { target, text })
-                            .collect(),
                         session_id: row.id,
                     });
                 }
                 return Ok(CookGetOutput {
                     cooks: Some(cooks),
-                    open_adjustments: Some(adjustment_infos(conn, &recipe, &tz)?),
                     ..CookGetOutput::default()
                 });
             }
@@ -1026,10 +931,6 @@ impl Recipes {
                 let kind = match event {
                     CookEventInput::Check { target } => CookEventKind::Check { target },
                     CookEventInput::Uncheck { target } => CookEventKind::Uncheck { target },
-                    CookEventInput::Adjust { target, text } => {
-                        CookEventKind::Adjust { target, text }
-                    }
-                    CookEventInput::Unadjust { target } => CookEventKind::Unadjust { target },
                     CookEventInput::Note { text } => CookEventKind::Note { text },
                     CookEventInput::Timer { step, minutes } => {
                         if !(minutes.is_finite() && minutes > 0.0 && minutes <= 24.0 * 60.0) {
@@ -1046,9 +947,6 @@ impl Recipes {
                     CookEventInput::Rebase { revision } => CookEventKind::Rebase { revision },
                     CookEventInput::Finish { note } => CookEventKind::Finish { note },
                     CookEventInput::Abandon {} => CookEventKind::Abandon {},
-                    CookEventInput::DismissAdjustment { id } => {
-                        CookEventKind::DismissAdjustment { id }
-                    }
                 };
                 Ok(Append {
                     actor: CookActor::Agent,
@@ -1141,13 +1039,7 @@ impl Recipes {
             if let Some(done) = finished {
                 events::publish(
                     &self.ports,
-                    events::cook_finished(
-                        &done.session_id,
-                        &done.recipe_id,
-                        &done.title,
-                        done.open_adjustments,
-                        done.at,
-                    ),
+                    events::cook_finished(&done.session_id, &done.recipe_id, &done.title, done.at),
                 )
                 .await;
             }

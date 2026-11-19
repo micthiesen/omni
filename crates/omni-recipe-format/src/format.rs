@@ -155,11 +155,16 @@ pub fn fmt_amount_exact(qty: Option<f64>, unit: Option<&str>) -> String {
 
 /// An amount for display. `exact` says the amount is as stored (scale 1, or
 /// an ingredient that does not scale) and must read exactly so; a scaled
-/// metric amount is rounded to a number a cook can weigh.
+/// amount reads in the nearest form a cook can measure ([`crate::measure`]).
 pub fn fmt_amount_at(qty: Option<f64>, unit: Option<&str>, exact: bool) -> String {
     let Some(qty) = qty else {
         return String::new();
     };
+    if !exact
+        && let Some(friendly) = present(unit).and_then(|unit| crate::measure::friendly(qty, unit))
+    {
+        return friendly;
+    }
     let number = fmt_number_at(qty, unit, exact);
     let unit = fmt_unit(qty, unit);
     if unit.is_empty() {

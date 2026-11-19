@@ -50,7 +50,7 @@ const CALENDAR_CHANGED_DESCRIPTION: &str = "An event in the primary iCloud calen
 const CALENDAR_STARTING_DESCRIPTION: &str = "An occurrence in the primary iCloud calendar is about to start (leadMinutes before its start) or one of its alerts is due. Fires once per occurrence and lead time; a rescheduled occurrence fires again for its new time. Omni checks every 30 seconds while a subscription is active. Read details with calendar_event_get using eventId (recurrenceId names the occurrence).";
 
 const RECIPES_INBOX_DESCRIPTION: &str = "Material was captured in the owner's recipe app and waits in the recipe inbox to become a recipe (photos of a cookbook page or recipe card). Fires once per item, when its last photo has arrived. Read it with recipes_inbox_get using itemId, then create the recipe with recipes_create (fromInbox).";
-const RECIPES_COOK_DESCRIPTION: &str = "A cook session was finished and counted as a cook. openAdjustments is the number of changes cooks made that no revision has folded in yet. Read the cook log and the adjustments with recipes_cook_get using recipeId.";
+const RECIPES_COOK_DESCRIPTION: &str = "A cook session was finished and counted as a cook. Read the cook log with recipes_cook_get using recipeId.";
 
 /// `calendar.event_starting` leads, in minutes.
 pub const CALENDAR_LEAD_MINUTES: [&str; 8] = ["0", "5", "10", "15", "30", "60", "120", "1440"];
@@ -659,9 +659,8 @@ impl EventDefinition {
                     "sessionId": {"type": "string"},
                     "recipeId": {"type": "string"},
                     "title": {"type": ["string", "null"], "maxLength": 200},
-                    "openAdjustments": {"type": "integer", "minimum": 0},
                 },
-                "required": ["sessionId", "recipeId", "title", "openAdjustments"],
+                "required": ["sessionId", "recipeId", "title"],
                 "additionalProperties": false,
             }),
         }

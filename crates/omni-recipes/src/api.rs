@@ -159,7 +159,6 @@ pub struct LibraryCounts {
     pub trashed: u32,
     pub never_cooked: u32,
     pub inbox_pending: u32,
-    pub open_adjustments: u32,
     pub active_cooks: u32,
 }
 
@@ -174,6 +173,28 @@ pub struct GuideOutput {
     pub tag_groups: Vec<TagGroup>,
     pub tags: Vec<TagInfo>,
     pub library: LibraryCounts,
+    /// The household's standing rules, which override a source.
+    pub household: Household,
+}
+
+/// Rules that apply to every recipe written, imported or edited.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Household {
+    /// What the household eats.
+    pub diet: String,
+    /// How amounts are written so they are easy to measure.
+    pub measuring: String,
+}
+
+/// The household diet next to a source that may break it.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DietNote {
+    pub rule: String,
+    /// The source's ingredient lines that conflict with the rule (from its
+    /// structured data; empty when it has none). Read the text too.
+    pub conflicts: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +270,6 @@ pub struct Card {
     /// YYYY-MM-DD, the owner's local date.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_cooked_on: Option<String>,
-    pub open_adjustments: u32,
     /// Where the query matched.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#match: Option<String>,
@@ -325,25 +345,6 @@ pub struct SourceInfo {
     pub url: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AdjustmentInfo {
-    pub id: String,
-    /// A step or ingredient id.
-    pub target: String,
-    /// The rendered text the cook saw.
-    pub original: String,
-    /// What the cook changed it to.
-    pub text: String,
-    pub session_id: String,
-    pub cooked_on: String,
-    /// True when the recipe's newest revision has no step or ingredient with
-    /// this id any more (after a merge or a removal): fold it in by hand from
-    /// `original` and `text`, or dismiss it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub target_missing: bool,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CookSummary {
@@ -388,7 +389,6 @@ pub struct GetOutput {
     pub images: Vec<ImageInfo>,
     pub time: TimeInfo,
     pub cooks: CookSummary,
-    pub open_adjustments: Vec<AdjustmentInfo>,
     pub warnings: Vec<Problem>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub linked: Vec<LinkedRecipe>,
@@ -512,6 +512,10 @@ pub struct CreateInput {
     /// This recipe is a variation of another.
     pub derived_from: Option<String>,
     pub allow_duplicate: Option<bool>,
+    /// Keep ingredients that conflict with the household diet (meat, fish,
+    /// hidden animal products). Only when the owner explicitly asked to keep
+    /// them in this recipe; otherwise such a write is refused.
+    pub keep_diet_conflicts: Option<bool>,
     /// Compare the result with the stored source using a model. Default true
     /// when a source exists; a dry run reviews only when this is true.
     pub review: Option<bool>,
@@ -552,9 +556,8 @@ pub struct EditInput {
     /// Applied in order, all or nothing.
     #[schemars(length(min = 1, max = 50))]
     pub ops: Vec<Op>,
-    /// Adjustment ids this edit folds in.
-    #[schemars(length(max = 50))]
-    pub resolves: Option<Vec<String>>,
+    /// See recipes_create.
+    pub keep_diet_conflicts: Option<bool>,
     pub dry_run: Option<bool>,
 }
 
@@ -568,8 +571,8 @@ pub struct ReplaceInput {
     #[schemars(length(min = 1, max = 120))]
     pub summary: String,
     pub document: RecipeDoc,
-    #[schemars(length(max = 50))]
-    pub resolves: Option<Vec<String>>,
+    /// See recipes_create.
+    pub keep_diet_conflicts: Option<bool>,
     /// See recipes_create.
     pub review: Option<bool>,
     pub dry_run: Option<bool>,
@@ -590,9 +593,6 @@ pub struct WriteOutput {
     pub problems: Option<Vec<Problem>>,
     /// One line per change, addressed by id.
     pub changes: Vec<String>,
-    /// The adjustments this write closed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resolved: Vec<String>,
     pub warnings: Vec<Problem>,
     /// Only from recipes_replace.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -743,7 +743,6 @@ pub struct MergeInput {
 pub struct MergeMoved {
     pub images: u32,
     pub cooks: u32,
-    pub adjustments: u32,
     pub tags: u32,
 }
 
@@ -938,6 +937,8 @@ pub struct ImportUrlOutput {
     pub image_reason: Option<String>,
     /// Recipes that already have this source URL.
     pub duplicate_of: Vec<RecipeRef>,
+    /// The household diet, and the source's lines that conflict with it.
+    pub diet: DietNote,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1067,6 +1068,8 @@ pub struct InboxGetOutput {
     pub photos: Vec<PhotoInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_photo_offset: Option<u32>,
+    /// The household diet, and the source's lines that conflict with it.
+    pub diet: DietNote,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1149,13 +1152,6 @@ pub struct TimerInfo {
     pub remaining_sec: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionAdjustment {
-    pub target: String,
-    pub text: String,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
@@ -1186,7 +1182,6 @@ pub struct SessionView {
     /// Ingredients and single inputs crossed off.
     pub gathered: Vec<String>,
     pub running: Vec<TimerInfo>,
-    pub adjustments: Vec<SessionAdjustment>,
     pub notes: Vec<String>,
 }
 
@@ -1202,7 +1197,6 @@ pub struct CookLogEntry {
     /// Notes taken during the cook, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
-    pub adjustments: Vec<SessionAdjustment>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1226,8 +1220,6 @@ pub struct CookGetOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cooks: Option<Vec<CookLogEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub open_adjustments: Option<Vec<AdjustmentInfo>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<Vec<ActiveCook>>,
 }
 
@@ -1240,14 +1232,6 @@ pub enum CookEventInput {
         target: String,
     },
     Uncheck {
-        target: String,
-    },
-    /// Overrides a step's or ingredient's text for this session.
-    Adjust {
-        target: String,
-        text: String,
-    },
-    Unadjust {
         target: String,
     },
     Note {
@@ -1269,12 +1253,8 @@ pub enum CookEventInput {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
-    /// Discards the session: no cook is counted and no adjustments are kept.
+    /// Discards the session: no cook is counted.
     Abandon {},
-    /// Closes an open adjustment record; valid on a finished session too.
-    DismissAdjustment {
-        id: String,
-    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]

@@ -507,13 +507,16 @@ impl Store {
 
     /// Changes one ingredient's amount in the recipe itself. The new revision
     /// is on screen at once and the server writes the same change from the
-    /// outbox. Returns the amount it replaced, for an undo.
+    /// outbox. Open cook sessions that show the revision it replaces, and the
+    /// session it was made from (`from`), move to the new one, so cook mode
+    /// shows the amount at once. Returns the amount it replaced, for an undo.
     pub fn change_amount(
         self,
         recipe: &str,
         ingredient: &str,
         qty: f64,
         unit: Option<String>,
+        from: Option<&str>,
     ) -> Option<(f64, Option<String>)> {
         let current = self
             .recipes
@@ -524,6 +527,14 @@ impl Store {
                 .and_then(|found| found.qty.map(|qty| (qty, found.unit.clone())))
         })?;
         let changed = outbox::with_amount(&current.rec, ingredient, qty, unit.as_deref())?;
+        let revision = changed.revision;
+        let following: Vec<String> = self.sessions.with_untracked(|sessions| {
+            sessions
+                .values()
+                .filter(|session| session::follows(session, recipe, current.rec.revision, from))
+                .map(|session| session.id.clone())
+                .collect()
+        });
         idb::atomic(|| {
             self.put_recipe(changed);
             self.enqueue(Job::Op {
@@ -539,6 +550,11 @@ impl Store {
                     },
                 },
             });
+            // Queued behind the amount, so the server has the revision
+            // before it is asked to move a session to it.
+            for session in &following {
+                self.cook_event(session, CookEventKind::Rebase { revision });
+            }
         });
         Some(before)
     }
@@ -633,25 +649,6 @@ impl Store {
             rec.last_cooked_at = Some(at);
             self.put_recipe(rec);
         }
-    }
-
-    /// Closes an open adjustment from an earlier cook.
-    pub fn dismiss_adjustment(self, recipe: &RecipeRecord, adjustment_id: &str) {
-        idb::atomic(|| {
-            let Some(adjustment) = recipe.adjustments.iter().find(|a| a.id == adjustment_id) else {
-                return;
-            };
-            let session = adjustment.session_id.clone();
-            let mut rec = recipe.clone();
-            rec.adjustments.retain(|a| a.id != adjustment_id);
-            self.put_recipe(rec);
-            self.cook_event(
-                &session,
-                CookEventKind::DismissAdjustment {
-                    id: adjustment_id.to_owned(),
-                },
-            );
-        })
     }
 
     /// Queues a photo of the finished dish for a session.

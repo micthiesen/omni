@@ -63,6 +63,40 @@ test.describe('a new deploy', () => {
   });
 });
 
+test.describe('the built app', () => {
+  test.skip(!DIST, 'set FOND_DIST to the dist directory the server serves');
+
+  // A change made while cooking is a change to the recipe; nothing in the
+  // app may say otherwise.
+  test('has no wording about changes for one cook only', () => {
+    const files = fs.readdirSync(DIST, { recursive: true }).map((name) => path.join(DIST, String(name)));
+    const found = files
+      .filter((file) => fs.statSync(file).isFile())
+      .filter((file) => /this cook only|for this cook|adjusted this time|use again/i.test(fs.readFileSync(file).toString('latin1')));
+    expect(found).toEqual([]);
+  });
+
+  test('an app from before overrides were retired can still send its events', async ({ page, request }) => {
+    await page.goto('/');
+    await page.locator('[data-testid=grid] a.card').first().click();
+    const recipeId = page.url().split('/').pop();
+    const sessionId = `cook_${String(Date.now()).slice(-8)}`;
+    await request.post('/api/cook', { data: { id: sessionId, recipeId, revision: 1, scale: 1, at: Date.now() } });
+    const event = (id, kind) => ({ seq: 0, clientEventId: `${sessionId}-${id}`, at: Date.now(), actor: 'app', ...kind });
+    const sent = await request.post(`/api/cook/${sessionId}/events`, {
+      data: { events: [
+        event('a', { type: 'adjust', target: 'sear', text: 'Two batches.' }),
+        event('b', { type: 'check', target: 'sear' }),
+        event('c', { type: 'abandon' }),
+      ] },
+    });
+    expect(sent.ok()).toBe(true);
+    const stored = await sent.json();
+    expect(stored.events.map((found) => found.type)).toEqual(['check', 'abandon']);
+    expect(stored.state).toBe('abandoned');
+  });
+});
+
 test.describe('an agent at work', () => {
   test.skip(!DIST, 'needs the mock server (set FOND_DIST)');
 
@@ -82,10 +116,9 @@ test.describe('an agent at work', () => {
     await expect(notice).toHaveCount(0);
     await expect.poll(async () => (await (await request.get(`/api/cook/${sessionId}`)).json()).revision).toBe(2);
 
-    // Mid-cook help from an agent appears on the phone.
-    const step = await page.locator('.card-step').getAttribute('data-step');
-    await request.post('/__mock/adjust', { data: { sessionId, target: step, text: 'No buttermilk: use milk and lemon.' } });
-    await expect(page.locator('[data-testid=step-text]')).toHaveText('No buttermilk: use milk and lemon.');
+    // A note an agent adds to the session appears on the phone.
+    await request.post('/__mock/note', { data: { sessionId, text: 'No buttermilk: use milk and lemon.' } });
+    await expect(page.locator('.session-note')).toHaveText('No buttermilk: use milk and lemon.');
   });
 
   test('a running passive step offers what can be done meanwhile', async ({ page }) => {

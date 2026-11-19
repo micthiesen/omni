@@ -55,6 +55,36 @@ fn text_measure() -> impl Fn(&str, bool) -> f64 {
     }
 }
 
+/// Whole-pixel columns: a fraction of a pixel puts neighbouring lines on
+/// different device pixels, so some look thinner than others or vanish. The
+/// ingredient column takes the remainder, so the total is unchanged.
+fn whole_pixels(mut widths: Vec<f64>) -> Vec<f64> {
+    let total = widths.iter().sum::<f64>().round();
+    for width in widths.iter_mut().skip(1) {
+        *width = width.round();
+    }
+    let rest: f64 = widths.iter().skip(1).sum();
+    if let Some(lead) = widths.first_mut() {
+        *lead = total - rest;
+    }
+    widths
+}
+
+/// The rows whose input goes into the same step as the input on the next
+/// row: the line between two such rows is drawn lighter than a line that
+/// ends a step (docs/fond/chart-borders.md).
+fn same_step_rows(cells: &[Cell], rows: usize) -> Vec<bool> {
+    let mut step_of: Vec<Option<&str>> = vec![None; rows];
+    for cell in cells {
+        if cell.c0 == 0 && matches!(cell.kind, CellKind::Leaf | CellKind::Ref) && cell.r0 < rows {
+            step_of[cell.r0] = Some(cell.step.as_str());
+        }
+    }
+    (0..rows)
+        .map(|row| step_of[row].is_some() && step_of.get(row + 1) == Some(&step_of[row]))
+        .collect()
+}
+
 fn span(count: usize) -> Option<String> {
     (count > 1).then(|| count.to_string())
 }
@@ -64,6 +94,7 @@ fn cell_view(
     mark: Option<Callback<Cell, CellMark>>,
     on_tap: Callback<Cell>,
     leaf_taps: bool,
+    same_step: bool,
 ) -> Vec<AnyView> {
     let rows = cell.r1 - cell.r0 + 1;
     let cols = cell.c1 - cell.c0 + 1;
@@ -75,11 +106,12 @@ fn cell_view(
     let split = !is_step && cell.c0 == 0 && cols > 1;
     let td = |lead: bool, filler: bool| {
         let class = format!(
-            "{}{}{}{}",
+            "{}{}{}{}{}",
             cell.kind.as_str(),
             if cell.optional { " optional" } else { "" },
             if lead { " lead" } else { "" },
             if filler { " fill" } else { "" },
+            if same_step { " same-step" } else { "" },
         );
         let (marked, tapped) = (cell.clone(), cell.clone());
         let state = move || mark.map_or(CellMark::None, |mark| mark.run(marked.clone()));
@@ -162,9 +194,24 @@ pub fn Chart(
                             label: &cell.label,
                         })
                         .collect();
-                    measure.with_value(|measure| chart_widths(&labels, *cols, avail.get(), measure))
+                    measure.with_value(|measure| {
+                        whole_pixels(chart_widths(&labels, *cols, avail.get(), measure))
+                    })
                 })
             });
+            let same_step = same_step_rows(&block.cells, block.rows);
+            // Scrolled sideways, the pinned ingredient column is a pane with
+            // an edge of its own over whatever passes under it.
+            let scrolled = RwSignal::new(false);
+            let scroller = NodeRef::<html::Div>::new();
+            let on_scroll = move |_| {
+                if let Some(node) = scroller.get_untracked() {
+                    let now = node.scroll_left() > 0;
+                    if scrolled.get_untracked() != now {
+                        scrolled.set(now);
+                    }
+                }
+            };
             let rows = (0..block.rows)
                 .map(|row| {
                     let mut cells: Vec<&Cell> =
@@ -172,30 +219,39 @@ pub fn Chart(
                     cells.sort_by_key(|cell| cell.c0);
                     let cells: Vec<AnyView> = cells
                         .into_iter()
-                        .flat_map(|cell| cell_view(cell, mark, on_tap, leaf_taps))
+                        .flat_map(|cell| {
+                            let same_step = cell.c0 == 0 && same_step[row];
+                            cell_view(cell, mark, on_tap, leaf_taps, same_step)
+                        })
                         .collect();
                     view! { <tr>{cells}</tr> }
                 })
                 .collect_view();
             view! {
-                <figure class="chart-block" node_ref=figure>
+                <figure class="chart-block" class:scrolled=move || scrolled.get() node_ref=figure>
                     {(block.title.is_some() || block.note.is_some()).then(|| view! {
                         <figcaption>
                             {block.title.clone()}
                             {block.note.clone().map(|note| view! { <small>{note}</small> })}
                         </figcaption>
                     })}
-                    <div class="chart-scroll">
-                        <table class="chart" style=move || format!("width:{:.1}px", widths.get().iter().sum::<f64>())>
-                            <colgroup>
-                                {move || widths
-                                    .get()
-                                    .into_iter()
-                                    .map(|width| view! { <col style=format!("width:{width:.1}px")/> })
-                                    .collect_view()}
-                            </colgroup>
-                            <tbody>{rows}</tbody>
-                        </table>
+                    <div class="chart-frame">
+                        <div class="chart-scroll" node_ref=scroller on:scroll=on_scroll>
+                            <table class="chart" style=move || format!("width:{:.0}px", widths.get().iter().sum::<f64>())>
+                                <colgroup>
+                                    {move || widths
+                                        .get()
+                                        .into_iter()
+                                        .map(|width| view! { <col style=format!("width:{width:.0}px")/> })
+                                        .collect_view()}
+                                </colgroup>
+                                <tbody>{rows}</tbody>
+                            </table>
+                        </div>
+                        <div
+                            class="chart-edge"
+                            style=move || format!("left:{:.0}px", widths.get().first().copied().unwrap_or_default() - 1.0)
+                        ></div>
                     </div>
                 </figure>
             }

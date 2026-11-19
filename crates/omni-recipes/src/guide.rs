@@ -13,10 +13,10 @@ use crate::error::{R, sql};
 use crate::service::Recipes;
 use crate::tags;
 
-pub const VERSION: &str = "3";
+pub const VERSION: &str = "4";
 
 const TEMPLATE: &str = include_str!("guide.md");
-/// The worked example: chicken piccata as a stored document.
+/// The worked example: cauliflower piccata as a stored document.
 pub const EXAMPLE: &str = include_str!("guide_example.json");
 
 /// The guide's Markdown.
@@ -63,10 +63,6 @@ pub fn counts(conn: &Connection) -> R<LibraryCounts> {
             conn,
             "SELECT count(*) FROM recipes_inbox WHERE state = 'pending'",
         )?,
-        open_adjustments: count(
-            conn,
-            "SELECT count(*) FROM recipes_adjustment WHERE state = 'open'",
-        )?,
         active_cooks: count(
             conn,
             "SELECT count(*) FROM recipes_cook WHERE state = 'active'",
@@ -84,6 +80,7 @@ impl Recipes {
                 tag_groups: TagGroup::ALL.to_vec(),
                 tags: tags::registry(conn)?,
                 library: counts(conn)?,
+                household: crate::household::info(),
             })
         })
         .await
@@ -101,25 +98,25 @@ mod tests {
         for rule in 1..=10 {
             assert!(guide.contains(&format!("\n{rule}. ")), "rule {rule}");
         }
-        assert!(guide.contains("\"title\": \"Chicken Piccata\""));
+        assert!(guide.contains("\"title\": \"Cauliflower Piccata\""));
         assert!(guide.contains("`tbsp`"));
         assert!(
             guide.contains("`course`, `cuisine`, `main`, `method`, `diet`, `occasion`, `other`")
         );
-        assert!(guide.contains("made in two separate cooks"));
+        assert!(guide.contains("### Diet: bivalve vegetarian"));
+        assert!(guide.contains("### Amounts that are easy to measure"));
         assert!(guide.contains("line by line"));
         assert!(!guide.contains("{UNITS}") && !guide.contains("{EXAMPLE}"));
     }
 
     #[test]
-    fn the_example_is_the_golden_piccata_and_validates() {
-        assert_eq!(
-            EXAMPLE,
-            include_str!("../tests/golden/chicken-piccata.json")
-        );
+    fn the_example_follows_the_guide_it_illustrates() {
         let doc: omni_recipe_format::RecipeDoc = serde_json::from_str(EXAMPLE).unwrap();
-        let report = omni_recipe_format::validate(&doc);
+        let report = crate::household::check(&doc, None, false);
         assert!(report.errors.is_empty() && report.warnings.is_empty());
+        // The features the guide says it shows.
+        assert!(EXAMPLE.contains("\"rest\": true") && EXAMPLE.contains("\"part\": \"juice\""));
+        assert!(EXAMPLE.contains("\"byproducts\"") && EXAMPLE.contains("\"toTaste\": true"));
     }
 
     /// Every key of the document format is named in the guide's reference,
@@ -171,8 +168,8 @@ mod tests {
         assert_eq!(
             (VERSION, crate::db::sha256_hex(text().as_bytes()).as_str()),
             (
-                "3",
-                "c25122acfcb7748c16d0ef27bac996d90e4ae65f205998318760990cb3fa5f0f"
+                "4",
+                "96ff217c5a14e42e49e3e9981de1c588c96bfb0382303177b0ffc943e0e01a2b"
             )
         );
     }

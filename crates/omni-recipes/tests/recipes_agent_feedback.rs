@@ -47,7 +47,10 @@ async fn stored_amounts_read_exactly() {
     document["components"][0]["ingredients"][0]["qty"] = json!(326);
     document["components"][0]["ingredients"][7]["qty"] = json!(113);
     let created = h
-        .ok("recipes_create", json!({ "document": document }))
+        .ok(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": document }),
+        )
         .await;
     let text = created["text"].as_str().unwrap();
     assert!(
@@ -85,23 +88,16 @@ async fn stored_amounts_read_exactly() {
             .unwrap()
             .contains("- 490 g boneless")
     );
-    // A cook's adjustment record quotes the amounts as stored.
     let session = h.ok("recipes_cook_start", json!({ "recipeId": id })).await["sessionId"].clone();
     h.ok(
         "recipes_cook_update",
         json!({ "sessionId": session, "events": [
             { "type": "note", "text": "Pan was crowded." },
-            { "type": "adjust", "target": "chicken", "text": "350 g" },
             { "type": "note", "text": "Sauce broke once." },
             { "type": "finish", "note": "Good." }
         ] }),
     )
     .await;
-    let recipe = h.ok("recipes_get", json!({ "id": id })).await;
-    assert_eq!(
-        recipe["openAdjustments"][0]["original"],
-        "326 g boneless, skinless chicken breasts, halved horizontally into cutlets"
-    );
     // The cook log keeps the notes taken along the way, not only the last.
     let log = h.ok("recipes_cook_get", json!({ "recipeId": id })).await;
     assert_eq!(log["cooks"][0]["note"], "Good.");
@@ -246,7 +242,7 @@ async fn a_dry_run_reports_everything_the_real_call_would_refuse() {
     let dry = h
         .ok(
             "recipes_create",
-            json!({ "document": broken, "tags": ["weeknite", "zzz", "weeknight"], "dryRun": true }),
+            json!({ "keepDietConflicts": true, "document": broken, "tags": ["weeknite", "zzz", "weeknight"], "dryRun": true }),
         )
         .await;
     assert_eq!(dry["saved"], false);
@@ -275,7 +271,7 @@ async fn a_dry_run_reports_everything_the_real_call_would_refuse() {
     let dry = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["weeknite"], "dryRun": true }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["weeknite"], "dryRun": true }),
         )
         .await;
     let codes: Vec<&str> = dry["problems"]
@@ -302,7 +298,7 @@ async fn a_dry_run_reports_everything_the_real_call_would_refuse() {
     let waived = h
         .ok(
             "recipes_create",
-            json!({ "document": doc(PICCATA), "tags": ["weeknite"], "createTags": true, "allowDuplicate": true, "dryRun": true }),
+            json!({ "keepDietConflicts": true, "document": doc(PICCATA), "tags": ["weeknite"], "createTags": true, "allowDuplicate": true, "dryRun": true }),
         )
         .await;
     assert!(waived.get("problems").is_none(), "{waived}");
@@ -348,7 +344,12 @@ async fn a_dry_run_reports_everything_the_real_call_would_refuse() {
         .as_object_mut()
         .unwrap()
         .remove("time");
-    let created = h.ok("recipes_create", json!({ "document": loose })).await;
+    let created = h
+        .ok(
+            "recipes_create",
+            json!({ "keepDietConflicts": true, "document": loose }),
+        )
+        .await;
     assert_eq!(created["saved"], true);
     let codes: Vec<&str> = created["warnings"]
         .as_array()
@@ -365,23 +366,12 @@ async fn results_say_what_changed() {
     let h = Harness::new().await;
     h.tag("weeknight", "occasion").await;
     let id = h.create(PICCATA).await;
-    let session = h.ok("recipes_cook_start", json!({ "recipeId": id })).await["sessionId"].clone();
-    h.ok(
-        "recipes_cook_update",
-        json!({ "sessionId": session, "events": [
-            { "type": "adjust", "target": "sear", "text": "Two batches." },
-            { "type": "finish" }
-        ] }),
-    )
-    .await;
-    let adjustment =
-        h.ok("recipes_get", json!({ "id": id })).await["openAdjustments"][0]["id"].clone();
 
-    // A rename is one line, and the edit echoes what it resolved.
+    // A rename is one line.
     let edited = h
         .ok(
             "recipes_edit",
-            json!({ "id": id, "expectedRevision": 1, "summary": "Name the oil", "resolves": [adjustment],
+            json!({ "id": id, "expectedRevision": 1, "summary": "Name the oil",
                     "ops": [
                         { "op": "rename", "target": "oil", "to": "olive_oil" },
                         { "op": "set", "target": "olive_oil", "fields": { "qty": 3 } }
@@ -392,7 +382,6 @@ async fn results_say_what_changed() {
         edited["changes"],
         json!(["~ rename oil → olive_oil", "~ olive_oil.qty: 2 → 3"])
     );
-    assert_eq!(edited["resolved"], json!([adjustment]));
 
     // Undoing a content change returns the recipe as it reads now.
     let undone = h
@@ -472,7 +461,7 @@ async fn a_cook_can_be_discarded() {
     let h = Harness::new().await;
     let router = h.router();
     let id = h.create(PICCATA).await;
-    // From the app: started, adjusted, a timer running, then discarded.
+    // From the app: started, a note taken, a timer running, then discarded.
     let start =
         json!({ "id": "cook_discard1", "recipeId": id, "revision": 1, "scale": 1, "at": 1 });
     assert_eq!(post_json(&router, "/api/cook", &start).await.status, 200);
@@ -482,7 +471,7 @@ async fn a_cook_can_be_discarded() {
         "/api/cook/cook_discard1/events",
         &json!({ "events": [
             event("d-1", json!({ "type": "check", "target": "dredge" })),
-            event("d-2", json!({ "type": "adjust", "target": "sear", "text": "Two batches." })),
+            event("d-2", json!({ "type": "note", "text": "Two batches." })),
             event("d-3", json!({ "type": "timer", "step": "simmer", "endsAt": now + 60_000 })),
             event("d-4", json!({ "type": "abandon" })),
         ] }),
@@ -499,10 +488,9 @@ async fn a_cook_can_be_discarded() {
         })
     );
 
-    // No cook, no adjustment, no event, and it is gone from the open sessions.
+    // No cook, no event, and it is gone from the open sessions.
     let recipe = h.ok("recipes_get", json!({ "id": id })).await;
     assert_eq!(recipe["cooks"]["count"], 0);
-    assert_eq!(recipe["openAdjustments"], json!([]));
     assert_eq!(
         h.ok("recipes_cook_get", json!({ "recipeId": id })).await["cooks"],
         json!([])

@@ -224,7 +224,6 @@ fn every_payload_dto_matches_its_catalog_schema() {
             "cook_2b7r9d4h",
             "rcp_7h2k9m4x",
             &"Long title ".repeat(40),
-            2,
             0,
         )
         .unwrap(),

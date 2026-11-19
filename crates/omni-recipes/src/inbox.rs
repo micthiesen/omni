@@ -756,6 +756,12 @@ impl Recipes {
             .await?;
         self.hub.library(seq);
         let (text, truncated, next_offset) = chunk(&chosen.text, 0);
+        let diet = crate::household::diet_note(
+            chosen
+                .structured
+                .as_ref()
+                .map_or(&[][..], |found| found.ingredients.as_slice()),
+        );
         Ok(ImportUrlOutput {
             inbox_item_id: id,
             final_url: chosen.final_url,
@@ -767,6 +773,7 @@ impl Recipes {
             image_stored: lead.is_some(),
             image_reason,
             duplicate_of,
+            diet,
         })
     }
 
@@ -849,6 +856,12 @@ impl Recipes {
         }
         let shown = first + photos.len();
         let info = item.info(u32::try_from(all_files.len()).unwrap_or(u32::MAX));
+        let structured = item.structured();
+        let diet = crate::household::diet_note(
+            structured
+                .as_ref()
+                .map_or(&[][..], |found| found.ingredients.as_slice()),
+        );
         Ok((
             InboxGetOutput {
                 item_id: info.item_id,
@@ -859,13 +872,14 @@ impl Recipes {
                 state: info.state,
                 recipe_id: info.recipe_id,
                 url: item.url(),
-                structured: item.structured(),
+                structured,
                 text,
                 truncated,
                 next_offset,
                 photos,
                 next_photo_offset: (shown < all_files.len())
                     .then(|| u32::try_from(shown).unwrap_or(u32::MAX)),
+                diet,
             },
             blocks,
         ))

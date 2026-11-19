@@ -192,14 +192,13 @@ fn merge_tx(
     }
     let mut ids = vec![keep.id.clone()];
     ids.extend(absorbed.iter().map(|row| row.id.clone()));
-    let (mut cooks, mut adjustments) = (Vec::new(), Vec::new());
+    let mut cooks = Vec::new();
     for row in &absorbed {
         cooks.extend(ids_where(conn, "recipes_cook", &row.id)?);
-        adjustments.extend(ids_where(conn, "recipes_adjustment", &row.id)?);
     }
     let before = json!({
         "recipes": meta::recipes_facets(conn, &ids, &ALL_FACETS)?,
-        "own": meta::ownership(conn, &cooks, &adjustments)?,
+        "own": meta::ownership(conn, &cooks)?,
     });
 
     let mut moved = MergeMoved::default();
@@ -224,17 +223,13 @@ fn merge_tx(
             position += 1;
             moved.images += 1;
         }
-        let count = |table: &str| -> R<u32> {
-            let changed = conn
-                .execute(
-                    &format!("UPDATE {table} SET recipe_id = ?2 WHERE recipe_id = ?1"),
-                    params![row.id, keep.id],
-                )
-                .map_err(sql)?;
-            Ok(u32::try_from(changed).unwrap_or(u32::MAX))
-        };
-        moved.cooks += count("recipes_cook")?;
-        moved.adjustments += count("recipes_adjustment")?;
+        let cooks_moved = conn
+            .execute(
+                "UPDATE recipes_cook SET recipe_id = ?2 WHERE recipe_id = ?1",
+                params![row.id, keep.id],
+            )
+            .map_err(sql)?;
+        moved.cooks += u32::try_from(cooks_moved).unwrap_or(u32::MAX);
         cook_count += row.cook_count;
         last_cooked = last_cooked.max(row.last_cooked_at);
         if input.notes.unwrap_or_default() == MergeNotes::Append && !row.notes.trim().is_empty() {
@@ -290,7 +285,7 @@ fn merge_tx(
     tags::touch(&mut touched, &keep_tags, &[]);
     let after = json!({
         "recipes": meta::recipes_facets(conn, &ids, &ALL_FACETS)?,
-        "own": meta::ownership(conn, &cooks, &adjustments)?,
+        "own": meta::ownership(conn, &cooks)?,
     });
     let trashed: Vec<String> = absorbed.iter().map(|row| row.id.clone()).collect();
     let change = log_change(
@@ -479,36 +474,6 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<Und
                 let doc = doc_at(conn, &id, from)?;
                 write_revision(conn, now, seq, &row, &doc, &summary, actor)?
             };
-            // An edit that folded adjustments in reopens them; undoing that
-            // undo closes them again.
-            let list = |key: &str| -> Vec<String> {
-                change
-                    .after
-                    .get(key)
-                    .and_then(Value::as_array)
-                    .map(|ids| {
-                        ids.iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            let (resolved, reopened) = (list("resolved"), list("reopened"));
-            for adjustment in &resolved {
-                conn.execute(
-                    "UPDATE recipes_adjustment SET state = 'open', resolved_rev = NULL WHERE id = ?1",
-                    params![adjustment],
-                )
-                .map_err(sql)?;
-            }
-            for adjustment in &reopened {
-                conn.execute(
-                    "UPDATE recipes_adjustment SET state = 'resolved', resolved_rev = ?2 WHERE id = ?1",
-                    params![adjustment, revision],
-                )
-                .map_err(sql)?;
-            }
             wrote.push(id.clone());
             content = Some((
                 revision,
@@ -518,7 +483,7 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<Und
                 "content",
                 json!({ id.clone(): ["content"] }),
                 json!({ "recipe": id, "rev": to }),
-                json!({ "recipe": id, "rev": revision, "resolved": reopened, "reopened": resolved }),
+                json!({ "recipe": id, "rev": revision }),
                 1,
             )
         }
@@ -526,9 +491,7 @@ fn undo_tx(conn: &Connection, now: i64, change_id: &str, actor: &Actor) -> R<Und
         "cook" => {
             return Err(reject(
                 "not_undoable",
-                format!(
-                    "{change_id} records a finished cook, which cannot be undone; dismiss its adjustments with recipes_cook_update instead"
-                ),
+                format!("{change_id} records a finished cook, which cannot be undone"),
             ));
         }
         _ => {

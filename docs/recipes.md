@@ -23,15 +23,15 @@ test, so changing what agents are told means bumping `guide::VERSION`.
 |---|---|
 | title, summary, yield, time override, source | tags, state (active, archived, trashed) |
 | components, ingredients, steps, inputs | the notes field, images and the cover |
-| | the link to the stored source, cook history, open adjustments, `derivedFrom`, `mergedInto` |
+| | the link to the stored source, cook history, `derivedFrom`, `mergedInto` |
 
 - **Content** is immutable per revision. `recipes_edit`, `recipes_replace` and
   `recipes_revert` each write one new revision after checking
   `expectedRevision`. Revisions are kept as long as the recipe exists.
 - **Metadata** changes are recorded in a change log with a `before` and an
   `after` snapshot of exactly the facets they wrote (`state`, `tags`, `notes`,
-  `images`, `cooks`, the tag registry, and which recipe owns which cooks and
-  adjustments after a merge). `recipes_undo` applies `before`; undoing that
+  `images`, `cooks`, the tag registry, and which recipe owns which cooks
+  after a merge). `recipes_undo` applies `before`; undoing that
   undo applies it the other way. An undo is refused with `[undo_conflict]`
   when a newer change that still stands wrote the same facet of the same
   recipe. An undo of a tag-registry change puts back only the registry rows
@@ -47,18 +47,52 @@ test, so changing what agents are told means bumping `guide::VERSION`.
   `other`). Nothing is seeded. A write with an unregistered tag is refused with
   the nearest names unless it passes `createTags` (which registers it in
   `other`).
-- **Merging** moves images, cook history, adjustments and tags to the kept
+- **Merging** moves images, cook history and tags to the kept
   recipe (and the stored source, when the kept recipe has none), appends
   notes, and trashes each absorbed recipe with `mergedInto`. A moved cook
   session keeps showing the document it pinned (`recipes_cook.doc_recipe_id`
   names the recipe whose revision that is; `mergedFrom` in tool output) and
   finishes against the kept recipe; a `rebase` moves it to the kept recipe's
-  revisions. A moved adjustment whose step or ingredient is not in the kept
-  recipe stays listed with its own text, flagged `targetMissing`. A cook
+  revisions. A cook
   started on a merged-away id uses the kept recipe's newest revision.
   Reading an absorbed id returns the kept recipe with `redirectedFrom`; a write
   to it is refused with `[merged]`. The pointer outlives the purge
   (`recipes_redirect`).
+
+## The household
+
+Two standing rules apply to every recipe and override a source. They are code
+(`crates/omni-recipes/src/household.rs`, checks in `omni-recipe-format`'s `diet` and `measure`
+modules) and reach every agent through `recipes_guide` (the `household` field and the guide's
+"The household" section), the `diet` field of `recipes_import_url` and `recipes_inbox_get`, and
+the tool descriptions.
+
+**Diet: bivalve vegetarian.** No meat, poultry, fish or other seafood; bivalves, eggs and dairy
+are fine; hidden animal products count (stock, fish sauce, anchovies and Worcestershire, gelatin,
+lard, bacon fat). `diet_flag` reads ingredient names against a word list, with a list of words
+that mark a vegetarian product ("vegan fish sauce") and of harmless phrases ("beefsteak tomato").
+A create, edit or replace that introduces a conflicting ingredient is refused with
+`diet_conflict`, one problem per ingredient with a fitting hint. `keepDietConflicts: true` keeps
+them, for an ingredient the owner explicitly asked for. A conflict the recipe already had before
+the write is a warning, so a recipe with an accepted exception can still be edited; a revert and
+an app amount change never refuse. `recipes_get` lists kept conflicts among its warnings. The
+check errs towards flagging: a name that trips it by mistake is renamed or kept.
+
+**Amounts that are easy to measure.** Metric with tsp, tbsp and cups, and a kitchen scale: grams
+for what is weighed into the bowl, spoons for small amounts, counts, cups or ml only where a
+standard measure is natural, rounded to friendly numbers. The guide carries the guideline. The
+validator reports an amount off the grid as an `awkward_amount` warning with what to write
+instead (`measure::awkward`): grams not on 5 from 20 g up, tsp not in quarters, tbsp not in
+halves, more than 4 tbsp measured in one go (an ingredient shared by several steps is judged per
+use), cups that are neither quarters nor thirds (a third is stored as 0.3333), ml off 5 up to 60
+and off 25 above (cup measures and can sizes pass), and any ounces or pounds. Counts, cans and
+the source's `alt` measure are not judged.
+
+A scaled amount is shown in the nearest measurable form (`measure::friendly`, used by
+`fmt_amount_at` for every scaled view): spoons in quarters with tsp turning into tbsp, cups as a
+standard measure plus spoons ("¼ cup + 2 tbsp"), grams to 5 from 50 g and to 10 from 1 kg, small
+millilitres as spoons, and part of a kilogram or litre in grams or millilitres. A stored amount
+at scale 1 always reads exactly as written.
 
 ## Tools
 
@@ -68,7 +102,7 @@ public URL the caller supplies.
 
 | Tool | Purpose |
 |---|---|
-| `recipes_guide` | Authoring guide, format, units, tag vocabulary with counts, library counts |
+| `recipes_guide` | Authoring guide, format, units, tag vocabulary with counts, library counts, household rules |
 | `recipes_search` | Text, tags, ingredients, state, time, images, cook history; cards with paging |
 | `recipes_get` | One recipe as `document`, `text` or `chart`, at any scale or revision |
 | `recipes_history` | A recipe's revisions and diffs, or the library change log |
@@ -88,7 +122,7 @@ public URL the caller supplies.
 | `recipes_inbox_resolve` | Mark items discarded or duplicate |
 | `recipes_cook_start` | Start a cook session at a scale |
 | `recipes_cook_get` | Active sessions, one session's state, or a recipe's cook log |
-| `recipes_cook_update` | Append events: check, adjust, note, timer, rebase, finish, abandon, dismiss |
+| `recipes_cook_update` | Append events: check, uncheck, note, timer, cancelTimer, rebase, finish, abandon |
 
 Behaviour every tool keeps:
 
@@ -109,8 +143,7 @@ Behaviour every tool keeps:
 - Amounts read exactly as stored at scale 1 (`326 g`, metric decimals to one
   place). Rounding to something a cook can weigh applies only to scaled
   amounts, and never to an ingredient with `scales: false`.
-- Results say what changed: an edit or replace echoes the adjustments it
-  closed (`resolved`), an edit's `changes` shows a rename as
+- Results say what changed: an edit's `changes` shows a rename as
   `~ rename oil → olive_oil`, `recipes_undo` returns the recipes it wrote
   (`ids`) and, for a content change, the new `revision` and the rendered
   `text`, `recipes_history` library entries carry up to 20 `recipeIds`, and
@@ -125,7 +158,7 @@ Behaviour every tool keeps:
   revert included), which `recipes_undo` takes.
 - `recipes_search` refuses a tag filter that cannot be a tag name and returns
   filters that name no registered tag in `unknownTags`, with nearest names.
-- Titles, notes, cook notes, adjustment text, inbox titles and page text are
+- Titles, notes, cook notes, inbox titles and page text are
   written in the app (which has no login) or taken from web pages. Tool
   descriptions mark them as untrusted data, never instructions; the review's
   `issues` are model text derived from such a source.
@@ -145,7 +178,7 @@ A failed call is text that starts with a code:
 | `op_failed` | An edit operation cannot apply: `ops[1] (set): ...` |
 | `duplicate_source` | A create matches an existing recipe's source URL, inbox item or exact document |
 | `unknown_tag` | Tags are not in the registry; lists every one with its nearest names |
-| `not_found` | Unknown recipe, revision, image, inbox item, session or adjustment |
+| `not_found` | Unknown recipe, revision, image, inbox item or session |
 | `trashed` | A write names a recipe in the trash; restore it with `recipes_organize` or `recipes_undo` |
 | `not_undoable` | `recipes_undo` on a finished cook |
 | `too_many` | A limit of the open app surface: 20 open cook sessions, 30 timers in a session, 200 waiting inbox items |
@@ -226,27 +259,36 @@ save.
 A session pins one revision and one scale and is an append-only event log
 (`recipes_cook_event`) that the app and agents both write. Each event carries a
 client-chosen `clientEventId` and is applied once. Views are projections of the
-log: steps done and ready, gathered ingredients, running timers, adjustments
-and notes.
+log: steps done and ready, gathered ingredients, running timers and notes.
 
-- Cooking never edits the recipe. `adjust` overrides a step's or ingredient's
-  text for the session.
-- `finish` writes the cook log (cook count, last cooked) and turns each
-  override still in force into an open **adjustment** on the recipe, with the
-  text the cook saw at the session's scale. `recipes.cook_finished` fires.
-- An agent folds an adjustment in with `recipes_edit(..., resolves: [id])`, or
-  dismisses it with a `dismissAdjustment` event (valid on a finished session).
-  A `rename` operation re-points open adjustments.
+- A session holds no recipe text of its own. A change made while cooking is
+  a change to the recipe: the app writes an amount as a revision (below) and
+  an agent uses `recipes_edit`; a `rebase` event then moves the session to
+  the new revision. The session's scale is how it is shown and never becomes
+  a recipe change.
+- `finish` writes the cook log (cook count, last cooked).
+  `recipes.cook_finished` fires.
 - A session idle for 18 hours closes itself. It counts as a cook
   (`finished`) when at least half its steps were done, otherwise it is
-  `abandoned` with no cook log and no adjustments.
+  `abandoned` with no cook log.
 - `abandon` discards a session: it closes as `abandoned` at once, with no
-  cook counted, no adjustments, no `recipes.cook_finished` and its running
+  cook counted, no `recipes.cook_finished` and its running
   timers dropped without an alert. Later events are answered as on any closed
   session.
 - `recipes_cook_get` with a `recipeId` lists each cook with the notes taken
   during it (`notes`) as well as the finish note.
 - `rebase` moves a session to a newer revision; state carries over by id.
+- Sessions used to take text overrides (`adjust`, `unadjust`) that became
+  adjustment records on the recipe when the cook finished
+  (`dismissAdjustment` closed one). That is gone. The cook log is
+  append-only, so those events stay in `recipes_cook_event` and every reader
+  skips them (`CookEventKind::Unknown`); the app route accepts and drops them
+  from an app that has not updated yet, so the rest of its batch still
+  lands. The tools no longer have these event types, `resolves` or any
+  adjustment output. Schema version 3 drops the `recipes_adjustment` table;
+  no adjustment was open in production when it ran. An archive written
+  before it still restores, without that table's rows, and an older change
+  that mentions adjustments can still be undone.
 
 ### Amounts changed in the app
 
@@ -274,8 +316,11 @@ ingredient without a quantity (to taste) cannot be given one.
 - A refusal is `ok: false` with one line to show the cook (for a document the
   validator refuses, its first problem) and the recipe as it is, so the app
   can put back what it showed. Nothing is written.
-- Open cook sessions keep the revision they pinned, and open adjustments are
-  untouched.
+- The app moves its own open sessions along: one that shows the revision
+  the change replaced, and the session the change was made from, get a
+  `rebase` event queued behind the amount. A session left on an older
+  revision stays there, as does any session after an agent's edit, until it
+  is rebased.
 - The guide tells agents that an `app` revision is the owner's own decision:
   build on it, and do not revert it unless asked.
 - A finished session refuses an agent's events with `[session_closed]`. The
@@ -307,7 +352,6 @@ also ensures them on first use, and a database from a newer build is refused.
 | `recipes_image` | Image rows: digest, size, role, caption, position |
 | `recipes_inbox`, `recipes_inbox_file` | Source snapshots and their photos |
 | `recipes_cook`, `recipes_cook_event` | Sessions and their append-only events |
-| `recipes_adjustment` | What cooks changed: open, resolved or dismissed |
 | `recipes_change` | The change log: tool, summary, touched facets, before, after |
 | `recipes_client_op` | Ids of the app's edits already applied |
 | `recipes_redirect` | Where a purged, merged-away recipe lives |
@@ -465,7 +509,7 @@ RECIPES_APP_URL=http://fond.localhost:8099 cargo run -p omni -- --preview --port
 Open `http://fond.localhost:8099/`. The preview uses a throwaway database and
 recipes directory and seeds the four sample recipes, a small three-step one and ten tags. The first
 (Chicken Piccata) also has notes, a stored source text, and one finished cook
-with a drawn placeholder photo and an open adjustment, and one photo waits in
+with a drawn placeholder photo and a note, and one photo waits in
 the inbox, so every screen of the app has something to show
 (`crates/omni/src/preview_recipes.rs`). `http://localhost:8099/` is still the
 Omni preview. Of the background services the preview starts only

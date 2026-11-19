@@ -359,10 +359,18 @@ fn restore_tx(conn: &Connection, archive: &Archive) -> R<Restored> {
             )));
         }
     }
+    // An archive from an earlier schema can carry a table that has since
+    // been retired; its rows are not restored and not counted.
+    let counts = archive
+        .counts
+        .iter()
+        .filter(|(table, _)| TABLES.contains(&table.as_str()))
+        .map(|(table, count)| (table.clone(), count.clone()))
+        .collect();
     Ok(Restored {
         archive_id: archive.archive_id.clone(),
         seq: archive.seq,
-        counts: archive.counts.clone(),
+        counts,
     })
 }
 

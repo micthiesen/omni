@@ -192,10 +192,20 @@ const MIGRATIONS: &[Migration] = &[
         ],
         columns: &[("recipes_cook", "doc_recipe_id", "TEXT")],
     },
+    // Cook sessions no longer override recipe text, so nothing writes or
+    // reads the records that kept an override after its cook.
+    Migration {
+        version: 3,
+        statements: &[
+            "DROP INDEX IF EXISTS recipes_adjustment_by_recipe",
+            "DROP TABLE IF EXISTS recipes_adjustment",
+        ],
+        columns: &[],
+    },
 ];
 
 /// The newest schema version this build writes.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Every table an archive carries, and a restore compares.
 pub const TABLES: &[&str] = &[
@@ -208,7 +218,6 @@ pub const TABLES: &[&str] = &[
     "recipes_inbox_file",
     "recipes_cook",
     "recipes_cook_event",
-    "recipes_adjustment",
     "recipes_change",
     "recipes_client_op",
     "recipes_redirect",
@@ -326,6 +335,38 @@ mod tests {
             })
             .unwrap();
         assert_eq!(pinned, "rcp_a");
+    }
+
+    #[test]
+    fn the_third_step_drops_the_adjustment_table_and_keeps_the_cook_log() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE recipes_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .unwrap();
+        for statement in V1 {
+            conn.execute_batch(statement).unwrap();
+        }
+        set_meta(&conn, "schema_version", "1").unwrap();
+        conn.execute_batch(
+            "INSERT INTO recipes_adjustment VALUES ('adj_a', 'cook_a', 'rcp_a', 'sear', 'x', 'y', 'open', NULL, 0);
+             INSERT INTO recipes_cook_event VALUES ('cook_a', 1, 'e1', 0, 'app', 'adjust', '{}')",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let left: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name LIKE 'recipes_adjustment%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+        let events: i64 = conn
+            .query_row("SELECT count(*) FROM recipes_cook_event", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(events, 1);
     }
 
     #[test]

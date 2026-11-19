@@ -84,7 +84,6 @@ fn purge_tx(conn: &Connection, now: i64) -> R<Purged> {
             "DELETE FROM recipes_revision WHERE recipe_id = ?1",
             "DELETE FROM recipes_recipe_tag WHERE recipe_id = ?1",
             "DELETE FROM recipes_image WHERE recipe_id = ?1",
-            "DELETE FROM recipes_adjustment WHERE recipe_id = ?1",
             "DELETE FROM recipes_cook_event WHERE session_id IN
                (SELECT id FROM recipes_cook WHERE recipe_id = ?1)",
             "DELETE FROM recipes_timer_alert WHERE session_id IN
