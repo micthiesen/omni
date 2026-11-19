@@ -3,6 +3,8 @@
 Fond is the agent-first recipe app served on `https://recipes.syas.ca` (LAN and WireGuard only).
 Spec: `~/Code/oracle/notes/2026-11-17-recipes-proposal.md` (oracle commit e3d18cd), prototype beside it.
 Durable references: `docs/recipes.md` (server), `docs/recipes-app.md` (PWA).
+Later sessions: `PROGRESS-crouton.md` (diet, measuring, the Crouton import, the shell) and
+`PROGRESS-requests.md` (requests for Kitchen, live refresh).
 
 Michael's changes to the spec:
 

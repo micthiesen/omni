@@ -6,11 +6,11 @@ elsewhere. Earlier history is in `PROGRESS.md` and `PROGRESS-crouton.md`. Refere
 "Requests from the app" in `docs/recipes.md`, "Requests" and "Changes made elsewhere" in
 `docs/recipes-app.md`.
 
-## Status
+## Status: finished
 
-Built, reviewed and tested locally, then pushed (the push deploys and restarts Omni). The
-production checks are listed under "After the deploy"; their results are in the session's final
-message, and in this file when a later commit adds them.
+Deployed and verified in production on 2026-11-19: build `23acae3` on
+`https://recipes.syas.ca`. The webhook is not configured yet ("Webhook setup" below), so
+requests are stored and listed and no notice is sent. The Requests page is empty.
 
 ## What shipped
 
@@ -47,8 +47,8 @@ message, and in this file when a later commit adds them.
   request ("add a recipe for flatbread") is answered by a new recipe, and the Requests page
   needs to know which one to link.
 - **No tool deletes a request**, in line with the rest of Fond. `RecipesPurge` removes a
-  request 30 days after it was closed. Test requests are therefore closed and marked, not
-  removed (see "After the deploy").
+  request 30 days after it was closed. This session's test requests were removed by hand
+  (see "Tests").
 - **Cook mode's old inline notice** ("The recipe was updated since you started · Switch") is
   now the same "Recipe updated · Reload" notice.
 - **A request does not rebase a cook.** The guide tells the agent not to send `rebase` for a
@@ -142,23 +142,47 @@ Before the push:
   were fixed: an oversized webhook answer was retried, a request about a vanished recipe lost
   its text, list fetches could land out of order, a draft was lost when the screen under the
   sheet was redrawn.
-- Not run before the push: anything against production.
 
-## After the deploy
+Against production (build `23acae3`, WebKit through the SSH proxy):
 
-In order, from the Mac (`ssh -f -N -D 127.0.0.1:18080 boris` first; the browser tests cannot
-reach the LAN directly):
+- Boot log: "Recipe request webhook is disabled (RECIPES_REQUEST_WEBHOOK_URL is not set)".
+  Schema version 4 applied; CI run 44468033044 passed every job.
+- `requests.spec.js` with the real MCP tools as the agent (`FOND_AGENT=claude`) on a
+  throwaway recipe: 8 of 9 passed. That is the round trip: a request from the recipe page,
+  from cook mode and from the library with the right context; all three Queued on the
+  Requests page; `working`, a new revision and `done` with its revision link followed without
+  a reload; "Recipe updated · Reload" under a sheet, with the notes focused and in cook mode;
+  a request written offline sent once on reconnect. The ninth (declined requests show their
+  note) stopped in the test helper: the relaying model garbled the JSON of a tool result. The
+  update itself had applied, and the tools showed all four requests closed with their notes.
+  The helper now asks again after a garbled answer.
+- Webhook down: production has no webhook, so every request was stored as `unconfigured`,
+  stayed `queued` and was returned by `recipes_requests_list`. Retries and the one
+  `Idempotency-Key` are proven by the integration tests above, not in production.
+- The existing suite: 34 passed, 24 skipped (the request and mock-only groups, finishing a
+  cook, the inbox upload, on-demand screenshots), 1 failed and fixed in the test: a reload
+  interrupted the sync the app now starts when its window gets the focus, which WebKit
+  reports as a failed load; the test's list of such interruptions now includes it (10 of 10
+  on repeat).
+- Cleanup: the throwaway recipe `rcp_jj964998` is in the trash. The four test requests were
+  deleted from `recipes_request` with Omni stopped, after a copy of the database to
+  `/home/michael/compose/backups/omni-requests-cleanup-20261119-001218/` on boris;
+  `GET /api/requests` is empty. No cook session was left open.
+- Not verifiable here: a real iPhone, and the webhook against Rakazo.
 
-1. `http://omni.boris/api/snapshot` `.build.server` is the pushed commit;
-   `docker logs omni | grep -i "recipe request"` shows the webhook as disabled; schema version 4.
-2. Create a throwaway recipe with `recipes_create` (title "ZZ Request Test Flatbread").
-3. `cd crates/omni-recipes-web/e2e && FOND_BASE_URL=https://recipes.syas.ca
-   FOND_PROXY=socks5://127.0.0.1:18080 FOND_AGENT=claude
-   FOND_RECIPE_REQUEST="ZZ Request Test Flatbread" npx playwright test requests.spec.js`.
-4. The rest of the suite as in `PROGRESS-crouton.md` (finish, inbox and mock-only skipped).
-5. Trash the throwaway recipe (`recipes_organize`, state `trashed`). The test requests end
-   `done` or `declined` with a note that starts "Test request"; no tool removes them, and
-   `RecipesPurge` drops them 30 days later.
+## Running the request tests against production again
+
+From the Mac (`ssh -f -N -D 127.0.0.1:18080 boris` first; the browser tests cannot reach the
+LAN directly). Create a throwaway recipe with `recipes_create`, then:
+
+```bash
+cd crates/omni-recipes-web/e2e
+FOND_BASE_URL=https://recipes.syas.ca FOND_PROXY=socks5://127.0.0.1:18080 FOND_AGENT=claude \
+  FOND_RECIPE_REQUEST="<its title>" npx playwright test requests.spec.js
+```
+
+Afterwards trash the recipe. The run leaves its requests `done` or `declined` with a note that
+starts "Test request"; no tool removes them, and `RecipesPurge` drops them 30 days later.
 
 ## To check on the iPhone
 

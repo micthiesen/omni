@@ -130,8 +130,11 @@ for (const [name, block] of [
 ]) {
   test(`storage that ${name} leaves the default view and a working toggle`, async ({ page }) => {
     const errors = [];
-    // A reload can interrupt the service worker's own fetch, which is not the app failing.
-    page.on('pageerror', (error) => /sw\.js/.test(String(error)) || errors.push(String(error)));
+    // A reload can interrupt a fetch in flight (the service worker's own, or
+    // the sync the app starts when its window gets the focus), which WebKit
+    // reports as a failed load. That is not the app failing.
+    const interrupted = /sw\.js|Fetch API cannot load .* due to access control checks/;
+    page.on('pageerror', (error) => interrupted.test(String(error)) || errors.push(String(error)));
     await page.addInitScript(block);
     await page.goto('/');
     const [recipe] = await activeRecipes(page);

@@ -9,7 +9,20 @@ const os = require('os');
 
 const REAL = process.env.FOND_AGENT === 'claude';
 
+// The relaying model sometimes mangles the JSON it repeats. Every call here
+// is safe to make again (reads, an update to the same values, and an edit
+// that names the revision it expects), so a garbled answer is asked for again.
 function tool(name, input) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return call(name, input);
+    } catch (error) {
+      if (attempt === 3 || !(error instanceof SyntaxError)) throw error;
+    }
+  }
+}
+
+function call(name, input) {
   const prompt =
     `Call the tool mcp__omni__${name} exactly once with exactly this JSON input: ${JSON.stringify(input)}\n` +
     'Then reply with only the JSON object the tool returned (or {"error": "<the error text>"} if it failed). ' +
