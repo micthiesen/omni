@@ -2,8 +2,8 @@
 //! recipe, and history.
 
 use omni_recipe_format::{
-    Code, Level, Marks, Op, Problem, RecipeDoc, Report, apply_ops, chart_ascii, chart_blocks,
-    diff_summary, diff_summary_with_ops, render_list,
+    CellKind, Code, Level, ListOptions, Marks, Op, Problem, RecipeDoc, Report, apply_ops,
+    chart_ascii, chart_blocks, diff_summary, diff_summary_with_ops, render_list, render_list_with,
 };
 use omni_store::{DocOps as _, StoreError};
 use rusqlite::{Connection, params};
@@ -62,11 +62,29 @@ pub(crate) fn factor(doc: &RecipeDoc, scale: Option<f64>, servings: Option<f64>)
     }
 }
 
-/// The ASCII chart of every block, as `view: "chart"` returns it.
-pub(crate) fn render_chart(doc: &RecipeDoc, factor: f64) -> String {
+/// The ASCII chart of every block, as `view: "chart"` returns it; with
+/// `ids`, each step cell carries its step id and each input row the id it
+/// refers to.
+pub(crate) fn render_chart(doc: &RecipeDoc, factor: f64, ids: bool) -> String {
     let charts: Vec<String> = chart_blocks(doc, factor)
-        .iter()
-        .map(|block| chart_ascii(block, &Marks::new()))
+        .into_iter()
+        .map(|mut block| {
+            if ids {
+                for cell in &mut block.cells {
+                    let id = match cell.kind {
+                        CellKind::Step | CellKind::Setup => cell.step.clone(),
+                        CellKind::Leaf | CellKind::Ref => {
+                            let after = cell.key.split_once('/').map_or("", |(_, rest)| rest);
+                            after.split(':').next().unwrap_or(after).to_owned()
+                        }
+                    };
+                    if !id.is_empty() {
+                        cell.label = format!("{} [{id}]", cell.label);
+                    }
+                }
+            }
+            chart_ascii(&block, &Marks::new())
+        })
         .collect();
     format!("{}\n", charts.join("\n\n"))
 }
@@ -251,9 +269,13 @@ impl Recipes {
             keep_diet: input.keep_diet_conflicts.unwrap_or(false),
             kind: ContentKind::Edit(input.ops),
         };
-        let result = self
+        let mut result = self
             .write_content(write, actor, input.dry_run.unwrap_or(false))
             .await?;
+        // An edit is usually followed by another: its text carries the ids.
+        if let Some(doc) = &result.doc {
+            result.text = render_list_with(doc, 1.0, ListOptions { ids: true });
+        }
         Ok(result.output(None))
     }
 
@@ -345,6 +367,9 @@ impl Recipes {
                 ));
             }
             let factor = factor(&doc, input.scale, input.servings)?;
+            let options = ListOptions {
+                ids: input.ids.unwrap_or(false),
+            };
             let images = images_of(conn, &row.id)?;
             let source = match &row.source_item {
                 Some(item) => inbox::item(conn, item)?.map(|item| SourceInfo {
@@ -386,8 +411,8 @@ impl Recipes {
                     warnings: household::check(&doc, Some(&doc), false).warnings,
                 linked,
                 scale: (view != View::Document).then_some(factor),
-                text: (view == View::Text).then(|| render_list(&doc, factor)),
-                chart: (view == View::Chart).then(|| render_chart(&doc, factor)),
+                text: (view == View::Text).then(|| render_list_with(&doc, factor, options)),
+                chart: (view == View::Chart).then(|| render_chart(&doc, factor, options.ids)),
                 document: (view == View::Document).then_some(doc),
                 id: row.id,
             })

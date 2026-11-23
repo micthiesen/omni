@@ -21,7 +21,10 @@ write the graph. Read this once per session, then use the tools.
    issue before you report success. For a photo source there is nothing to compare by program: read
    the photo again against `text` and confirm each quantity.
 5. Small changes later: `recipes_edit` with id-addressed operations and the current
-   `expectedRevision`. Whole rewrites: `recipes_replace`.
+   `expectedRevision`. `recipes_get` with `view: "text"` and `ids: true` marks every ingredient,
+   step, by-product and component with its id (`- 1 tsp kosher salt [salt]`,
+   `3. [sear] Sear …`), so you need not read the stored document first; an edit's result text
+   always carries them. Whole rewrites: `recipes_replace`.
 
 Nothing you do is final. Content has revisions (`recipes_history`, `recipes_revert`). Tags, state,
 notes, images and merges are in a change log that `recipes_undo` reverses for 30 days. Delete is a

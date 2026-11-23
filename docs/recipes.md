@@ -104,11 +104,11 @@ public URL the caller supplies.
 |---|---|
 | `recipes_guide` | Authoring guide, format, units, tag vocabulary with counts, library counts, household rules |
 | `recipes_search` | Text, tags, ingredients, state, time, images, cook history; cards with paging |
-| `recipes_get` | One recipe as `document`, `text` or `chart`, at any scale or revision |
+| `recipes_get` | One recipe as `document`, `text` or `chart`, at any scale or revision; `ids` marks text and chart with the ids edits address |
 | `recipes_history` | A recipe's revisions and diffs, or the library change log |
 | `recipes_image_get` | One recipe image as an MCP image block |
 | `recipes_create` | Create from a document; links and compares the source |
-| `recipes_edit` | Id-addressed operations as one new revision |
+| `recipes_edit` | Id-addressed operations as one new revision; its text carries the ids |
 | `recipes_replace` | Whole document as one new revision |
 | `recipes_revert` | An earlier revision as the newest |
 | `recipes_organize` | Tags and state on up to 200 listed recipes |

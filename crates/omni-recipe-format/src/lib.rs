@@ -32,8 +32,8 @@ pub use cook::{
 pub use diet::{DietFlag, DietKind, diet_flag, diet_problems};
 pub use index::{Index, Kind, Node, Use};
 pub use list::{
-    IngredientGroup, IngredientLine, ListStep, ListView, ingredient_groups, ingredient_line,
-    list_view, render_list,
+    IngredientGroup, IngredientLine, ListOptions, ListStep, ListView, ingredient_groups,
+    ingredient_line, list_view, render_list, render_list_with,
 };
 pub use model::{
     Amount, Attention, Byproduct, Component, FORMAT, Id, Ingredient, Input, MakeAhead, RecipeDoc,

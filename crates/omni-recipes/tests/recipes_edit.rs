@@ -87,15 +87,18 @@ async fn the_piccata_edit_writes_one_revision_with_the_exact_change_list() {
     );
     let text = edited["text"].as_str().unwrap();
     assert!(text.contains(
-        "3. Pour 120 ml chicken stock into the hot pan and scrape up the browned bits. Boil until reduced by half, about 2 minutes."
+        "3. [deglaze] Pour 120 ml chicken stock into the hot pan and scrape up the browned bits. Boil until reduced by half, about 2 minutes."
     ));
     assert!(text.contains(
-        "4. Add the remaining 180 ml chicken stock, the juice of 2 lemons and 2 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes."
+        "4. [simmer] Add the remaining 180 ml chicken stock, the juice of 2 lemons and 2 tbsp capers to the wine reduction. Simmer until reduced by about half, 4–5 minutes."
     ));
 
     // The stored recipe is the edited one, and the first revision is intact.
     let now = h
-        .ok("recipes_get", json!({ "id": id, "view": "text" }))
+        .ok(
+            "recipes_get",
+            json!({ "id": id, "view": "text", "ids": true }),
+        )
         .await;
     assert_eq!(now["text"], edited["text"]);
     assert_eq!(now["headRevision"], 2);

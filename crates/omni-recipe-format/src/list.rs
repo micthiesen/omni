@@ -244,25 +244,62 @@ pub fn list_view(doc: &RecipeDoc, factor: f64) -> ListView {
     }
 }
 
+/// How [`render_list_with`] marks the list up.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListOptions {
+    /// Mark ingredients, steps, by-products and components with their ids
+    /// (`[salt]`), so an agent can address edit operations without reading
+    /// the stored document.
+    pub ids: bool,
+}
+
 /// The list view at `factor`, as Markdown.
 pub fn render_list(doc: &RecipeDoc, factor: f64) -> String {
+    render_list_with(doc, factor, ListOptions::default())
+}
+
+/// [`render_list`] with `options`.
+pub fn render_list_with(doc: &RecipeDoc, factor: f64, options: ListOptions) -> String {
     let view = list_view(doc, factor);
+    let mark = |id: &str| {
+        if options.ids {
+            format!(" [{id}]")
+        } else {
+            String::new()
+        }
+    };
     let mut out = vec![format!("# {}", view.title), String::new()];
     if let Some(summary) = &view.summary {
         out.extend([summary.clone(), String::new()]);
     }
     out.push(view.meta());
     out.extend(view.make_ahead.clone());
-    out.extend([String::new(), "## Ingredients".to_owned(), String::new()]);
+    let only = match doc.components.as_slice() {
+        [only] => mark(&only.id),
+        _ => String::new(),
+    };
+    out.extend([
+        String::new(),
+        format!("## Ingredients{only}"),
+        String::new(),
+    ]);
     for group in &view.groups {
         if let Some(heading) = &group.heading {
             let note = match &group.make_ahead {
                 Some(note) => format!(" ({note})"),
                 None => String::new(),
             };
-            out.extend([format!("**{heading}**{note}"), String::new()]);
+            out.extend([
+                format!("**{heading}**{}{note}", mark(&group.component)),
+                String::new(),
+            ]);
         }
-        out.extend(group.lines.iter().map(|line| format!("- {}", line.text)));
+        out.extend(
+            group
+                .lines
+                .iter()
+                .map(|line| format!("- {}{}", line.text, mark(&line.id))),
+        );
         out.extend(
             group
                 .from_above
@@ -277,9 +314,24 @@ pub fn render_list(doc: &RecipeDoc, factor: f64) -> String {
         if let Some(heading) = &group.heading {
             out.extend([format!("**{heading}**"), String::new()]);
         }
-        for step in steps.by_ref().take(component.steps.len()) {
+        for (step, source) in steps
+            .by_ref()
+            .take(component.steps.len())
+            .zip(&component.steps)
+        {
             let tag = if step.optional { " *(optional)*" } else { "" };
-            out.push(format!("{}. {}{tag}", step.number, step.text));
+            let id = if options.ids {
+                let byproducts: Vec<&str> =
+                    source.byproducts.iter().map(|b| b.id.as_str()).collect();
+                if byproducts.is_empty() {
+                    format!("[{}] ", step.id)
+                } else {
+                    format!("[{}; by-products {}] ", step.id, byproducts.join(", "))
+                }
+            } else {
+                String::new()
+            };
+            out.push(format!("{}. {id}{}{tag}", step.number, step.text));
         }
         out.push(String::new());
     }

@@ -322,6 +322,9 @@ pub struct GetInput {
     /// Default: the newest.
     #[schemars(range(min = 1))]
     pub revision: Option<u32>,
+    /// For text and chart: mark ingredients, steps, by-products and
+    /// components with their ids ("[salt]") for recipes_edit operations.
+    pub ids: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
