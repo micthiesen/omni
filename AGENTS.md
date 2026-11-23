@@ -13,16 +13,32 @@ Update this file when work establishes or changes a durable project convention.
 
 Use `cargo` from the repository root. The toolchain comes from
 `rust-toolchain.toml` (rustup installs it on first use, plus
-`rustup target add wasm32-unknown-unknown` for the frontend). After code
-changes, run:
+`rustup target add wasm32-unknown-unknown` for the frontend). Scale checks to
+the change; CI runs every check on every push.
 
-```bash
-cargo xtask gate                         # hygiene, fmt --check, clippy -D warnings
-                                         # (native and wasm32), deps-check, tests
-                                         # (cargo-nextest when installed)
-cargo deny --locked check                # advisories, licenses, bans, sources
-(cd crates/omni-web && trunk build --release)   # when the frontend changed
-```
+- While iterating, run narrow checks:
+  `cargo clippy --workspace --all-targets --locked -- -D warnings` and
+  `cargo nextest run --workspace --locked -E 'package(<crate>)'`
+  (`rdeps(<crate>)` adds its dependents, and
+  `-E 'package(omni-live) & test(/^kick_relay::/)'` runs one test file). Keep
+  `--workspace` and select with `-E`, never `-p`: `-p` resolves different
+  dependency features and rebuilds about 100 crates. For the web crates, run the wasm32 Clippy:
+  `cargo clippy -p omni-web -p omni-web-kit -p omni-web-pages -p omni-recipes-web -p omni-recipe-format --target wasm32-unknown-unknown --all-targets --locked -- -D warnings`.
+- Once before pushing, not per commit: `cargo xtask gate` (hygiene,
+  `fmt --check`, native and wasm32 Clippy `-D warnings`, deps-check, workspace
+  tests under cargo-nextest when installed).
+- `cargo deny --locked check` only when `Cargo.toml`, `Cargo.lock` or
+  `deny.toml` changed.
+- `trunk build --release` (in `crates/omni-web` or `crates/omni-recipes-web`)
+  only when that bundle's `Trunk.toml`, `index.html`, build hook or
+  `js/boot.js`, or the wasm-bindgen or web-sys pins changed. For Rust and CSS
+  edits the wasm32 Clippy is the local check and CI builds both release
+  bundles.
+- Docs-only changes need no gate.
+- One push per task: fold docs and follow-up commits into it. Do not wait for
+  CI before starting the next change; wait once, at the end, only when
+  production verification needs the deploy (a failed `main` run already
+  notifies).
 
 CI and its build caching are described in `docs/ci.md`; change the workflow and
 that file together. `cargo xtask gate` is the local equivalent of CI's lint and test jobs, except
@@ -33,14 +49,20 @@ when it is missing. trunk, wasm-bindgen and wasm-opt versions are pinned in
 `deploy/web-tools/install.sh` and `crates/omni-web/Trunk.toml`; wasm-bindgen
 must equal the workspace `wasm-bindgen` pin. `cargo fmt --all` fixes formatting.
 
-Build directories grow without bound. The gate starts with
-`cargo xtask hygiene`, which measures every Cargo profile directory under
-`target/` and, above `OMNI_TARGET_LIMIT_GIB` (default 40), sweeps the oldest
-artifacts with `cargo sweep` (`brew install cargo-sweep`) down to half the
-limit. Run one heavy build session at a time. Concurrent agents in the same
-checkout each set their own `CARGO_TARGET_DIR=target/agents/<name>` (and a
-separate one for wasm or trunk work) so they do not block on Cargo's lock or
-invalidate each other's artifacts; hygiene covers those directories too.
+Build output lives in the checkout's default `target/`. Do not set
+`CARGO_TARGET_DIR` per task or per subagent: a new directory starts with a
+15-minute cold build. Native builds, wasm32 Clippy and trunk share `target/`
+without invalidating each other. Run one heavy build at a time; a second cargo
+command waits on Cargo's lock, which costs less than a second build directory.
+Subagents and reviewers do not run the gate or build in directories of their
+own; they read, and run a focused test in `target/` when they need one. If two
+builders must run at once, the second uses the fixed directory
+`target/agents/b`, seeded once with
+`mkdir -p target/agents/b && cp -cR target/debug target/agents/b/` (an APFS
+clone: no extra disk until files change). The gate's first step,
+`cargo xtask hygiene`, removes whole directories under `target/agents/` unused
+for 48 hours (`OMNI_TARGET_STALE_HOURS`) and deletes nothing else; above
+`OMNI_TARGET_LIMIT_GIB` (default 80) it only suggests `cargo clean`.
 
 Completed, reviewed work is authorized to ship directly to `main`: preserve
 unrelated changes, commit the scoped result, pull with rebase if the remote moved,
@@ -897,14 +919,18 @@ drop wire MIME once SMTP completes and the private copy once it is verified.
 - Do not leave debug logs, commented-out code, or unnecessary abstractions.
 - Tests are spec-style acceptance tests: integration tests in `crates/*/tests/`
   named after the behavior they cover, plus `#[cfg(test)]` unit tests for pure
-  decisions. Test pure decisions separately from network adapters. Async tests
-  use `#[tokio::test(start_paused = true)]` and the test clock; assert typed
+  decisions. Each crate's test files are modules of one test binary,
+  `tests/it.rs` (`autotests = false`); a new file needs its `mod` line there,
+  and `cargo xtask deps-check` fails without it. Test pure decisions
+  separately from network adapters. Async tests use
+  `#[tokio::test(start_paused = true)]` and the test clock; assert typed
   failures with `matches!`.
 - Use `omni-testkit` fakes (`TestStore`, `TestApp`, `FakeModels`, recorded
   Pushover and mail, `no_network`, `mock_http` over wiremock). Tests never reach
   the network.
 - Tests against a production copy are `#[ignore]` and read `OMNI_PROD_COPY`; run
-  them with `cargo test -p <crate> --test prod_copy -- --ignored`. Live
+  them with `cargo nextest run --workspace --run-ignored only
+  -E 'package(<crate>) & test(/^prod_copy::/)'`. Live
   integration smoke tests are also `#[ignore]` and run manually with dotenvx.
 - Committed golden fixtures are synthetic only. Capture raw responses with
   `cargo xtask capture-golden` into the gitignored `.local/golden-capture/`, then

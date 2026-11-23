@@ -108,7 +108,7 @@ omni healthcheck | doctor [--image] | compat-audit --db <copy>
 
 Prerequisites: rustup (toolchain pinned in `rust-toolchain.toml`) with the
 `wasm32-unknown-unknown` target, trunk 0.21.14, `cargo-deny`, `cargo-nextest`,
-`cargo-sweep`, and [dotenvx](https://dotenvx.com/) for a local `.env`.
+and [dotenvx](https://dotenvx.com/) for a local `.env`.
 
 ```bash
 cargo xtask gate                  # fmt, clippy (native and wasm32), deps-check, tests
