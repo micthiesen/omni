@@ -78,7 +78,10 @@ async fn the_owner_can_keep_an_ingredient_and_later_edits_are_not_refused() {
         )
         .await;
     assert_eq!(kept["saved"], true);
-    assert_eq!(codes(&kept["warnings"]), ["diet_conflict", "diet_conflict"]);
+    assert_eq!(
+        codes(&kept["warnings"]),
+        ["diet_conflict", "diet_conflict", "missing_image"]
+    );
     let id = kept["id"].as_str().unwrap();
 
     // An edit that leaves the kept ingredients alone needs no flag.
@@ -119,7 +122,7 @@ async fn a_vegetarian_recipe_with_friendly_amounts_saves_clean() {
         .ok("recipes_create", json!({ "document": vegetarian() }))
         .await;
     assert_eq!(created["saved"], true);
-    assert_eq!(created["warnings"], json!([]));
+    assert_eq!(codes(&created["warnings"]), ["missing_image"]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -143,7 +146,15 @@ async fn awkward_amounts_are_warnings_with_what_to_write() {
     // A warning never blocks the save.
     assert_eq!(created["saved"], true);
     let warnings = created["warnings"].as_array().unwrap();
-    assert_eq!(codes(&created["warnings"]), ["awkward_amount"; 3]);
+    assert_eq!(
+        codes(&created["warnings"]),
+        [
+            "awkward_amount",
+            "awkward_amount",
+            "awkward_amount",
+            "missing_image"
+        ]
+    );
     let hint = |id: &str| {
         warnings
             .iter()

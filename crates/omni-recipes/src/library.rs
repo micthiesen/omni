@@ -89,6 +89,20 @@ pub(crate) fn render_chart(doc: &RecipeDoc, factor: f64, ids: bool) -> String {
     format!("{}\n", charts.join("\n\n"))
 }
 
+/// The warning of a recipe without a picture of the dish: every recipe gets
+/// a cover, the owner's photo when there is one (see the guide).
+fn missing_image() -> Problem {
+    Problem {
+        code: Code::MissingImage,
+        path: "images".to_owned(),
+        message: "the recipe has no picture of the dish".to_owned(),
+        hint: Some(
+            "add a cover with recipes_images_edit: the owner's own photo, else the source page's lead image, else a freely licensed image (role dish) captioned \"Placeholder: …\" with its author, source and licence (recipes_guide)".to_owned(),
+        ),
+        level: Level::Warning,
+    }
+}
+
 pub(crate) fn state_of(row: &RecipeRow) -> RecipeState {
     match row.state.as_str() {
         "archived" => RecipeState::Archived,
@@ -240,9 +254,17 @@ impl Recipes {
             derived_from: input.derived_from,
             allow_duplicate: input.allow_duplicate.unwrap_or(false),
         };
-        let (id, seq, change) = self
-            .transact(dry, move |conn, now| create_tx(conn, now, create, &actor))
+        let (id, seq, change, has_dish) = self
+            .transact(dry, move |conn, now| {
+                let (id, seq, change) = create_tx(conn, now, create, &actor)?;
+                let has_dish = db::has_dish_image(conn, &id)?;
+                Ok((id, seq, change, has_dish))
+            })
             .await?;
+        let mut warnings = report.warnings;
+        if !has_dish {
+            warnings.push(missing_image());
+        }
         if !dry {
             self.hub.library(seq);
         }
@@ -255,7 +277,7 @@ impl Recipes {
             change_id: (!dry).then_some(change),
             problems: None,
             time,
-            warnings: report.warnings,
+            warnings,
             fidelity,
             text,
         })
@@ -288,7 +310,16 @@ impl Recipes {
             keep_diet: input.keep_diet_conflicts.unwrap_or(false),
             kind: ContentKind::Replace(Box::new(input.document)),
         };
-        let result = self.write_content(write, actor, dry).await?;
+        let mut result = self.write_content(write, actor, dry).await?;
+        if result.problems.is_none() {
+            let id = result.id.clone();
+            if !self
+                .query(move |conn| db::has_dish_image(conn, &id))
+                .await?
+            {
+                result.warnings.push(missing_image());
+            }
+        }
         let fidelity = match (&result.doc, result.problems.is_none()) {
             (Some(doc), true) => {
                 let snapshot = match result.source_item.clone() {

@@ -172,6 +172,13 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
             if has { "" } else { "NOT" }
         ));
     }
+    if let Some(placeholder) = input.placeholder_image {
+        clauses.push(format!(
+            "{}{}",
+            if placeholder { "" } else { "NOT " },
+            db::PLACEHOLDER_COVER_SQL
+        ));
+    }
     let filter = if clauses.is_empty() {
         String::new()
     } else {
@@ -232,6 +239,7 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
     let mut recipes = Vec::with_capacity(rows.len());
     for (row, snippet) in rows {
         let doc = doc_at(conn, &row.id, row.head_rev)?;
+        let images = images_of(conn, &row.id)?;
         recipes.push(Card {
             title: doc.title.clone(),
             summary: doc.summary.clone().filter(|summary| !summary.is_empty()),
@@ -245,7 +253,9 @@ fn search(conn: &Connection, input: &SearchInput, tz: &jiff::tz::TimeZone) -> R<
             active_min: row.active_min,
             total_min: row.total_min,
             revision: row.head_rev,
-            has_image: !images_of(conn, &row.id)?.is_empty(),
+            has_image: !images.is_empty(),
+            cover_placeholder: db::cover_of(&row, &images)
+                .is_some_and(|cover| db::is_placeholder(cover.caption.as_deref())),
             cook_count: row.cook_count,
             last_cooked_on: row.last_cooked_at.map(|at| db::local_date(at, tz)),
             pinned: crate::pins::place(conn, &row.id)?,

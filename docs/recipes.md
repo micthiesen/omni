@@ -103,7 +103,7 @@ public URL the caller supplies.
 | Tool | Purpose |
 |---|---|
 | `recipes_guide` | Authoring guide, format, units, tag vocabulary with counts, library counts, household rules |
-| `recipes_search` | Text, tags, ingredients, state, time, images, cook history; cards with paging |
+| `recipes_search` | Text, tags, ingredients, state, time, images (`placeholderImage`), cook history; cards with paging |
 | `recipes_get` | One recipe as `document`, `text` or `chart`, at any scale or revision; `ids` marks text and chart with the ids edits address |
 | `recipes_history` | A recipe's revisions and diffs, or the library change log |
 | `recipes_image_get` | One recipe image as an MCP image block |
@@ -522,6 +522,18 @@ same tokeniser.
   item or change-log entry from the last 30 days refers to it, so an undo can
   put it back; after that `RecipesPurge` deletes it. Files modified in the last
   day are never purged.
+- Every recipe should have a picture of the dish (role `dish`). `recipes_create`
+  and `recipes_replace` return a `missing_image` warning without one (reported
+  by the library, like `diet_conflict`; it never blocks). The guide's order of
+  preference is the owner's photo, the source page's lead image, then a freely
+  licensed image captioned `Placeholder: <author, source, licence>`.
+- A placeholder is only its caption: an image whose caption starts
+  `Placeholder:` (any case) reads `placeholder: true` in `recipes_get`, a card
+  whose cover is one has `coverPlaceholder`, and `recipes_search`
+  `placeholderImage` filters on the cover (`db::PLACEHOLDER_COVER_SQL`, the
+  same rule as `db::is_placeholder`). Nothing is stored for it.
+- URL fetches go through the public client, which follows up to 10 redirects
+  and checks every hop, so a Commons `Special:FilePath` link reaches the file.
 
 ## The app's HTTP API
 

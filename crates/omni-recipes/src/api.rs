@@ -243,6 +243,9 @@ pub struct SearchInput {
     #[schemars(range(min = 1))]
     pub max_total_min: Option<u32>,
     pub has_image: Option<bool>,
+    /// true: the cover is a freely licensed placeholder (its caption starts
+    /// "Placeholder:"); false: it is not.
+    pub placeholder_image: Option<bool>,
     /// Default "relevance" with a query, otherwise "recent".
     pub sort: Option<SearchSort>,
     pub cursor: Option<u32>,
@@ -266,6 +269,9 @@ pub struct Card {
     pub total_min: u32,
     pub revision: u32,
     pub has_image: bool,
+    /// The cover is a placeholder, waiting for the owner's own photo.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cover_placeholder: bool,
     pub cook_count: u32,
     /// YYYY-MM-DD, the owner's local date.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -338,6 +344,10 @@ pub struct ImageInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caption: Option<String>,
     pub cover: bool,
+    /// A freely licensed stand-in (caption "Placeholder: …"), to be replaced
+    /// by the owner's own photo.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub placeholder: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

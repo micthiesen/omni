@@ -406,6 +406,30 @@ pub fn cover_of<'a>(row: &RecipeRow, images: &'a [ImageRow]) -> Option<&'a Image
         .or(images.first())
 }
 
+/// Whether a caption marks a freely licensed stand-in for the owner's photo.
+pub fn is_placeholder(caption: Option<&str>) -> bool {
+    caption.is_some_and(|caption| {
+        caption
+            .trim_start()
+            .get(..12)
+            .is_some_and(|head| head.eq_ignore_ascii_case("placeholder:"))
+    })
+}
+
+/// SQL true when recipe `r`'s cover (the chosen one, else the first image)
+/// is a placeholder; the same rule as [`is_placeholder`].
+pub const PLACEHOLDER_COVER_SQL: &str = "EXISTS (SELECT 1 FROM recipes_image i WHERE i.id = \
+     coalesce((SELECT c.id FROM recipes_image c WHERE c.id = r.cover_image AND c.recipe_id = r.id), \
+     (SELECT f.id FROM recipes_image f WHERE f.recipe_id = r.id ORDER BY f.position, f.created_at, f.id LIMIT 1)) \
+     AND lower(substr(ltrim(i.caption), 1, 12)) = 'placeholder:')";
+
+/// Whether the recipe has a picture of the dish.
+pub fn has_dish_image(conn: &Connection, id: &str) -> R<bool> {
+    Ok(images_of(conn, id)?
+        .iter()
+        .any(|image| image.role == "dish"))
+}
+
 pub fn image_infos(row: &RecipeRow, images: &[ImageRow]) -> Vec<ImageInfo> {
     let cover = cover_of(row, images).map(|image| image.id.clone());
     images
@@ -417,6 +441,7 @@ pub fn image_infos(row: &RecipeRow, images: &[ImageRow]) -> Vec<ImageInfo> {
             role: image.role.clone(),
             caption: image.caption.clone(),
             cover: cover.as_deref() == Some(image.id.as_str()),
+            placeholder: is_placeholder(image.caption.as_deref()),
         })
         .collect()
 }

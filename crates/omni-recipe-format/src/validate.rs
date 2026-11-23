@@ -57,8 +57,10 @@ pub enum Code {
     MissingSourceUrl,
     AwkwardAmount,
     // Reported by the library, not by `validate`: the household diet, which
-    // the owner may override for one ingredient.
+    // the owner may override for one ingredient, and a recipe without a
+    // picture of the dish.
     DietConflict,
+    MissingImage,
     // The last two are reported by the library on a dry run, not by
     // `validate`. Plain comments: a documented variant would turn the
     // schema's `enum` into a `oneOf`.
@@ -102,6 +104,7 @@ impl Code {
             Self::MissingSourceUrl => "missing_source_url",
             Self::AwkwardAmount => "awkward_amount",
             Self::DietConflict => "diet_conflict",
+            Self::MissingImage => "missing_image",
             Self::UnknownTag => "unknown_tag",
             Self::DuplicateSource => "duplicate_source",
         }

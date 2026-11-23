@@ -5,6 +5,7 @@ mod recipes_agent_feedback;
 mod recipes_app_amounts;
 mod recipes_backup;
 mod recipes_cook;
+mod recipes_cover_images;
 mod recipes_create;
 mod recipes_edit;
 mod recipes_edit_ids;

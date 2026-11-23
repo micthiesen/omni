@@ -313,9 +313,10 @@ pub fn image_blocks(content: &[Content]) -> Vec<Vec<u8>> {
 }
 
 /// Whether `warnings` holds nothing but the sample recipes' meat, kept as
-/// an exception to the household diet.
+/// an exception to the household diet, and the cover they do not have yet.
 pub fn only_kept_diet_conflicts(warnings: &Value) -> bool {
-    warnings
-        .as_array()
-        .is_some_and(|all| all.iter().all(|warning| warning["code"] == "diet_conflict"))
+    warnings.as_array().is_some_and(|all| {
+        all.iter()
+            .all(|warning| warning["code"] == "diet_conflict" || warning["code"] == "missing_image")
+    })
 }

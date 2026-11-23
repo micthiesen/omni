@@ -357,7 +357,10 @@ async fn a_dry_run_reports_everything_the_real_call_would_refuse() {
         .iter()
         .map(|p| p["code"].as_str().unwrap())
         .collect();
-    assert_eq!(codes, ["missing_time", "missing_source_url"]);
+    assert_eq!(
+        codes,
+        ["missing_time", "missing_source_url", "missing_image"]
+    );
     assert_eq!(created["time"]["complete"], false);
 }
 
