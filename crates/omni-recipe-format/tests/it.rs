@@ -5,4 +5,5 @@ mod golden;
 mod ops;
 mod properties;
 mod schema;
+mod settings;
 mod validation;

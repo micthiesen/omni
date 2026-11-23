@@ -11,7 +11,7 @@ use crate::format::{fmt_amount_exact, is_known_unit, nearest_unit, parse_fractio
 use crate::index::{Index, Kind};
 use crate::model::{
     ACTION_MAX, ACTION_WARN, Attention, COMPONENTS_MAX, Component, INGREDIENTS_MAX, Ingredient,
-    Input, RecipeDoc, STEPS_MAX, Step, TITLE_MAX, is_valid_id,
+    Input, RecipeDoc, SIZES_MAX, STEPS_MAX, SizeKind, Step, TITLE_MAX, is_valid_id,
 };
 use crate::py;
 use crate::text::{explicit_total, fraction_value, keyword, placeholders};
@@ -547,6 +547,55 @@ fn check_step_limits(step: &Step, report: &mut Report) {
                 Code::BadValue,
                 format!("{path}.temp"),
                 format!("temp unit \"{}\" must be \"F\" or \"C\"", temp.unit),
+            );
+        }
+    }
+    if step.size.len() > SIZES_MAX {
+        report.error(
+            Code::TooMany,
+            format!("{path}.size"),
+            format!("a step has at most {SIZES_MAX} sizes"),
+        );
+    }
+    for (n, size) in step.size.iter().enumerate() {
+        let at = format!("{path}.size.{n}");
+        let positive = |value: f64| value.is_finite() && value > 0.0;
+        if !positive(size.value) {
+            report.error(
+                Code::BadValue,
+                at.as_str(),
+                "value must be a number above 0",
+            );
+        }
+        if let Some(max) = size.max
+            && !(positive(max) && max >= size.value)
+        {
+            report.error(
+                Code::BadValue,
+                at.as_str(),
+                "max must be a number at least value",
+            );
+        }
+        if let Some(by) = size.by {
+            if !matches!(size.kind, SizeKind::Pan | SizeKind::Length) {
+                report.error_hint(
+                    Code::BadValue,
+                    at.as_str(),
+                    format!("a {} has no second side (by)", size.kind.as_str()),
+                    "by is for a pan or a length: 23 by 33 cm",
+                );
+            } else if !positive(by) {
+                report.error(Code::BadValue, at.as_str(), "by must be a number above 0");
+            }
+        }
+        if !matches!(size.unit.as_str(), "mm" | "cm" | "in") {
+            report.error(
+                Code::BadValue,
+                at.as_str(),
+                format!(
+                    "size unit \"{}\" must be \"mm\", \"cm\" or \"in\"",
+                    size.unit
+                ),
             );
         }
     }

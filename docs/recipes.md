@@ -112,6 +112,12 @@ before a name became a placeholder reads as it did.
   ordinals, labels (`step 3`, `gas mark 4`) and measured amounts (left to
   `literal_quantity`) are exempt, as are number words. The hint names `{yield}` when the number
   equals the yield, `repeat` for batches, and `portions` otherwise.
+- **Sizes** (`format::fmt_size`). `size: [{ kind, value, max?, by?, unit }]`, kind
+  `thickness`, `diameter`, `length` or `pan`, unit `mm`, `cm` or `in`, at most four. `{size}`
+  renders all of them, `{size:kind}` the first of that kind, each in both systems (inches to
+  the nearest ⅛ below an inch and ½ above, centimetres whole, millimetres below 1 cm). Sizes
+  never scale; at a scale other than 1 a pan adds "for the unscaled recipe". Scaling the yield
+  by pan area is not done: depth and shape make the ratio unreliable.
 
 ## Tools
 

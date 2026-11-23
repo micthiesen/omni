@@ -48242,7 +48242,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48307,6 +48307,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -48867,7 +48908,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48932,6 +48973,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -49624,7 +49706,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -49689,6 +49771,47 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "size": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "thickness",
+                                              "diameter",
+                                              "length",
+                                              "pan"
+                                            ],
+                                            "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "value": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number",
+                                            "description": "The top of a range: 3 to 4 mm."
+                                          },
+                                          "by": {
+                                            "type": "number",
+                                            "description": "The second side of a pan or a length: 23 by 33 cm."
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"mm\", \"cm\" or \"in\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "value",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                      },
+                                      "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                     },
                                     "until": {
                                       "type": "string",
@@ -49912,7 +50035,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -49977,6 +50100,47 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "size": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "thickness",
+                                                    "diameter",
+                                                    "length",
+                                                    "pan"
+                                                  ],
+                                                  "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number",
+                                                  "description": "The top of a range: 3 to 4 mm."
+                                                },
+                                                "by": {
+                                                  "type": "number",
+                                                  "description": "The second side of a pan or a length: 23 by 33 cm."
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"mm\", \"cm\" or \"in\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false,
+                                              "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                            },
+                                            "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                           },
                                           "until": {
                                             "type": "string",
@@ -50710,7 +50874,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -50775,6 +50939,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -104255,7 +104460,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104320,6 +104525,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -104880,7 +105126,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104945,6 +105191,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -105637,7 +105924,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -105702,6 +105989,47 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "size": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "thickness",
+                                              "diameter",
+                                              "length",
+                                              "pan"
+                                            ],
+                                            "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "value": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number",
+                                            "description": "The top of a range: 3 to 4 mm."
+                                          },
+                                          "by": {
+                                            "type": "number",
+                                            "description": "The second side of a pan or a length: 23 by 33 cm."
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"mm\", \"cm\" or \"in\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "value",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                      },
+                                      "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                     },
                                     "until": {
                                       "type": "string",
@@ -105925,7 +106253,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -105990,6 +106318,47 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "size": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "thickness",
+                                                    "diameter",
+                                                    "length",
+                                                    "pan"
+                                                  ],
+                                                  "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number",
+                                                  "description": "The top of a range: 3 to 4 mm."
+                                                },
+                                                "by": {
+                                                  "type": "number",
+                                                  "description": "The second side of a pan or a length: 23 by 33 cm."
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"mm\", \"cm\" or \"in\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false,
+                                              "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                            },
+                                            "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                           },
                                           "until": {
                                             "type": "string",
@@ -106723,7 +107092,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -106788,6 +107157,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -160459,7 +160869,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -160524,6 +160934,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -161084,7 +161535,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -161149,6 +161600,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -161841,7 +162333,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -161906,6 +162398,47 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "size": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "thickness",
+                                              "diameter",
+                                              "length",
+                                              "pan"
+                                            ],
+                                            "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "value": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number",
+                                            "description": "The top of a range: 3 to 4 mm."
+                                          },
+                                          "by": {
+                                            "type": "number",
+                                            "description": "The second side of a pan or a length: 23 by 33 cm."
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"mm\", \"cm\" or \"in\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "value",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                      },
+                                      "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                     },
                                     "until": {
                                       "type": "string",
@@ -162129,7 +162662,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -162194,6 +162727,47 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "size": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "thickness",
+                                                    "diameter",
+                                                    "length",
+                                                    "pan"
+                                                  ],
+                                                  "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number",
+                                                  "description": "The top of a range: 3 to 4 mm."
+                                                },
+                                                "by": {
+                                                  "type": "number",
+                                                  "description": "The second side of a pan or a length: 23 by 33 cm."
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"mm\", \"cm\" or \"in\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false,
+                                              "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                            },
+                                            "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                           },
                                           "until": {
                                             "type": "string",
@@ -162927,7 +163501,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -162992,6 +163566,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -215924,7 +216539,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -215989,6 +216604,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -216549,7 +217205,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -216614,6 +217270,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",
@@ -217306,7 +218003,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -217371,6 +218068,47 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "size": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "thickness",
+                                              "diameter",
+                                              "length",
+                                              "pan"
+                                            ],
+                                            "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "value": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number",
+                                            "description": "The top of a range: 3 to 4 mm."
+                                          },
+                                          "by": {
+                                            "type": "number",
+                                            "description": "The second side of a pan or a length: 23 by 33 cm."
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"mm\", \"cm\" or \"in\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "value",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                      },
+                                      "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                     },
                                     "until": {
                                       "type": "string",
@@ -217594,7 +218332,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -217659,6 +218397,47 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "size": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "thickness",
+                                                    "diameter",
+                                                    "length",
+                                                    "pan"
+                                                  ],
+                                                  "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number",
+                                                  "description": "The top of a range: 3 to 4 mm."
+                                                },
+                                                "by": {
+                                                  "type": "number",
+                                                  "description": "The second side of a pan or a length: 23 by 33 cm."
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"mm\", \"cm\" or \"in\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false,
+                                              "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                            },
+                                            "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                           },
                                           "until": {
                                             "type": "string",
@@ -218392,7 +219171,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -218457,6 +219236,47 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "size": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "thickness",
+                                                "diameter",
+                                                "length",
+                                                "pan"
+                                              ],
+                                              "description": "What a size measures. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number",
+                                              "description": "The top of a range: 3 to 4 mm."
+                                            },
+                                            "by": {
+                                              "type": "number",
+                                              "description": "The second side of a pan or a length: 23 by 33 cm."
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "description": "\"mm\", \"cm\" or \"in\"."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value",
+                                            "unit"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "A dimension: \"3–4 mm\" thick, a \"7 cm\" cutter, a \"23 × 33 cm\" pan. Sizes\nnever scale; a pan size is for the recipe as written."
+                                        },
+                                        "description": "Sizes the step works to: rolling thickness, cutter diameter, pan."
                                       },
                                       "until": {
                                         "type": "string",

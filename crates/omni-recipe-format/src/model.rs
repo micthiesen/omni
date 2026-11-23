@@ -169,8 +169,8 @@ pub struct Step {
     pub action: String,
     /// The edges of the graph; empty for setup steps such as preheating.
     pub inputs: Vec<Input>,
-    /// Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and
-    /// `{portions}` placeholders.
+    /// Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,
+    /// `{portions}`, `{size}` and `{size:kind}` placeholders.
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<StepTime>,
@@ -180,6 +180,9 @@ pub struct Step {
     /// renders "16 pieces" at 1 and "24 pieces" at 1.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portions: Option<Portions>,
+    /// Sizes the step works to: rolling thickness, cutter diameter, pan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub size: Vec<Size>,
     /// Doneness cue: "edges golden, centres soft".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<String>,
@@ -233,6 +236,57 @@ pub struct Temp {
     #[serde(serialize_with = "number")]
     pub value: f64,
     /// "F" or "C".
+    pub unit: String,
+}
+
+pub const SIZES_MAX: usize = 4;
+
+/// What a size measures. Variants carry no doc comments (see [`Attention`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum SizeKind {
+    Thickness,
+    Diameter,
+    Length,
+    Pan,
+}
+
+impl SizeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Thickness => "thickness",
+            Self::Diameter => "diameter",
+            Self::Length => "length",
+            Self::Pan => "pan",
+        }
+    }
+}
+
+/// A dimension: "3–4 mm" thick, a "7 cm" cutter, a "23 × 33 cm" pan. Sizes
+/// never scale; a pan size is for the recipe as written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Size {
+    pub kind: SizeKind,
+    #[serde(serialize_with = "number")]
+    pub value: f64,
+    /// The top of a range: 3 to 4 mm.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "optional_number"
+    )]
+    pub max: Option<f64>,
+    /// The second side of a pan or a length: 23 by 33 cm.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "optional_number"
+    )]
+    pub by: Option<f64>,
+    /// "mm", "cm" or "in".
     pub unit: String,
 }
 

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::format::{
-    fmt_amount_at, fmt_count, fmt_number, fmt_temp, fmt_time, fmt_time_prose, inflect,
+    fmt_amount_at, fmt_count, fmt_number, fmt_size, fmt_temp, fmt_time, fmt_time_prose, inflect,
     parse_fraction,
 };
 use crate::index::{Index, Kind, Node};
@@ -255,16 +255,28 @@ pub enum Segment {
     Temp { text: String },
     /// A count that follows the scale: `{yield}`, `{portions}`.
     Count { text: String },
+    /// A setting the cook works to: `{size}`.
+    Setting { text: String },
 }
 
 impl Segment {
+    /// The same kind of segment reading `label`, for `{yield|…}`.
+    fn relabeled(self, label: &str) -> Self {
+        let text = label.to_owned();
+        match self {
+            Self::Setting { .. } => Self::Setting { text },
+            _ => Self::Count { text },
+        }
+    }
+
     pub fn text(&self) -> &str {
         match self {
             Self::Text { text }
             | Self::Input { text, .. }
             | Self::Time { text }
             | Self::Temp { text }
-            | Self::Count { text } => text,
+            | Self::Count { text }
+            | Self::Setting { text } => text,
         }
     }
 }
@@ -280,7 +292,11 @@ pub(crate) fn keyword(step: &Step, name: &str) -> Option<bool> {
     match name {
         "yield" => Some(true),
         "portions" => Some(step.portions.is_some()),
-        _ => None,
+        "size" => Some(!step.size.is_empty()),
+        _ => match name.split_once(':') {
+            Some(("size", kind)) => Some(step.size.iter().any(|size| size.kind.as_str() == kind)),
+            _ => None,
+        },
     }
 }
 
@@ -301,7 +317,24 @@ fn keyword_segment(ix: &Index<'_>, step: &Step, name: &str, factor: f64) -> Opti
                 portions.unit
             ),
         }),
-        _ => None,
+        "size" => Some(Segment::Setting {
+            text: step
+                .size
+                .iter()
+                .map(|size| fmt_size(size, !exact))
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
+        _ => match name.split_once(':') {
+            Some(("size", kind)) => step
+                .size
+                .iter()
+                .find(|size| size.kind.as_str() == kind)
+                .map(|size| Segment::Setting {
+                    text: fmt_size(size, !exact),
+                }),
+            _ => None,
+        },
     }
 }
 
@@ -324,9 +357,7 @@ pub fn render_step_segments(ix: &Index<'_>, step: &Step, factor: f64) -> Vec<Seg
             }),
             id if keyword(step, id).is_some() => {
                 keyword_segment(ix, step, id, factor).map(|segment| match placeholder.label {
-                    Some(label) => Segment::Count {
-                        text: label.to_owned(),
-                    },
+                    Some(label) => segment.relabeled(label),
                     None => segment,
                 })
             }

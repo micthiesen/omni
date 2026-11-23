@@ -7,8 +7,8 @@
 
 use omni_recipe_format::{
     Amount, Attention, Block, Byproduct, CellKind, Component, Index, Ingredient, Input, Kind,
-    MakeAhead, Marks, Op, Portions, RecipeDoc, Source, SourceKind, Step, StepTime, Temp,
-    TimeOverride, Yield, apply_ops, chart_ascii, chart_blocks, chart_html, cook_marks,
+    MakeAhead, Marks, Op, Portions, RecipeDoc, Size, SizeKind, Source, SourceKind, Step, StepTime,
+    Temp, TimeOverride, Yield, apply_ops, chart_ascii, chart_blocks, chart_html, cook_marks,
     derived_time, diff_summary, equipment, gather_list, list_view, meanwhile, ready_steps,
     render_list, render_timeline, scaled, search_text, step_inputs, timeline, tokens, validate,
 };
@@ -393,6 +393,15 @@ fn wild_step(tape: &mut Tape<'_>) -> Step {
             qty: tape.pick(&WILD_NUMBERS),
             unit: tape.pick(&WILD_TEXT).to_owned(),
         }),
+        size: (0..tape.below(3))
+            .map(|_| Size {
+                kind: tape.pick(&[SizeKind::Thickness, SizeKind::Diameter, SizeKind::Pan]),
+                value: tape.pick(&WILD_NUMBERS),
+                max: tape.chance(30).then(|| tape.pick(&WILD_NUMBERS)),
+                by: tape.chance(30).then(|| tape.pick(&WILD_NUMBERS)),
+                unit: tape.pick(&["mm", "cm", "in", "ft", ""]).to_owned(),
+            })
+            .collect(),
         until: wild_text(tape),
         equipment: (0..tape.below(3))
             .map(|_| tape.pick(&WILD_TEXT).to_owned())

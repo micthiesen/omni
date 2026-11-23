@@ -1,6 +1,6 @@
 //! How amounts, units, times and temperatures read.
 
-use crate::model::{Ingredient, Temp};
+use crate::model::{Ingredient, Size, Temp};
 use crate::py;
 
 pub const METRIC_UNITS: [&str; 4] = ["g", "kg", "ml", "l"];
@@ -264,6 +264,64 @@ pub fn fmt_temp(temp: &Temp, both: bool) -> String {
     format!("{value}°{unit} ({}°{other_unit})", fmt_plain(other))
 }
 
+/// One length in the other system, the way a ruler reads: inches to the
+/// nearest eighth below an inch and half an inch above; centimetres whole,
+/// or millimetres below a centimetre.
+fn converted(value: f64, unit: &str) -> (f64, &'static str) {
+    if unit == "in" {
+        let cm = value * 2.54;
+        if cm < 1.0 {
+            ((cm * 10.0).round().max(1.0), "mm")
+        } else {
+            (cm.round(), "cm")
+        }
+    } else {
+        let inches = if unit == "mm" {
+            value / 25.4
+        } else {
+            value / 2.54
+        };
+        if inches < 1.0 {
+            (((inches * 8.0).round() / 8.0).max(0.125), "in")
+        } else {
+            ((inches * 2.0).round() / 2.0, "in")
+        }
+    }
+}
+
+fn fmt_length(value: f64, unit: &str) -> String {
+    if unit == "in" {
+        fmt_number(value, None)
+    } else {
+        py::fmt_g(value)
+    }
+}
+
+/// `3–4 mm (⅛ in)`, `23 × 33 cm (9 × 13 in)`, `7 cm (3 in)`. With
+/// `scaled`, a pan says it is sized for the recipe as written.
+pub fn fmt_size(size: &Size, scaled: bool) -> String {
+    let unit = size.unit.as_str();
+    let pair = |value: f64, max: Option<f64>, by: Option<f64>, unit: &str| {
+        let mut text = fmt_length(value, unit);
+        if let Some(max) = max.filter(|max| fmt_length(*max, unit) != text) {
+            text = format!("{text}–{}", fmt_length(max, unit));
+        }
+        if let Some(by) = by {
+            text = format!("{text} × {}", fmt_length(by, unit));
+        }
+        format!("{text} {unit}")
+    };
+    let written = pair(size.value, size.max, size.by, unit);
+    let (value, other) = converted(size.value, unit);
+    let max = size.max.map(|max| converted(max, unit).0);
+    let by = size.by.map(|by| converted(by, unit).0);
+    let mut note = pair(value, max, by, other);
+    if scaled && size.kind == crate::model::SizeKind::Pan {
+        note.push_str("; for the unscaled recipe");
+    }
+    format!("{written} ({note})")
+}
+
 /// A count of things a cook makes (rolls, pieces, batches): as stored when
 /// `exact`, otherwise the nearest whole number (at least 1), read "about"
 /// when that is more than a tenth away from the scaled value.
@@ -378,6 +436,32 @@ mod tests {
         let mut leaf = count("bay leaf");
         leaf.plural = Some("bay leaves".to_owned());
         assert_eq!(inflect("bay leaf", Some(2.0), None, &leaf), "bay leaves");
+    }
+
+    #[test]
+    fn sizes_read_in_both_systems() {
+        use crate::model::SizeKind;
+        let size = |kind, value, max, by, unit: &str| Size {
+            kind,
+            value,
+            max,
+            by,
+            unit: unit.to_owned(),
+        };
+        let thick = size(SizeKind::Thickness, 3.0, Some(4.0), None, "mm");
+        assert_eq!(fmt_size(&thick, false), "3–4 mm (⅛ in)");
+        let pan = size(SizeKind::Pan, 23.0, None, Some(33.0), "cm");
+        assert_eq!(fmt_size(&pan, false), "23 × 33 cm (9 × 13 in)");
+        assert_eq!(
+            fmt_size(&pan, true),
+            "23 × 33 cm (9 × 13 in; for the unscaled recipe)"
+        );
+        let cutter = size(SizeKind::Diameter, 7.0, None, None, "cm");
+        assert_eq!(fmt_size(&cutter, true), "7 cm (3 in)");
+        let quarter = size(SizeKind::Thickness, 0.25, None, None, "in");
+        assert_eq!(fmt_size(&quarter, false), "¼ in (6 mm)");
+        let round = size(SizeKind::Pan, 9.0, None, None, "in");
+        assert_eq!(fmt_size(&round, false), "9 in (23 cm)");
     }
 
     #[test]

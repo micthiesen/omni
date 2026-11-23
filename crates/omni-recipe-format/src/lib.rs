@@ -38,8 +38,8 @@ pub use list::{
 };
 pub use model::{
     Amount, Attention, Byproduct, Component, FORMAT, Id, Ingredient, Input, MakeAhead, Portions,
-    RecipeDoc, Source, SourceKind, Step, StepTime, Temp, TimeOverride, UpgradeError, Yield,
-    is_valid_id, is_web_url, upgrade,
+    RecipeDoc, Size, SizeKind, Source, SourceKind, Step, StepTime, Temp, TimeOverride,
+    UpgradeError, Yield, is_valid_id, is_web_url, upgrade,
 };
 pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, diff_summary_with_ops, scaled};
 pub use search::{fold, matches, search_text, tokens};

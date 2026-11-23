@@ -111,7 +111,9 @@ Component   { id, name?, makeAhead?: { keeps, where }, ingredients[], steps[] }
 Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { qty, unit },
               optional?, toTaste?, scales?, recipe? }
 Step        { id, action, inputs[], text, time?: { min, max?, attention: active | passive },
-              temp?: { value, unit: "F" | "C" }, portions?: { qty, unit }, until?, equipment?[], output?,
+              temp?: { value, unit: "F" | "C" }, portions?: { qty, unit },
+              size?[]: { kind: thickness | diameter | length | pan, value, max?, by?, unit: mm | cm | in },
+              until?, equipment?[], output?,
               byproducts?[]: { id, name }, optional?, tip? }
 Input       { ref, qty?, unit?, fraction?, rest?, part?, prep? }
 ```
@@ -160,6 +162,11 @@ A setup step, consumed by the step that needs it:
   times"), times, temperatures and sizes. Other numbers in `text`, `until`, `tip`, `prep` and
   `note` are reported as `unscaled_number` warnings with the fix. An input whose id is `yield`
   or `portions` keeps its `{id}` meaning in that step.
+- **Sizes are data.** A rolling thickness, a cutter, a pan or a length goes in the step's `size`
+  list, not in prose: `{ "kind": "thickness", "value": 3, "max": 4, "unit": "mm" }`,
+  `{ "kind": "pan", "value": 23, "by": 33, "unit": "cm" }`. `{size:thickness}` renders one kind
+  ("3–4 mm (⅛ in)", always with the other system), `{size}` all of them. Sizes never scale; a
+  pan shown at another scale says it is "for the unscaled recipe".
 - **`toTaste: true`** for seasoning without an amount; it may be an input of several steps.
   **`scales: false`** for amounts that do not follow the yield ("butter for the dish").
 - **`recipe`** on an ingredient links another recipe by id ("1 batch pizza dough").
