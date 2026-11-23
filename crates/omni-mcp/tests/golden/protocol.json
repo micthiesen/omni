@@ -53734,6 +53734,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "waitingFor": {
+                              "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -53747,7 +53758,8 @@
                             "state",
                             "startedAt",
                             "revision",
-                            "lastAssistant"
+                            "lastAssistant",
+                            "waitingFor"
                           ],
                           "additionalProperties": false
                         }
@@ -53762,7 +53774,7 @@
                 {
                   "name": "claude_session_get",
                   "title": "Get Claude Code Session",
-                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
+                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. Status waiting means the turn is paused on a prompt inside the session (waitingFor names it) and has not finished; do not send to it. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -53896,6 +53908,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -53909,7 +53932,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -54253,6 +54277,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -54266,7 +54301,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -54310,7 +54346,7 @@
                 {
                   "name": "claude_session_send",
                   "title": "Send Input to Claude Code Session",
-                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
+                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions, and sessions waiting on a prompt mid-turn (status waiting), are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -54456,6 +54492,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -54469,7 +54516,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -54882,7 +54930,7 @@
                 },
                 {
                   "name": "claude.session.turn_finished",
-                  "description": "A Claude Code session on the Claude Code host finished its turn or stopped. Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
+                  "description": "A Claude Code session on the Claude Code host finished its turn, stopped, or is blocked mid-turn on a prompt in the session (status waiting, with waitingFor naming it when known; sending to it would stop the turn). Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
                   "delivery": [
                     "webhook"
                   ],
@@ -54924,6 +54972,13 @@
                       },
                       "revision": {
                         "type": "integer"
+                      },
+                      "waitingFor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 100
                       }
                     },
                     "required": [
@@ -109564,6 +109619,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "waitingFor": {
+                              "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -109577,7 +109643,8 @@
                             "state",
                             "startedAt",
                             "revision",
-                            "lastAssistant"
+                            "lastAssistant",
+                            "waitingFor"
                           ],
                           "additionalProperties": false
                         }
@@ -109592,7 +109659,7 @@
                 {
                   "name": "claude_session_get",
                   "title": "Get Claude Code Session",
-                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
+                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. Status waiting means the turn is paused on a prompt inside the session (waitingFor names it) and has not finished; do not send to it. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -109726,6 +109793,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -109739,7 +109817,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -110083,6 +110162,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -110096,7 +110186,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -110140,7 +110231,7 @@
                 {
                   "name": "claude_session_send",
                   "title": "Send Input to Claude Code Session",
-                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
+                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions, and sessions waiting on a prompt mid-turn (status waiting), are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -110286,6 +110377,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -110299,7 +110401,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -110760,7 +110863,7 @@
                 },
                 {
                   "name": "claude.session.turn_finished",
-                  "description": "A Claude Code session on the Claude Code host finished its turn or stopped. Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
+                  "description": "A Claude Code session on the Claude Code host finished its turn, stopped, or is blocked mid-turn on a prompt in the session (status waiting, with waitingFor naming it when known; sending to it would stop the turn). Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
                   "delivery": [
                     "webhook"
                   ],
@@ -110802,6 +110905,13 @@
                       },
                       "revision": {
                         "type": "integer"
+                      },
+                      "waitingFor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 100
                       }
                     },
                     "required": [
@@ -165585,6 +165695,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "waitingFor": {
+                              "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -165598,7 +165719,8 @@
                             "state",
                             "startedAt",
                             "revision",
-                            "lastAssistant"
+                            "lastAssistant",
+                            "waitingFor"
                           ],
                           "additionalProperties": false
                         }
@@ -165613,7 +165735,7 @@
                 {
                   "name": "claude_session_get",
                   "title": "Get Claude Code Session",
-                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
+                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. Status waiting means the turn is paused on a prompt inside the session (waitingFor names it) and has not finished; do not send to it. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -165747,6 +165869,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -165760,7 +165893,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -166104,6 +166238,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -166117,7 +166262,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -166161,7 +166307,7 @@
                 {
                   "name": "claude_session_send",
                   "title": "Send Input to Claude Code Session",
-                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
+                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions, and sessions waiting on a prompt mid-turn (status waiting), are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -166307,6 +166453,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -166320,7 +166477,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -166516,7 +166674,7 @@
                 },
                 {
                   "name": "claude.session.turn_finished",
-                  "description": "A Claude Code session on the Claude Code host finished its turn or stopped. Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
+                  "description": "A Claude Code session on the Claude Code host finished its turn, stopped, or is blocked mid-turn on a prompt in the session (status waiting, with waitingFor naming it when known; sending to it would stop the turn). Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.",
                   "delivery": [
                     "webhook"
                   ],
@@ -166558,6 +166716,13 @@
                       },
                       "revision": {
                         "type": "integer"
+                      },
+                      "waitingFor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 100
                       }
                     },
                     "required": [
@@ -220867,6 +221032,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "waitingFor": {
+                              "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -220880,7 +221056,8 @@
                             "state",
                             "startedAt",
                             "revision",
-                            "lastAssistant"
+                            "lastAssistant",
+                            "waitingFor"
                           ],
                           "additionalProperties": false
                         }
@@ -220895,7 +221072,7 @@
                 {
                   "name": "claude_session_get",
                   "title": "Get Claude Code Session",
-                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
+                  "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. Status waiting means the turn is paused on a prompt inside the session (waitingFor names it) and has not finished; do not send to it. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -221029,6 +221206,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -221042,7 +221230,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -221386,6 +221575,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -221399,7 +221599,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },
@@ -221443,7 +221644,7 @@
                 {
                   "name": "claude_session_send",
                   "title": "Send Input to Claude Code Session",
-                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
+                  "description": "Continue an idle background Claude Code session with new user input. Busy sessions, and sessions waiting on a prompt mid-turn (status waiting), are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -221589,6 +221790,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "waitingFor": {
+                            "description": "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished",
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -221602,7 +221814,8 @@
                           "state",
                           "startedAt",
                           "revision",
-                          "lastAssistant"
+                          "lastAssistant",
+                          "waitingFor"
                         ],
                         "additionalProperties": false
                       },

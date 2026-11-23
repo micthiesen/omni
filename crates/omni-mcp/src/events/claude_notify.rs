@@ -124,6 +124,10 @@ pub struct FinishedTurn {
     pub title: Option<String>,
     pub status: String,
     pub state: Option<String>,
+    /// The turn has not ended: it is paused on a prompt in the session.
+    pub blocked: bool,
+    /// What a blocked turn waits for, when the host names it.
+    pub waiting_for: Option<String>,
     pub revision: f64,
     pub finished_at: i64,
     pub summary: Option<String>,
@@ -146,6 +150,8 @@ impl FinishedTurn {
             "title": self.title,
             "status": self.status,
             "state": self.state,
+            "blocked": self.blocked,
+            "waitingFor": self.waiting_for,
             "revision": crate::json::js_number(self.revision),
             "finishedAt": omni_core::js::to_iso_string(self.finished_at),
             "summary": summary,

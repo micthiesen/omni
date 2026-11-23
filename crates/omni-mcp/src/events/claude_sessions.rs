@@ -10,6 +10,12 @@
 //! session's `state` is not used: Claude Code writes it from a model summary
 //! a few seconds after each turn, so it lags the turn and can stay `working`
 //! after the turn ended.
+//!
+//! A `waiting` session is paused inside its turn on a prompt it cannot answer
+//! itself (a sandbox network request, a dialog, a question). It is not a
+//! finished turn: it is reported once, as blocked with what it waits for,
+//! after the prompt stayed open for a whole poll, and its later end is
+//! reported as usual.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -62,6 +68,9 @@ pub struct ClaudeSessionWatch {
     /// at `revision`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
+    /// The host reported the turn paused on a prompt (`waiting`) at `revision`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<bool>,
     pub seen_at: i64,
     #[serde(flatten)]
     pub extra: Extra,
@@ -91,6 +100,10 @@ pub struct SessionSummary {
     pub title: Option<String>,
     #[serde(default)]
     pub last_assistant: Option<String>,
+    /// What a `waiting` session waits for, as Claude Code names it
+    /// (`sandbox request`, `dialog open`, `input needed`, ...).
+    #[serde(default)]
+    pub waiting_for: Option<String>,
 }
 
 impl SessionSummary {
@@ -106,6 +119,7 @@ pub struct TurnBaseline {
     pub settled: bool,
     pub started: bool,
     pub quiet: bool,
+    pub waiting: bool,
 }
 
 impl TurnBaseline {
@@ -115,6 +129,7 @@ impl TurnBaseline {
             settled: watch.settled,
             started: watch.started.unwrap_or(false),
             quiet: watch.quiet.unwrap_or(false),
+            waiting: watch.waiting.unwrap_or(false),
         }
     }
 }
@@ -123,6 +138,14 @@ impl TurnBaseline {
 fn is_active(status: &str) -> bool {
     matches!(status, "busy" | "running")
 }
+
+/// The turn is paused on a prompt inside the session; it has not ended.
+pub fn is_waiting(status: &str) -> bool {
+    status == "waiting"
+}
+
+/// Longest `waitingFor` label carried in events and notifications.
+const WAITING_FOR_CHARS: usize = 100;
 
 /// What can be decided from the session list alone. `None` means the
 /// transcript's last item decides ([`settled_by_tail`]).
@@ -133,6 +156,12 @@ pub fn settled_from_status(
 ) -> Option<bool> {
     if is_active(status) {
         return Some(false);
+    }
+    if is_waiting(status) {
+        // Blocked, reported once the prompt has stayed open a whole poll at
+        // this revision, so a dialog that closes at once is never news. First
+        // sight is a baseline, as for any other status.
+        return Some(previous.is_none_or(|p| p.waiting && p.revision == revision));
     }
     let Some(previous) = previous else {
         // First sight only sets a baseline; its earlier turns are not news.
@@ -254,6 +283,7 @@ impl ClaudeSessionWatcher {
             started: Some(true),
             misses: None,
             quiet: None,
+            waiting: None,
             seen_at: self.clock.now_ms(),
             extra: Extra::default(),
         };
@@ -451,19 +481,28 @@ impl ClaudeSessionWatcher {
             .clone()
             .or_else(|| previous.and_then(|p| p.id.clone()));
         let recent = previous.is_some_and(|p| p.seen_at > now - STALE_TURN_MS);
+        let waiting = is_waiting(&summary.status);
+        let waiting_for = summary
+            .waiting_for
+            .as_deref()
+            .filter(|_| waiting)
+            .map(|label| crate::tools::truncate(label, WAITING_FOR_CHARS).0);
         if recent && finished_turn(baseline, settled, summary.revision) {
             let key = format!(
                 "{CLAUDE_TURN_FINISHED}:{}:{}",
                 summary.session_id,
                 omni_core::js::number_to_string(summary.revision)
             );
-            let data = json!({
+            let mut data = json!({
                 "sessionId": summary.session_id,
                 "id": id,
                 "project": project,
                 "status": summary.status,
                 "revision": js_number(summary.revision),
             });
+            if waiting {
+                data["waitingFor"] = json!(waiting_for);
+            }
             self.events
                 .publish(PublishInput {
                     name: CLAUDE_TURN_FINISHED.to_owned(),
@@ -495,6 +534,8 @@ impl ClaudeSessionWatcher {
                         title: scrub(&summary.title),
                         status: summary.status.clone(),
                         state: summary.state.clone(),
+                        blocked: waiting,
+                        waiting_for: waiting_for.clone(),
                         revision: summary.revision,
                         finished_at,
                         // A turn that never ran has no reply of its own.
@@ -522,7 +563,8 @@ impl ClaudeSessionWatcher {
             settled,
             started,
             misses: None,
-            quiet: (!is_active(&summary.status)).then_some(true),
+            quiet: (!is_active(&summary.status) && !waiting).then_some(true),
+            waiting: waiting.then_some(true),
             seen_at: now,
             extra: Extra::default(),
         })

@@ -48,7 +48,7 @@ pub static CLAUDE_SESSION_GET: ToolDef<ClaudeSessionGetInput, ClaudeSessionGetOu
     ToolDef::new(ToolInfo {
         name: "claude_session_get",
         title: "Get Claude Code Session",
-        description: "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
+        description: "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. Status waiting means the turn is paused on a prompt inside the session (waitingFor names it) and has not finished; do not send to it. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
         annotations: Annotations {
             read_only_hint: true,
             destructive_hint: false,
@@ -105,7 +105,7 @@ pub static CLAUDE_SESSION_SEND: ToolDef<ClaudeSessionSendInput, ClaudeSessionSen
     ToolDef::new(ToolInfo {
         name: "claude_session_send",
         title: "Send Input to Claude Code Session",
-        description: "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
+        description: "Continue an idle background Claude Code session with new user input. Busy sessions, and sessions waiting on a prompt mid-turn (status waiting), are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result. notify sets the session's notify target (see claude_session_start) for this and later turns; null clears it, and leaving it out keeps the current one.",
         annotations: Annotations {
             read_only_hint: false,
             destructive_hint: true,
@@ -204,6 +204,10 @@ pub struct Session {
     pub started_at: Option<String>,
     pub revision: u64,
     pub last_assistant: Option<String>,
+    #[schemars(
+        description = "With status waiting: what the turn is paused on inside the session (such as sandbox request or dialog open). A waiting turn has not finished"
+    )]
+    pub waiting_for: Option<String>,
 }
 
 #[derive(JsonSchema)]

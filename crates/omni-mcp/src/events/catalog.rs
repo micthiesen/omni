@@ -40,7 +40,7 @@ pub struct EventDefinition {
 }
 
 const EMAIL_DESCRIPTION: &str = "A new iCloud message arrived in the selected Inbox or Archive mailbox. Read full mail with email tools using messageId.";
-const CLAUDE_DESCRIPTION: &str = "A Claude Code session on the Claude Code host finished its turn or stopped. Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.";
+const CLAUDE_DESCRIPTION: &str = "A Claude Code session on the Claude Code host finished its turn, stopped, or is blocked mid-turn on a prompt in the session (status waiting, with waitingFor naming it when known; sending to it would stop the turn). Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.";
 
 const LIVESTREAM_DESCRIPTION: &str = "A streamer went live or offline (aggregate edges across their platforms; a primary-platform switch is silent). Omni checks every 20 seconds, background-tier streamers every minute. Read details with livestream_get using streamerId.";
 const PRESSPODS_DESCRIPTION: &str = "A PressPods episode job finished: the episode was published or the job failed permanently. Retryable failures do not fire. Read the episode with presspods_episode_get or failed jobs with presspods_list.";
@@ -524,6 +524,7 @@ impl EventDefinition {
                     "project": {"type": ["string", "null"]},
                     "status": {"type": "string"},
                     "revision": {"type": "integer"},
+                    "waitingFor": {"type": ["string", "null"], "maxLength": 100},
                 },
                 "required": ["sessionId", "id", "project", "status", "revision"],
                 "additionalProperties": false,

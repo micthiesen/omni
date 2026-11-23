@@ -79,6 +79,7 @@ pub fn to_session(raw: &Map<String, Value>) -> ClaudeSession {
         started_at,
         revision: int_of(raw.get("revision")),
         last_assistant: str_of(raw.get("last_assistant")),
+        waiting_for: str_of(raw.get("waiting_for")),
     }
 }
 
@@ -316,6 +317,35 @@ impl ClaudeDeps {
                 Value::Null
             }
         }
+    }
+
+    /// Refuses to send to a turn paused on a prompt. The host continues a
+    /// session by stopping its process and resuming it with the new input, so
+    /// a send would silently kill the paused turn and the tool call it is
+    /// running; only `interrupt` asks for that. The host itself refuses only
+    /// `busy` sessions.
+    async fn refuse_blocked(&self, session: &str) -> Result<(), ToolError> {
+        let data = self
+            .run(
+                HostCommand::Status,
+                args(&[("session", Some(Value::String(session.to_owned())))]),
+                QUICK,
+            )
+            .await?;
+        let current = to_session(&data);
+        if !crate::events::claude_sessions::is_waiting(&current.status) {
+            return Ok(());
+        }
+        let on = current.waiting_for.map_or_else(
+            || "a prompt".to_owned(),
+            |label| format!("a prompt ({label})"),
+        );
+        Err(ToolError::execute(format!(
+            "blocked: the session's turn has not finished; it is waiting on {on} that only \
+             the session itself can answer, such as through Remote Control. Sending now \
+             would stop the turn and the command it is running. Pass interrupt: true to \
+             stop it and send anyway"
+        )))
     }
 
     /// Rejects a malformed or unusable `notify` before the host runs anything.
@@ -733,6 +763,9 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
                 let names = names.clone();
                 async move {
                     deps.check_notify(input.notify.as_ref().and_then(Option::as_deref))?;
+                    if !input.interrupt {
+                        deps.refuse_blocked(&input.session).await?;
+                    }
                     let mut data = deps
                         .run(
                             HostCommand::Send,

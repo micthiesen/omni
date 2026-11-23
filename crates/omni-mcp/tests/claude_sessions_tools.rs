@@ -251,10 +251,11 @@ async fn forwards_the_send_key_and_notes_only_new_turns_for_events() {
             json!({"session": "25ffb449", "prompt": "Continue", "idempotencyKey": "dot:1"}),
         )
         .await;
-    assert_eq!(
-        sent.host.calls.lock().unwrap()[0].1["idempotencyKey"],
-        "dot:1"
-    );
+    let calls = sent.host.calls.lock().unwrap().clone();
+    // A send first checks that the turn is not paused on a prompt.
+    assert_eq!(calls[0].0, HostCommand::Status);
+    assert_eq!(calls[1].0, HostCommand::Send);
+    assert_eq!(calls[1].1["idempotencyKey"], "dot:1");
     assert_eq!(output["previousRevision"], 4);
     assert_eq!(output["reused"], false);
     let noted = sent.noted().await;
@@ -417,6 +418,7 @@ fn maps_claude_for_dot_summaries_to_the_mcp_session_shape() {
             "startedAt": omni_core::js::to_iso_string(1_790_000_000_000),
             "revision": 12,
             "lastAssistant": "Done.",
+            "waitingFor": null,
         })
     );
 }

@@ -42,6 +42,10 @@ pub struct ClaudeSession {
     pub started_at: Option<String>,
     pub revision: u64,
     pub last_assistant: Option<String>,
+    /// What a `waiting` session's turn is paused on (`sandbox request`,
+    /// `dialog open`, ...); `None` otherwise or when the host does not say.
+    #[serde(default)]
+    pub waiting_for: Option<String>,
 }
 
 /// `GET /api/claude/sessions?includeStopped&limit`.

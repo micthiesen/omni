@@ -48,7 +48,12 @@ cached for a minute.
 
 Sessions intentionally run with the same full access as `claude-for-dot`
 (`--dangerously-skip-permissions`), so a background session never stalls on a
-permission prompt. Approval happens before the session runs instead, in the connected client:
+permission prompt. Bypass mode does not cover every prompt: a project whose own
+settings enable Claude Code's sandbox can still stop a command on a sandbox
+network request, and dialogs or questions can open. The host then reports the
+session `waiting`, with `waitingFor` naming the prompt (`sandbox request`,
+`dialog open`, `input needed`, ...). Only the session itself, for example
+through Remote Control, can answer it. Approval happens before the session runs instead, in the connected client:
 `start`, `send`, and `stop` have the recommended policy `require_approval`; listing, reading,
 and waiting are `allow`. This is a deliberate design, not a gap to close.
 
@@ -72,7 +77,7 @@ the hostname. Omni's own UI and stored data may still show it.
 | `claude_session_get` | Status, revision, last assistant text; optionally waits up to 45 seconds and returns the turn's result |
 | `claude_session_read` | Transcript pages; item text is capped at 8,000 characters |
 | `claude_session_start` | Start a background session in a project |
-| `claude_session_send` | Continue an idle background session |
+| `claude_session_send` | Continue an idle background session; refuses a `waiting` one unless `interrupt` |
 | `claude_session_stop` | Stop a background session and keep its conversation |
 
 A typical flow is `start`, then `claude_session_get` with `afterRevision`,
@@ -96,6 +101,12 @@ target and whether the server defines it. A name the server does not define is
 stored with a warning in the log and never fails the call; its turns are
 recorded as `unconfigured` and not posted.
 
+A send to a `waiting` session is refused unless `interrupt` is true. The host
+continues a background session by stopping its process and resuming it with
+the new input, so a send to a paused turn would silently kill it and the
+command it was running (this happened to two sessions on 2026-11-23 before
+the check). The host itself refuses only `busy` sessions.
+
 Each finished turn, found by the same rule as `claude.session.turn_finished`
 (see [MCP Events](mcp-events.md#claudesessionturn_finished)), is recorded once
 per session and revision (`mcp-claude-turn-notification`) and posted as JSON:
@@ -103,9 +114,14 @@ per session and revision (`mcp-claude-turn-notification`) and posted as JSON:
 ```json
 {"event": "claude.session.turn_finished", "sessionId": "...", "shortId": "80f00d5b",
  "project": "omni", "title": "...", "status": "idle", "state": "done", "revision": 25,
- "finishedAt": "2026-11-12T21:15:29.804Z", "summary": "<last reply, at most 1,500 characters>",
- "summaryTruncated": false}
+ "blocked": false, "waitingFor": null, "finishedAt": "2026-11-12T21:15:29.804Z",
+ "summary": "<last reply, at most 1,500 characters>", "summaryTruncated": false}
 ```
+
+A turn paused on a prompt is posted once with `"status": "waiting"`,
+`"blocked": true` and `waitingFor` (null when the host does not name it); its
+summary is the last text so far, not a final report. Its later end is posted
+as usual.
 
 Targets are Rakazo bot webhooks (`https://<rakazo>/api/v1/bots/<botId>/webhook`):
 the request carries `Authorization: Bearer <token>` and

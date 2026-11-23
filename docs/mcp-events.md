@@ -115,7 +115,12 @@ is settled when the host's runtime `status` is not `busy` (or `running`) and its
 transcript's last item is not a prompt still waiting to start; the watcher reads
 that item only when the revision moved or the session was unsettled. The
 session's `state` is not used: Claude Code writes it from a model summary a few
-seconds after a turn, so it lags and can stay `working` after the turn ended. A
+seconds after a turn, so it lags and can stay `working` after the turn ended.
+A `waiting` session is paused mid-turn on a prompt inside it (a sandbox network
+request, a dialog, a question): it is not settled until the prompt has stayed
+open across two polls at the same revision, and then produces one event with
+`status: "waiting"` and `waitingFor` (the host's label, or null), so a dialog
+that closes at once never fires. Its later end fires as usual. A
 settled session whose revision advanced, or that was unsettled when last seen,
 produces one event per session and revision. A session seen for the first time
 only sets the baseline.

@@ -18,7 +18,7 @@ use omni_mcp::events::claude_notify::{
     NotifyTransport, NotifyTransportError,
 };
 use omni_mcp::events::claude_sessions::{
-    ClaudeSessionWatch, ClaudeSessionWatcher, StartedTurn, TurnBaseline, finished_turn,
+    ClaudeSessionWatch, ClaudeSessionWatcher, StartedTurn, TurnBaseline, finished_turn, is_waiting,
     settled_by_tail, settled_from_status,
 };
 use omni_mcp::events::persistence::EventDelivery;
@@ -342,6 +342,7 @@ fn baseline(revision: f64, settled: bool, started: bool) -> Option<TurnBaseline>
         settled,
         started,
         quiet: false,
+        waiting: false,
     })
 }
 
@@ -373,6 +374,7 @@ fn decides_from_the_runtime_status_and_never_the_model_written_state() {
         settled: false,
         started: false,
         quiet: true,
+        waiting: false,
     });
     assert!(settled_by_tail(quiet, 5.0, Some("user")));
     assert!(!settled_by_tail(quiet, 6.0, Some("user")));
@@ -806,6 +808,8 @@ async fn records_each_session_revision_once() {
         title: None,
         status: "idle".to_owned(),
         state: Some("done".to_owned()),
+        blocked: false,
+        waiting_for: None,
         revision: 6.0,
         finished_at: common::EPOCH_MS,
         summary: Some("Done.".to_owned()),
@@ -949,4 +953,152 @@ async fn an_interrupted_turn_settles_once_the_prompt_stays_last() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].2["revision"], 4);
     assert_eq!(sent[0].2["summary"], Value::Null);
+}
+
+#[test]
+fn a_waiting_session_is_paused_mid_turn_until_the_prompt_stays_open() {
+    assert!(is_waiting("waiting"));
+    // First sight of any session is a baseline.
+    assert_eq!(settled_from_status(None, "waiting", 24.0), Some(true));
+    // A prompt seen once is not news: it may close at once.
+    let working = baseline(22.0, false, false);
+    assert_eq!(settled_from_status(working, "waiting", 24.0), Some(false));
+    let open = Some(TurnBaseline {
+        revision: 24.0,
+        settled: false,
+        started: false,
+        quiet: false,
+        waiting: true,
+    });
+    assert_eq!(settled_from_status(open, "waiting", 24.0), Some(true));
+    // The transcript moved while it waited: a new prompt, seen once.
+    assert_eq!(settled_from_status(open, "waiting", 25.0), Some(false));
+}
+
+/// Session 3a0db081 (2026-11-23 04:48Z): the turn ran a long Bash command
+/// that stopped on a sandbox network prompt. The host reported `waiting` with
+/// the transcript ending in that tool call, and Omni posted it as a finished
+/// turn whose summary was mid-work narration. It is a blocked turn: posted
+/// once, saying so and what it waits for, and its real end is posted later.
+#[tokio::test(start_paused = true)]
+async fn a_turn_waiting_on_a_prompt_is_posted_once_as_blocked_then_its_end() {
+    let setup = Setup::new(json!({})).await;
+    setup.subscribe().await;
+    start(&setup, Some("chief")).await;
+    poll_with(&setup, json!({"status": "busy", "revision": 22})).await;
+    let blocked = json!({
+        "status": "waiting",
+        "state": "blocked",
+        "waiting_for": "sandbox request",
+        "revision": 24,
+        "tail": "tool_use",
+        "last_assistant": "Schema mapped. Now running the aggregates.",
+    });
+    poll_with(&setup, blocked.clone()).await;
+    assert!(setup.notifications().await.is_empty());
+    assert!(setup.deliveries().await.is_empty());
+    poll_with(&setup, blocked.clone()).await;
+    poll_with(&setup, blocked).await;
+    let sent = setup.transport.sent();
+    assert_eq!(sent.len(), 1);
+    let body = &sent[0].2;
+    assert_eq!(body["status"], "waiting");
+    assert_eq!(body["blocked"], true);
+    assert_eq!(body["waitingFor"], "sandbox request");
+    assert_eq!(body["revision"], 24);
+    let deliveries = setup.deliveries().await;
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(
+        Value::Object(deliveries[0].data_json()),
+        json!({"sessionId": SESSION, "id": "25ffb449", "project": "omni",
+               "status": "waiting", "revision": 24, "waitingFor": "sandbox request"})
+    );
+
+    // The prompt is answered and the turn runs on to its end.
+    poll_with(&setup, json!({"status": "busy", "revision": 30})).await;
+    poll_with(
+        &setup,
+        json!({"status": "idle", "state": "done", "revision": 34}),
+    )
+    .await;
+    poll_with(
+        &setup,
+        json!({"status": "idle", "state": "done", "revision": 34}),
+    )
+    .await;
+    let sent = setup.transport.sent();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1].2["status"], "idle");
+    assert_eq!(sent[1].2["blocked"], false);
+    assert_eq!(sent[1].2["waitingFor"], Value::Null);
+    assert_eq!(sent[1].2["revision"], 34);
+    assert_eq!(setup.deliveries().await.len(), 2);
+}
+
+/// A dialog that is open for one poll and gone by the next is not posted.
+#[tokio::test(start_paused = true)]
+async fn a_prompt_that_closes_by_the_next_poll_is_not_posted() {
+    let setup = Setup::new(json!({})).await;
+    start(&setup, Some("chief")).await;
+    poll_with(&setup, json!({"status": "busy", "revision": 3})).await;
+    poll_with(
+        &setup,
+        json!({"status": "waiting", "waiting_for": "dialog open", "revision": 4, "tail": "tool_use"}),
+    )
+    .await;
+    poll_with(&setup, json!({"status": "busy", "revision": 5})).await;
+    poll_with(&setup, json!({"status": "busy", "revision": 6})).await;
+    assert!(setup.transport.sent().is_empty());
+    assert!(setup.notifications().await.is_empty());
+}
+
+/// Session 5e823e1d (2026-11-23 05:28Z): reported `waiting` mid-command,
+/// claude_session_get showed it unchanged, and a send without interrupt made
+/// the host stop the process and resume it, killing the running command.
+/// Get reports the paused turn; send refuses it unless interrupt is true.
+#[tokio::test(start_paused = true)]
+async fn get_reports_a_paused_turn_and_send_will_not_kill_it() {
+    let setup = Setup::new(json!({})).await;
+    start(&setup, Some("chief")).await;
+    // The host's session client does not yet pass waitingFor on.
+    let paused =
+        json!({"status": "waiting", "state": "blocked", "revision": 47, "tail": "tool_use"});
+    setup.set_sessions(vec![launched(paused.clone())]);
+    let got = setup
+        .call("claude_session_get", json!({"session": "25ffb449"}))
+        .await;
+    assert_eq!(got["session"]["status"], "waiting");
+    assert_eq!(got["session"]["waitingFor"], Value::Null);
+    setup.set_sessions(vec![launched(with(
+        paused,
+        json!({"waiting_for": "sandbox request"}),
+    ))]);
+    let got = setup
+        .call("claude_session_get", json!({"session": "25ffb449"}))
+        .await;
+    assert_eq!(got["session"]["waitingFor"], "sandbox request");
+
+    let refused = setup.tools["claude_session_send"]
+        .handler
+        .call(
+            json!({"session": "25ffb449", "prompt": "Your turn ended mid-task. Please continue."}),
+            standalone_context("test"),
+        )
+        .await;
+    let Err(error) = refused else {
+        panic!("a paused turn is not sent to");
+    };
+    let error = error.to_string();
+    assert!(error.contains("blocked"), "{error}");
+    assert!(error.contains("sandbox request"), "{error}");
+    assert!(!setup.host_calls().contains(&HostCommand::Send));
+
+    let interrupted = setup
+        .call(
+            "claude_session_send",
+            json!({"session": "25ffb449", "prompt": "Stop and do this instead", "interrupt": true}),
+        )
+        .await;
+    assert_eq!(interrupted["session"]["sessionId"], SESSION);
+    assert!(setup.host_calls().contains(&HostCommand::Send));
 }
