@@ -9,7 +9,7 @@ use crate::index::{Index, Kind};
 use crate::list::make_ahead_note;
 use crate::model::{Id, Input, RecipeDoc, Step};
 use crate::py;
-use crate::text::{chart_label, use_label};
+use crate::text::{chart_label_at, use_label};
 
 /// `leaf` is one use of an ingredient; `setup` is a step with no inputs, such
 /// as heating the oven; `ref` is a by-product, an earlier component, or a
@@ -188,6 +188,11 @@ impl<'a, 'd> Builder<'a, 'd> {
         best
     }
 
+    fn label(&self, step: &Step) -> String {
+        let made = self.ix.doc().r#yield.qty;
+        chart_label_at(step, step.batches(made, self.factor))
+    }
+
     fn push(&mut self, cell: Cell) -> usize {
         self.cells.push(cell);
         self.cells.len() - 1
@@ -197,7 +202,7 @@ impl<'a, 'd> Builder<'a, 'd> {
         if step.inputs.is_empty() {
             let cell = Cell {
                 key: step.id.clone(),
-                label: chart_label(step),
+                label: self.label(step),
                 kind: CellKind::Setup,
                 r0: self.row,
                 r1: self.row,
@@ -262,7 +267,7 @@ impl<'a, 'd> Builder<'a, 'd> {
         let rows = children.iter().map(|child| &self.cells[*child]);
         let cell = Cell {
             key: step.id.clone(),
-            label: chart_label(step),
+            label: self.label(step),
             kind: CellKind::Step,
             r0: rows.clone().map(|cell| cell.r0).min().unwrap_or(self.row),
             r1: rows.map(|cell| cell.r1).max().unwrap_or(self.row),

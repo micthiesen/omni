@@ -154,12 +154,21 @@ pub fn scaled(doc: &RecipeDoc, factor: f64) -> RecipeDoc {
                 alt.qty *= factor;
             }
         }
-        for portions in component
-            .steps
-            .iter_mut()
-            .filter_map(|s| s.portions.as_mut())
-        {
-            portions.qty *= factor;
+        for step in &mut component.steps {
+            if let Some(portions) = &mut step.portions {
+                portions.qty *= factor;
+            }
+            if let Some(count) = step
+                .repeat
+                .as_mut()
+                .and_then(|repeat| repeat.count.as_mut())
+            {
+                let scaled = (f64::from(*count) * factor - 1e-9).ceil();
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                {
+                    *count = scaled.clamp(1.0, f64::from(u32::MAX)) as u32;
+                }
+            }
         }
         for input in component.steps.iter_mut().flat_map(|s| &mut s.inputs) {
             if let Some(qty) = &mut input.qty

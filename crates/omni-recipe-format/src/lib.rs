@@ -38,14 +38,16 @@ pub use list::{
 };
 pub use model::{
     Amount, Attention, Byproduct, Component, FORMAT, HeatLevel, HeatStage, Id, Ingredient, Input,
-    MakeAhead, Portions, RecipeDoc, Size, SizeKind, Source, SourceKind, Step, StepTime, Temp,
-    TimeOverride, UpgradeError, Yield, is_valid_id, is_web_url, upgrade,
+    MakeAhead, Portions, RecipeDoc, Repeat, Size, SizeKind, Source, SourceKind, Step, StepTime,
+    Temp, TimeOverride, UpgradeError, Yield, is_valid_id, is_web_url, upgrade,
 };
 pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, diff_summary_with_ops, scaled};
 pub use search::{fold, matches, search_text, tokens};
 pub use text::{
-    Placeholder, Segment, UseQty, chart_label, placeholders, render_step_segments, render_text,
-    use_label, use_qty,
+    Placeholder, Segment, UseQty, chart_label, chart_label_at, placeholders, render_step_segments,
+    render_text, use_label, use_qty,
 };
-pub use timeline::{DerivedTime, TimelineRow, derived_time, render_timeline, timeline};
+pub use timeline::{
+    DerivedTime, TimelineRow, derived_time, derived_time_at, render_timeline, timeline, timeline_at,
+};
 pub use validate::{Code, Level, Problem, Report, validate};

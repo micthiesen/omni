@@ -347,6 +347,12 @@ fn step_body(ctx: Ctx, state: &Projection, id: &str, in_sheet: bool) -> Option<A
             }
         })
         .collect_view();
+    // A step in batches times one batch; the cook starts it once per batch.
+    let per_batch = step
+        .batches(ix.doc().r#yield.qty, ctx.scale)
+        .filter(|count| *count > 1)
+        .map(|count| format!(" (one of {count} batches)"))
+        .unwrap_or_default();
     let timer = step.time.map(|time| {
         let (start, cancel) = (id.to_owned(), id.to_owned());
         let minutes = time.longest();
@@ -372,7 +378,7 @@ fn step_body(ctx: Ctx, state: &Projection, id: &str, in_sheet: bool) -> Option<A
                     });
                 }>
                     {icon("timer")}
-                    {format!("Start {} timer", fmt_time(minutes, None))}
+                    {format!("Start {} timer{per_batch}", fmt_time(minutes, None))}
                 </button>
             }
             .into_any(),

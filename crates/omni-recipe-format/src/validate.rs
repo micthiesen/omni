@@ -316,12 +316,18 @@ pub fn validate(doc: &RecipeDoc) -> Report {
     }
     let active: u64 = ix
         .steps()
-        .filter_map(|(_, step)| step.time)
-        .filter(|time| time.attention == Attention::Active)
-        .map(|time| u64::from(time.longest()))
-        .sum();
+        .filter_map(|(_, step)| {
+            let batches = step.batches(doc.r#yield.qty, 1.0).unwrap_or(1);
+            step.time.map(|time| (time, batches))
+        })
+        .filter(|(time, _)| time.attention == Attention::Active)
+        .map(|(time, batches)| u64::from(time.longest()).saturating_mul(u64::from(batches)))
+        .fold(0u64, u64::saturating_add);
     let stated = doc.time.map_or(0, |time| u64::from(time.active_min));
-    if stated > 0 && active > 0 && (active * 2 < stated || active > stated * 2) {
+    if stated > 0
+        && active > 0
+        && (active.saturating_mul(2) < stated || active > stated.saturating_mul(2))
+    {
         report.push(
             Level::Warning,
             Code::TimeMismatch,
@@ -586,6 +592,25 @@ fn check_step_limits(step: &Step, report: &mut Report) {
                     size.unit
                 ),
             );
+        }
+    }
+    if let Some(repeat) = &step.repeat {
+        let at = format!("{path}.repeat");
+        match (repeat.count, repeat.capacity) {
+            (Some(0), None) => report.error(Code::BadValue, at.as_str(), "count must be at least 1"),
+            (Some(_), None) => {}
+            (None, Some(capacity)) if !(capacity.is_finite() && capacity > 0.0) => report.error(
+                Code::BadValue,
+                at.as_str(),
+                "capacity must be a number above 0",
+            ),
+            (None, Some(_)) => {}
+            _ => report.error_hint(
+                Code::BadValue,
+                at.as_str(),
+                "repeat has exactly one of count and capacity",
+                "a fixed number of batches is {\"count\": 3}; what one batch holds, in yield units, is {\"capacity\": 12}",
+            ),
         }
     }
     if let Some(portions) = &step.portions {

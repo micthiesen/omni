@@ -294,6 +294,7 @@ pub(crate) fn keyword(step: &Step, name: &str) -> Option<bool> {
         "portions" => Some(step.portions.is_some()),
         "size" => Some(!step.size.is_empty()),
         "heat" => Some(!step.heat.is_empty()),
+        "batches" => Some(step.repeat.is_some()),
         _ => match name.split_once(':') {
             Some(("size", kind)) => Some(step.size.iter().any(|size| size.kind.as_str() == kind)),
             Some(("heat", label)) => Some(heat_stage(step, label).is_some()),
@@ -319,6 +320,15 @@ fn keyword_segment(ix: &Index<'_>, step: &Step, name: &str, factor: f64) -> Opti
                 portions.unit
             ),
         }),
+        "batches" => step
+            .batches(ix.doc().r#yield.qty, factor)
+            .map(|count| Segment::Count {
+                text: if count == 1 {
+                    "1 batch".to_owned()
+                } else {
+                    format!("{count} batches")
+                },
+            }),
         "heat" => (!step.heat.is_empty()).then(|| Segment::Setting {
             text: fmt_heat(&step.heat),
         }),
@@ -420,8 +430,14 @@ pub fn render_text(ix: &Index<'_>, step: &Step, factor: f64) -> String {
 }
 
 /// The chart cell of a step: its action, its temperature, and its time when
-/// the step is passive or takes three minutes or more.
+/// the step is passive or takes three minutes or more. Batches are not
+/// counted; [`chart_label_at`] counts them.
 pub fn chart_label(step: &Step) -> String {
+    chart_label_at(step, None)
+}
+
+/// [`chart_label`] with the step's batches at the shown scale: "fry 4 min ×3".
+pub fn chart_label_at(step: &Step, batches: Option<u32>) -> String {
     let mut label = step.action.clone();
     if let Some(temp) = &step.temp {
         label.push(' ');
@@ -436,6 +452,9 @@ pub fn chart_label(step: &Step) -> String {
     {
         label.push(' ');
         label.push_str(&fmt_time(time.min, time.max));
+    }
+    if let Some(count) = batches.filter(|count| *count > 1) {
+        label.push_str(&format!(" ×{count}"));
     }
     label
 }

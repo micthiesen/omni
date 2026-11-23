@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::index::Index;
 use crate::model::{Attention, Id, RecipeDoc};
-use crate::text::chart_label;
+use crate::text::chart_label_at;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -35,9 +35,16 @@ pub struct DerivedTime {
     pub total_min: u64,
 }
 
-/// One row per step, in written order.
+/// One row per step, in written order, for the recipe as written.
 pub fn timeline(doc: &RecipeDoc) -> Vec<TimelineRow> {
+    timeline_at(doc, 1.0)
+}
+
+/// [`timeline`] at `factor`: a step that runs in batches takes its time once
+/// per batch.
+pub fn timeline_at(doc: &RecipeDoc, factor: f64) -> Vec<TimelineRow> {
     let ix = Index::build(doc);
+    let made = doc.r#yield.qty;
     let mut ready: Vec<(&str, u64)> = Vec::new();
     let ready_at = |ready: &[(&str, u64)], id: &str| {
         ready
@@ -50,7 +57,10 @@ pub fn timeline(doc: &RecipeDoc) -> Vec<TimelineRow> {
     let mut rows: Vec<TimelineRow> = Vec::new();
     let mut pending: Vec<usize> = Vec::new();
     for (component, step) in ix.steps() {
-        let duration = step.time.map_or(0, |time| u64::from(time.longest()));
+        let batches = step.batches(made, factor);
+        let duration = step.time.map_or(0, |time| {
+            u64::from(time.longest()).saturating_mul(u64::from(batches.unwrap_or(1)))
+        });
         let attention = step.time.map_or(Attention::Active, |time| time.attention);
         let mut row = TimelineRow {
             start: 0,
@@ -59,7 +69,7 @@ pub fn timeline(doc: &RecipeDoc) -> Vec<TimelineRow> {
             component_name: component.name.clone().filter(|name| !name.is_empty()),
             step: step.id.clone(),
             attention,
-            label: chart_label(step),
+            label: chart_label_at(step, batches),
         };
         if step.inputs.is_empty() {
             pending.push(rows.len());
@@ -105,7 +115,12 @@ pub fn timeline(doc: &RecipeDoc) -> Vec<TimelineRow> {
 /// Hands-on and start-to-finish minutes, rounded up to five, from the step
 /// times and the graph.
 pub fn derived_time(doc: &RecipeDoc) -> DerivedTime {
-    let rows = timeline(doc);
+    derived_time_at(doc, 1.0)
+}
+
+/// [`derived_time`] at `factor`, where batches change with the scale.
+pub fn derived_time_at(doc: &RecipeDoc, factor: f64) -> DerivedTime {
+    let rows = timeline_at(doc, factor);
     let active = rows
         .iter()
         .filter(|row| row.attention != Attention::Passive)

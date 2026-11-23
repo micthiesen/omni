@@ -170,8 +170,8 @@ pub struct Step {
     /// The edges of the graph; empty for setup steps such as preheating.
     pub inputs: Vec<Input>,
     /// Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,
-    /// `{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`
-    /// placeholders.
+    /// `{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and
+    /// `{batches}` placeholders.
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<StepTime>,
@@ -186,6 +186,9 @@ pub struct Step {
     /// renders "16 pieces" at 1 and "24 pieces" at 1.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portions: Option<Portions>,
+    /// The step runs in batches; its `time` is one batch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<Repeat>,
     /// Sizes the step works to: rolling thickness, cutter diameter, pan.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub size: Vec<Size>,
@@ -346,6 +349,43 @@ pub struct Size {
     pub by: Option<f64>,
     /// "mm", "cm" or "in".
     pub unit: String,
+}
+
+/// How many times a step runs: a fixed `count` of batches at the written
+/// scale ("fry in 3 batches"), or a `capacity` in yield units per batch
+/// ("12 cookies to a sheet"). Exactly one of the two.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Repeat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "optional_number"
+    )]
+    pub capacity: Option<f64>,
+}
+
+impl Step {
+    /// How many batches the step runs at `factor`, for a recipe that makes
+    /// `made`: the count scaled, or the scaled yield over the capacity, rounded
+    /// up and at least one. None without a usable `repeat`.
+    pub fn batches(&self, made: f64, factor: f64) -> Option<u32> {
+        let repeat = self.repeat.as_ref()?;
+        let raw = match (repeat.count, repeat.capacity) {
+            (Some(count), None) => f64::from(count) * factor,
+            (None, Some(capacity)) if capacity > 0.0 => made * factor / capacity,
+            _ => return None,
+        };
+        if !raw.is_finite() || raw <= 0.0 {
+            return None;
+        }
+        let whole = (raw - 1e-9).ceil().clamp(1.0, f64::from(u32::MAX));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        Some(whole as u32)
+    }
 }
 
 /// A count a step divides the food into: "16 pieces".

@@ -113,7 +113,7 @@ Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { q
 Step        { id, action, inputs[], text, time?: { min, max?, attention: active | passive },
               temp?: { value, unit: "F" | "C" },
               heat?[]: { temp?: { value, unit }, level?: low | medium-low | medium | medium-high | high, label? },
-              portions?: { qty, unit },
+              portions?: { qty, unit }, repeat?: { count? | capacity? },
               size?[]: { kind: thickness | diameter | length | pan, value, max?, by?, unit: mm | cm | in },
               until?, equipment?[], output?,
               byproducts?[]: { id, name }, optional?, tip? }
@@ -170,6 +170,12 @@ A setup step, consumed by the step that needs it:
   `[{ "level": "high", "label": "sear" }, { "level": "medium" }]`. `{heat}` renders every stage
   ("high heat, then medium heat"), `{heat:sear}` the labelled one. A step has `temp` or `heat`,
   never both; at most four stages. The chart shows "sear high→med".
+- **Batches.** A step done several times over (frying in batches, one sheet in the oven at a
+  time) has `repeat`: `{ "count": 3 }` for a fixed number at the written scale, or
+  `{ "capacity": 12 }` for what one batch holds in yield units (12 cookies a sheet). Its `time`
+  is one batch; the totals, the timeline and the chart ("bake 11 min ×3") multiply it, and
+  `{batches}` renders the count at the shown scale ("5 batches"). A count rounds up as the
+  recipe scales, and `rescale` moves it.
 - **Sizes are data.** A rolling thickness, a cutter, a pan or a length goes in the step's `size`
   list, not in prose: `{ "kind": "thickness", "value": 3, "max": 4, "unit": "mm" }`,
   `{ "kind": "pan", "value": 23, "by": 33, "unit": "cm" }`. `{size:thickness}` renders one kind

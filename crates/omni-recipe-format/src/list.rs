@@ -7,7 +7,7 @@ use crate::format::{fmt_amount, fmt_amount_at, fmt_factor, fmt_time, inflect};
 use crate::index::{Index, Kind};
 use crate::model::{Component, Id, Ingredient, RecipeDoc};
 use crate::text::{Segment, render_step_segments};
-use crate::timeline::derived_time;
+use crate::timeline::derived_time_at;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -204,7 +204,7 @@ pub fn list_view(doc: &RecipeDoc, factor: f64) -> ListView {
     let (active_min, total_min) = match doc.time {
         Some(time) => (u64::from(time.active_min), u64::from(time.total_min)),
         None => {
-            let derived = derived_time(doc);
+            let derived = derived_time_at(doc, factor);
             (derived.active_min, derived.total_min)
         }
     };

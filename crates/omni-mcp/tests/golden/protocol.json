@@ -48242,7 +48242,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48350,6 +48350,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -48951,7 +48966,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -49059,6 +49074,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -49792,7 +49822,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -49900,6 +49930,21 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "repeat": {
+                                      "type": "object",
+                                      "properties": {
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "capacity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "additionalProperties": false,
+                                      "description": "The step runs in batches; its `time` is one batch."
                                     },
                                     "size": {
                                       "type": "array",
@@ -50164,7 +50209,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -50272,6 +50317,21 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "repeat": {
+                                            "type": "object",
+                                            "properties": {
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "capacity": {
+                                                "type": "number"
+                                              }
+                                            },
+                                            "additionalProperties": false,
+                                            "description": "The step runs in batches; its `time` is one batch."
                                           },
                                           "size": {
                                             "type": "array",
@@ -51046,7 +51106,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -51154,6 +51214,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -104675,7 +104750,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104783,6 +104858,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -105384,7 +105474,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -105492,6 +105582,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -106225,7 +106330,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -106333,6 +106438,21 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "repeat": {
+                                      "type": "object",
+                                      "properties": {
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "capacity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "additionalProperties": false,
+                                      "description": "The step runs in batches; its `time` is one batch."
                                     },
                                     "size": {
                                       "type": "array",
@@ -106597,7 +106717,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -106705,6 +106825,21 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "repeat": {
+                                            "type": "object",
+                                            "properties": {
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "capacity": {
+                                                "type": "number"
+                                              }
+                                            },
+                                            "additionalProperties": false,
+                                            "description": "The step runs in batches; its `time` is one batch."
                                           },
                                           "size": {
                                             "type": "array",
@@ -107479,7 +107614,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -107587,6 +107722,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -161299,7 +161449,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -161407,6 +161557,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -162008,7 +162173,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -162116,6 +162281,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -162849,7 +163029,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -162957,6 +163137,21 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "repeat": {
+                                      "type": "object",
+                                      "properties": {
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "capacity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "additionalProperties": false,
+                                      "description": "The step runs in batches; its `time` is one batch."
                                     },
                                     "size": {
                                       "type": "array",
@@ -163221,7 +163416,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -163329,6 +163524,21 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "repeat": {
+                                            "type": "object",
+                                            "properties": {
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "capacity": {
+                                                "type": "number"
+                                              }
+                                            },
+                                            "additionalProperties": false,
+                                            "description": "The step runs in batches; its `time` is one batch."
                                           },
                                           "size": {
                                             "type": "array",
@@ -164103,7 +164313,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -164211,6 +164421,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -217184,7 +217409,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -217292,6 +217517,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -217893,7 +218133,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -218001,6 +218241,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",
@@ -218734,7 +218989,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -218842,6 +219097,21 @@
                                       ],
                                       "additionalProperties": false,
                                       "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                    },
+                                    "repeat": {
+                                      "type": "object",
+                                      "properties": {
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "capacity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "additionalProperties": false,
+                                      "description": "The step runs in batches; its `time` is one batch."
                                     },
                                     "size": {
                                       "type": "array",
@@ -219106,7 +219376,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -219214,6 +219484,21 @@
                                             ],
                                             "additionalProperties": false,
                                             "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                          },
+                                          "repeat": {
+                                            "type": "object",
+                                            "properties": {
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "capacity": {
+                                                "type": "number"
+                                              }
+                                            },
+                                            "additionalProperties": false,
+                                            "description": "The step runs in batches; its `time` is one batch."
                                           },
                                           "size": {
                                             "type": "array",
@@ -219988,7 +220273,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}`, `{heat:label}` and\n`{batches}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -220096,6 +220381,21 @@
                                         ],
                                         "additionalProperties": false,
                                         "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
+                                      },
+                                      "repeat": {
+                                        "type": "object",
+                                        "properties": {
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "capacity": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "The step runs in batches; its `time` is one batch."
                                       },
                                       "size": {
                                         "type": "array",

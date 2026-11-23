@@ -7,11 +7,11 @@
 
 use omni_recipe_format::{
     Amount, Attention, Block, Byproduct, CellKind, Component, HeatLevel, HeatStage, Index,
-    Ingredient, Input, Kind, MakeAhead, Marks, Op, Portions, RecipeDoc, Size, SizeKind, Source,
-    SourceKind, Step, StepTime, Temp, TimeOverride, Yield, apply_ops, chart_ascii, chart_blocks,
-    chart_html, cook_marks, derived_time, diff_summary, equipment, gather_list, list_view,
-    meanwhile, ready_steps, render_list, render_timeline, scaled, search_text, step_inputs,
-    timeline, tokens, validate,
+    Ingredient, Input, Kind, MakeAhead, Marks, Op, Portions, RecipeDoc, Repeat, Size, SizeKind,
+    Source, SourceKind, Step, StepTime, Temp, TimeOverride, Yield, apply_ops, chart_ascii,
+    chart_blocks, chart_html, cook_marks, derived_time, diff_summary, equipment, gather_list,
+    list_view, meanwhile, ready_steps, render_list, render_timeline, scaled, search_text,
+    step_inputs, timeline, tokens, validate,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -393,6 +393,10 @@ fn wild_step(tape: &mut Tape<'_>) -> Step {
         portions: tape.chance(20).then(|| Portions {
             qty: tape.pick(&WILD_NUMBERS),
             unit: tape.pick(&WILD_TEXT).to_owned(),
+        }),
+        repeat: tape.chance(20).then(|| Repeat {
+            count: tape.chance(50).then(|| tape.pick(&[0, 1, 3, u32::MAX])),
+            capacity: tape.chance(50).then(|| tape.pick(&WILD_NUMBERS)),
         }),
         heat: (0..tape.below(3))
             .map(|_| HeatStage {
