@@ -86,6 +86,15 @@ once and backs off on repeats, a segment still refused after a fresh resolve
 is skipped with a discontinuity, and an ended playlist that stays ended backs
 off the same way.
 
+## Players
+
+Safari and the iOS app play through AVFoundation, which honors the start
+offset: measured on macOS AVPlayer against production, it held 15 to 19 s of
+its own buffer with no stall over four minutes. Chromium's native HLS ignores
+`EXT-X-START`, exposes no seekable range (so the page's seek-back cannot act)
+and plays within a few seconds of the served edge, where it stalls now and
+then even with a full relay cushion. The page is built for Safari.
+
 ## Diagnosing buffering
 
 The diagnostics line under the player shows the relay's cushion and the
