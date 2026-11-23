@@ -320,8 +320,13 @@ impl RelayBuffer {
             .filter(|s| s.discontinuity)
             .count();
         let discontinuity_sequence = self.evicted_discontinuities + earlier as u64;
+        // Players that honor EXT-X-START (Safari does) join the startup
+        // release back from the edge and keep that much buffer of their own.
+        #[allow(clippy::cast_precision_loss)]
+        let start_offset = self.config.startup_release_ms as f64 / 1000.0;
         let mut out = format!(
             "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:{}\n\
+             #EXT-X-START:TIME-OFFSET=-{start_offset:.3}\n\
              #EXT-X-MEDIA-SEQUENCE:{}\n#EXT-X-DISCONTINUITY-SEQUENCE:{discontinuity_sequence}\n",
             self.target_secs, first.sequence
         );
@@ -460,6 +465,7 @@ mod tests {
         buffer.advance(36_000);
         let text = buffer.render().unwrap();
         assert!(text.contains("#EXT-X-TARGETDURATION:6\n"));
+        assert!(text.contains("#EXT-X-START:TIME-OFFSET=-18.000\n"));
         let lines: Vec<&str> = text.lines().collect();
         let tag = lines
             .iter()

@@ -225,7 +225,8 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .watch-stage {
   position: relative;
   aspect-ratio: 16 / 9;
-  max-height: calc(100dvh - 220px);
+  /* As wide as fits while the stage, buttons and diagnostics stay on screen. */
+  width: min(100%, calc((100dvh - 300px) * 16 / 9));
   margin-inline: auto;
   background: #000;
   border: 1px solid var(--line);
@@ -245,6 +246,8 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .watch-state { font: var(--t-h3); color: var(--text); text-align: center; }
 .watch-stage.offline .watch-state { color: var(--text-3); }
 .watch-bar {
+  width: min(100%, calc((100dvh - 300px) * 16 / 9));
+  margin-inline: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -252,4 +255,4 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
   gap: var(--sp-3);
   margin-top: var(--sp-3);
 }
-.watch-diag { color: var(--text-3); font: var(--t-label); font-family: var(--mono); overflow-wrap: anywhere; }
+.watch-diag { flex: 1 1 20rem; min-width: 0; color: var(--text-3); font: var(--t-label); font-family: var(--mono); text-align: right; overflow-wrap: anywhere; }

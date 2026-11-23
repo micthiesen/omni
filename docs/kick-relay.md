@@ -32,7 +32,10 @@ stalls, token refreshes and playlist errors behind a cushion. The code is
   playlist window is about 28 s, so a stall shorter than that loses nothing:
   the relay catches up from the window when Kick answers again.
 - **Startup release 18 s** (three 6 s target durations) is published at once
-  when playback starts, so the player begins with its own full buffer. Startup
+  when playback starts, and the playlist carries
+  `#EXT-X-START:TIME-OFFSET=-18`, so the player joins 18 s back from the edge
+  and keeps that much buffer of its own (Safari honors the tag; a player that
+  ignores it joins nearer the edge with a smaller buffer of its own). Startup
   therefore needs 48 s of content: Kick's window gives about 28 s at once, and
   the remainder arrives in real time, so the first play is ready about 20 s
   after the page opens.

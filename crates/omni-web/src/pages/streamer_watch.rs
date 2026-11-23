@@ -91,6 +91,8 @@ pub fn StreamerWatchPage(#[prop(into)] streamer_id: String) -> impl IntoView {
     let failed = RwSignal::new(None::<String>);
     let wants_play = RwSignal::new(false);
     let player_stalls = RwSignal::new(0u32);
+    // `waiting` before the first `playing` is the initial load, not a stall.
+    let started = RwSignal::new(false);
     let ahead = RwSignal::new(None::<f64>);
     let video: NodeRef<Video> = NodeRef::new();
 
@@ -161,6 +163,7 @@ pub fn StreamerWatchPage(#[prop(into)] streamer_id: String) -> impl IntoView {
         let Some(v) = video.get_untracked() else {
             return;
         };
+        started.set(false);
         v.set_src(&url);
         let _ = v.play();
         loaded.set(Some(url));
@@ -246,8 +249,9 @@ pub fn StreamerWatchPage(#[prop(into)] streamer_id: String) -> impl IntoView {
                 controls=true
                 playsinline=true
                 preload="none"
+                on:playing=move |_| started.set(true)
                 on:waiting=move |_| {
-                    if loaded.get_untracked().is_some() {
+                    if started.get_untracked() {
                         player_stalls.update(|n| *n += 1);
                     }
                 }
