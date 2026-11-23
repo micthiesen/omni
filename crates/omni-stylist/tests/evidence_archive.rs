@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

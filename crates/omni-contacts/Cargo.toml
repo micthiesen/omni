@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-contacts"
 description = "iCloud contacts over CardDAV: lossless vCard reads and edits, contact groups (lists) and membership, idempotent verified writes and MCP tools."
 version.workspace = true
@@ -32,3 +33,7 @@ tracing.workspace = true
 axum.workspace = true
 omni-testkit.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

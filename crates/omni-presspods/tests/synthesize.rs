@@ -2,7 +2,7 @@
 //! fake verified provider, an echo STT and a recording fake ffmpeg.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::path::Path;
 use std::sync::Arc;

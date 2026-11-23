@@ -3,7 +3,7 @@
 //! SMTP is a recorder and draft APPEND a fake that must never be reached.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::{Arc, Mutex};
 

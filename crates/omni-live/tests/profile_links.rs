@@ -2,7 +2,7 @@
 //! releases the connection when the response or the future is dropped.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_live::identity::{binding_key, canonical_binding_key};
 use omni_live::profile_links::{

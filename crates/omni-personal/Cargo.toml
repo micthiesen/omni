@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-personal"
 description = "Personal services: pet weights (Whisker), the LAN printer, Hister browser history, Codex/Claude reset alerts and agent notifications to the owner."
 version.workspace = true
@@ -53,3 +54,7 @@ omni-testkit.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

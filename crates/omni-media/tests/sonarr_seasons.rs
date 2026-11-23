@@ -2,7 +2,7 @@
 //! changes, and searches that never repeat a search already covered.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;

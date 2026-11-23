@@ -2,7 +2,7 @@
 //! Pushover adapter's 4xx/uncertain classification and record mode.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

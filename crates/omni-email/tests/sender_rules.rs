@@ -2,7 +2,7 @@
 //! tests in `src/sender_rules.rs`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_email::sender_rules::{
     self, RuleError, RuleScope, RuleTarget, RuleVerdict, find_sender_rule, sender_rule_verdict,

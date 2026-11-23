@@ -2,7 +2,7 @@
 //! reflection runs (created, then unchanged without a model call).
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_ai::{GenerateResponse, ModelRole};
 use omni_api::media::{

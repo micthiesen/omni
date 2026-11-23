@@ -1,12 +1,13 @@
 //! `deps-check`: the crate dependency direction rules of docs/architecture.md
-//! ("Crate layout"), checked over `cargo metadata`.
+//! ("Crate layout"), checked over `cargo metadata`, plus the one-binary
+//! integration-test layout (`test_layout`).
 
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-use crate::cargo_command;
+use crate::{cargo_command, test_layout};
 
 #[derive(Deserialize)]
 struct Metadata {
@@ -17,6 +18,15 @@ struct Metadata {
 struct Package {
     name: String,
     dependencies: Vec<Dependency>,
+    manifest_path: std::path::PathBuf,
+    targets: Vec<Target>,
+}
+
+#[derive(Deserialize)]
+struct Target {
+    name: String,
+    kind: Vec<String>,
+    src_path: std::path::PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +187,31 @@ pub fn deps_check() -> Result<()> {
         );
     }
     let metadata: Metadata = serde_json::from_slice(&output.stdout)?;
+    let mut layout_violations = Vec::new();
+    for package in &metadata.packages {
+        let Some(directory) = package.manifest_path.parent() else {
+            continue;
+        };
+        let (files, root) = test_layout::read(directory)?;
+        let targets = package
+            .targets
+            .iter()
+            .filter(|target| target.kind.iter().any(|kind| kind == "test"))
+            .map(|target| {
+                let path = target
+                    .src_path
+                    .strip_prefix(directory)
+                    .unwrap_or(&target.src_path);
+                (target.name.clone(), path.to_string_lossy().into_owned())
+            })
+            .collect();
+        layout_violations.extend(test_layout::violations(&test_layout::Layout {
+            package: &package.name,
+            targets,
+            files,
+            root,
+        }));
+    }
     let packages = metadata
         .packages
         .into_iter()
@@ -189,7 +224,8 @@ pub fn deps_check() -> Result<()> {
             (p.name, deps)
         })
         .collect();
-    let found = violations(&packages);
+    let mut found = violations(&packages);
+    found.extend(layout_violations);
     if found.is_empty() {
         println!("deps-check: ok");
         return Ok(());

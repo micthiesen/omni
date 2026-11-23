@@ -2,7 +2,7 @@
 //! metadata: inputs and outputs are validated by the golden JSON schemas.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_core::email::{EmailLink, EmailLinkMetadata, EmailLinkSource, ListUnsubscribe};
 use omni_email::activity::{self, EmailActivityOutcome, EmailPipelineName, LlmCost, NewActivity};

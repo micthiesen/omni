@@ -2,7 +2,7 @@
 //! Its own test binary so no concurrent test races the callsite interest cache.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::{Arc, Mutex};
 

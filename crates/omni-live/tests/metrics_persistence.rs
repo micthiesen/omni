@@ -2,7 +2,7 @@
 //! `blobs` table.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_live::Platform;
 use omni_live::error::LiveError;

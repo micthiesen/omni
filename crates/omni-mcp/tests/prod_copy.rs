@@ -1,5 +1,5 @@
 //! Production-copy checks for every entity this package persists:
-//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-mcp --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-mcp --test it prod_copy:: -- --ignored --nocapture`.
 //!
 //! The file is copied into a temporary directory first; the original is
 //! never opened. Each row must decode into its typed entity, recompute its

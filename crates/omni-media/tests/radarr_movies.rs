@@ -3,7 +3,7 @@
 //! that demands exactly one final library file.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;

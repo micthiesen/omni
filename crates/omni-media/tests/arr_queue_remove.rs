@@ -4,7 +4,7 @@
 //! its outcome is uncertain.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;

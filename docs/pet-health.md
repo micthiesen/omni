@@ -75,8 +75,8 @@ changes the `pet-health-alert` rows or Pushover delivery.
 
 ## Calibration
 
-`OMNI_PROD_COPY=<copy> cargo test -p omni-personal --test prod_copy
-health_rules -- --ignored --nocapture` replays the rules hourly from April over
+`OMNI_PROD_COPY=<copy> cargo test -p omni-personal --test it
+prod_copy::health_rules -- --ignored --nocapture` replays the rules hourly from April over
 a production copy with in-memory state and prints every push. On the
 2026-10-09 copy (Sam 531 readings, Sandy 631, 2026-03-20 to 2026-10-09) it
 sends:

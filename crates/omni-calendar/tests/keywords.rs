@@ -6,7 +6,7 @@
 //! "no calendar-scoped rule matched".
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::{FakeSupport, Triage, email};
 use omni_calendar::filter::{FilterResult, filter_calendar_candidate};

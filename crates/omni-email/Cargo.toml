@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-email"
 description = "Email pipeline core: dispatcher, retry queue, watchdog, activity, triage, sender rules, feedback, routes and MCP tools."
 version.workspace = true
@@ -45,3 +46,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

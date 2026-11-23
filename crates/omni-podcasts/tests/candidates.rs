@@ -1,7 +1,7 @@
 //! Podcast candidate gathering over a scripted [`ShowDirectory`].
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

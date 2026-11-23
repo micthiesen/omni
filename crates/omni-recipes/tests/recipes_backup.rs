@@ -7,7 +7,7 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

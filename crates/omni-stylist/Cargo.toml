@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-stylist"
 description = "Fit-first personal stylist ledger: typed records, immutable events, private evidence, frozen predictions, export and restore."
 version.workspace = true
@@ -40,3 +41,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tokio-util.workspace = true
 tower.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

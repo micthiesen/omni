@@ -2,7 +2,7 @@
 //! validation and manual runs.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::{Arc, Mutex};
 

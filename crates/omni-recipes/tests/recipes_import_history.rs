@@ -4,7 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
+use crate::common;
 
 use common::{COOKIES, Harness, LASAGNE, PICCATA, get};
 use omni_recipes::library::{without_import_block, without_import_provenance};

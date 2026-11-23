@@ -2,7 +2,7 @@
 //! against the LIVE account. Never runs in CI; it changes the real queue
 //! (enqueue, verify, dequeue, verify) and reads a public RSS feed:
 //!
-//! `npx @dotenvx/dotenvx run -- cargo test -p omni-podcasts --test castro_smoke -- --ignored --nocapture`
+//! `npx @dotenvx/dotenvx run -- cargo test -p omni-podcasts --test it castro_smoke:: -- --ignored --nocapture`
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::sync::Arc;

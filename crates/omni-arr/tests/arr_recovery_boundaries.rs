@@ -1,7 +1,7 @@
 //! Arr recovery boundary checks on paths and identities.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_arr::arr_recovery::persistence::ActionPhase;
 use omni_arr::arr_recovery::service::{

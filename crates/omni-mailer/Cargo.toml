@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-mailer"
 description = "Outgoing SMTP and MIME composition with the fixed sender identity."
 version.workspace = true
@@ -26,3 +27,7 @@ thiserror.workspace = true
 [dev-dependencies]
 jiff.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

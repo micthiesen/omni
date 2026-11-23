@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-store"
 description = "SQLite docstore actor, node-cbor compatible codec, entities and relational tables."
 version.workspace = true
@@ -27,3 +28,7 @@ tracing.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

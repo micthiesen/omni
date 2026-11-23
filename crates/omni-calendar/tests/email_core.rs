@@ -3,7 +3,7 @@
 //! durable retry queue and per-email log capture all land in the store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::{Arc, OnceLock};
 

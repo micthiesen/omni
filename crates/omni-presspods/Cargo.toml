@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-presspods"
 description = "PressPods: article retrieval, narration, speech synthesis, audio chain, storage and the podcast RSS feed."
 version.workspace = true
@@ -49,3 +50,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "rt-multi-thread"] }
 tower.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

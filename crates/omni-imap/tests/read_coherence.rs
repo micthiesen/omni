@@ -1,7 +1,7 @@
 //! Read cache coherence, driven by `TestClock::set` on the shared clock.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::{Arc, Mutex};
 

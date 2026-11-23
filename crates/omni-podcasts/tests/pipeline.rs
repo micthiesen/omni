@@ -4,7 +4,7 @@
 //! the three-state subscription rule.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

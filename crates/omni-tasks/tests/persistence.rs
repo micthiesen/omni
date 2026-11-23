@@ -2,7 +2,7 @@
 //! `src/persistence.rs`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::{harness, local_time};
 use omni_core::clock::TestClock;

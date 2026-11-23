@@ -3,7 +3,7 @@
 //! `dropping_the_waiter_does_not_cancel_the_run` asserts that rule.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 use std::time::Duration;

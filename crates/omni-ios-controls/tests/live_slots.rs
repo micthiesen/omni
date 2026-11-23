@@ -1,7 +1,7 @@
 //! The four live slots and their delivery hash.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_api::streamers::{DggPresence, StreamerTier};
 use omni_ios_controls::slots::{build_live_control_slots, live_control_slot_hash};

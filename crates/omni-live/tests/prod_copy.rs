@@ -1,5 +1,5 @@
 //! Production-copy round trip (ignored; run with `OMNI_PROD_COPY=<copy of
-//! docstore.db> cargo test -p omni-live --test prod_copy -- --ignored --nocapture`).
+//! docstore.db> cargo test -p omni-live --test it prod_copy:: -- --ignored --nocapture`).
 //! Every livestream row must decode into its typed entity, recompute its primary
 //! key, and re-encode to the same value (explicit `undefined` members
 //! removed, which read identically).

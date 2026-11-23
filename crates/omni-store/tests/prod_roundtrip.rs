@@ -2,7 +2,7 @@
 //! and through serde) reads back as the same JS value.
 //!
 //! Ignored by default (needs a database). Run with
-//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-store --test prod_roundtrip -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-store --test it prod_roundtrip:: -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first; the original is never
 //! opened.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]

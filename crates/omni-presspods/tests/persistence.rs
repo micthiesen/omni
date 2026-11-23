@@ -2,7 +2,7 @@
 //! come from the test clock (`TEST_EPOCH_MS`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use indexmap::IndexMap;
 use omni_presspods::error::PressPodsError;

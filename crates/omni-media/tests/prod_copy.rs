@@ -3,7 +3,7 @@
 //! fingerprint) reproduce the stored values.
 //!
 //! Ignored by default (needs a database). Run with
-//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-media --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-media --test it prod_copy:: -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first; the original is never opened.
 #![allow(clippy::print_stdout, clippy::expect_used)]
 
@@ -305,7 +305,7 @@ async fn every_media_row_decodes_and_reencodes_to_the_same_js_value() {
     }
 }
 
-mod common;
+use crate::common;
 
 /// Every production row serializes through the HTTP routes and through the
 /// MCP tools, whose outputs are validated against the golden schemas.

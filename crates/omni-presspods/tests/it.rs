@@ -1,0 +1,21 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod attempt_history;
+mod audio_chain;
+mod common;
+mod mcp_tools;
+mod page_fetch;
+mod persistence;
+mod pipeline;
+mod presspods_events;
+mod prod_copy;
+mod retrievers_index;
+mod retrievers_jina;
+mod retrievers_obscura;
+mod retrievers_x;
+mod routes;
+mod rss_golden;
+mod speech_outage;
+mod submit;
+mod subsystem;
+mod synthesize;
+mod task;

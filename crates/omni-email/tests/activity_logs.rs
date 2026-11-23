@@ -2,7 +2,7 @@
 //! with a SQLite trigger.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_core::LogLevel;
 use omni_email::activity_logs::{self, EmailActivityLogData, with_capture};

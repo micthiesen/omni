@@ -4,7 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::{Harness, body_measurement, garment_measurement, id, key, measured, stated, tee};
 use serde_json::{Value, json};

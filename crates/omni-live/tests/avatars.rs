@@ -3,7 +3,7 @@
 //! how views and other crates resolve a streamer's avatar.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

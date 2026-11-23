@@ -2,7 +2,7 @@
 //! store-backed reflection run with scripted models.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::rec;
 use omni_ai::{GenerateResponse, ModelRole};

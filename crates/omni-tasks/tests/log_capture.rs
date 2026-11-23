@@ -2,7 +2,7 @@
 //! instrumented with the run span.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

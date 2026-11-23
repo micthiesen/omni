@@ -3,7 +3,7 @@
 //! real-ffmpeg run is `#[ignore]` (it needs ffmpeg with arnndn on PATH).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

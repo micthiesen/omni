@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-device-link"
 description = "Outbound long-poll relay that lets the Claude Code host run bounded session commands for Omni."
 version.workspace = true
@@ -26,3 +27,7 @@ tracing.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

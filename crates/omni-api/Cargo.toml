@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-api"
 description = "Wire DTOs shared by the backend and the wasm frontend (serde only)."
 version.workspace = true
@@ -13,3 +14,7 @@ workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

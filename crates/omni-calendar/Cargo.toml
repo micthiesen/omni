@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-calendar"
 description = "Calendar events from email: filter, AI extraction, sanitization, CalDAV (iCloud) writes, tracked-event persistence and MCP tools."
 version.workspace = true
@@ -44,3 +45,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

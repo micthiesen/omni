@@ -9,7 +9,7 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
-mod common;
+use crate::common;
 
 use common::{COOKIES, Harness, PICCATA, doc, get, post_json};
 use omni_runtime::ports::FetchedPage;

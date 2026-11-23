@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-parcel --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-parcel --test it prod_copy:: -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first. Every row of the
 //! `parcel-submitted-delivery` must decode into its typed entity, recompute its own
 //! primary key, and re-encode to the stored value (modulo `undefined`

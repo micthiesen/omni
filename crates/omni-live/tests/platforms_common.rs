@@ -2,7 +2,7 @@
 //! connection, so the cases assert the typed error only.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_http::public::PublicHttpClient;
 use omni_live::platforms::{fetch_gql, fetch_page_html};

@@ -1,0 +1,26 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod avatars;
+mod common;
+mod dgg;
+mod display_order;
+mod kick;
+mod kick_relay;
+mod livestream_events;
+mod metrics_persistence;
+mod notification_policy;
+mod outage;
+mod platforms_common;
+mod prod_copy;
+mod profile_links;
+mod routes;
+mod sessions;
+mod streamer_config;
+mod streamers;
+mod task;
+mod title_debounce;
+mod transitions;
+mod trigger_channels;
+mod twitch;
+mod viewer_metrics_service;
+mod windows;
+mod youtube;

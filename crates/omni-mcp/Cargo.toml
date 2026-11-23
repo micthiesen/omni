@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-mcp"
 description = "Authenticated MCP endpoint, MCP Events outbox, MCP activity and the system, events and Claude session tools."
 version.workspace = true
@@ -64,3 +65,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

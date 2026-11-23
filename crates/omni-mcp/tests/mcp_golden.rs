@@ -7,7 +7,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 

@@ -9,7 +9,7 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
-mod common;
+use crate::common;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

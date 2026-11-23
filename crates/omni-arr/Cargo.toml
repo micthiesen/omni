@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-arr"
 description = "Sonarr/Radarr import recovery and Observer (Overseerr) issue repair."
 version.workspace = true
@@ -37,3 +38,7 @@ omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

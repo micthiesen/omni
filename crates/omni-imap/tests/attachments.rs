@@ -2,7 +2,7 @@
 //! read-only (EXAMINE) and fetches with `BODY.PEEK[]<0.N>`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

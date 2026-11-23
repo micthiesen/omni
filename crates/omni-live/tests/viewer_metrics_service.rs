@@ -1,7 +1,7 @@
 //! The viewer metrics service over a real temporary docstore.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

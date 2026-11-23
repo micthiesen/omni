@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-ai --test prod_copy -- --ignored`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-ai --test it prod_copy:: -- --ignored`.
 //! Every `cost-event` and `cost-migration` row must decode into the typed entities, and
 //! re-encoding a decoded event must read back as the stored JS value.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]

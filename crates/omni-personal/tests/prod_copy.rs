@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-personal --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-personal --test it prod_copy:: -- --ignored --nocapture`.
 //!
 //! Every `codex-reset-delivery`, `claude-reset-delivery`, `printer-accepted-job`
 //! and `pet-health-alert`

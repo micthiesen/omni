@@ -3,7 +3,7 @@
 //! against the URL that answered.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::{icloud_http, settings};
 use omni_calendar::caldav::discover_icloud_calendar;

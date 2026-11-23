@@ -4,7 +4,7 @@
 //! pipeline submitting through the same client with the sync gone.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

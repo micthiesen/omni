@@ -1,7 +1,7 @@
 //! Sonarr acquisition.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

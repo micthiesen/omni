@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-server-kit"
 description = "axum helpers: bounded JSON bodies, error bodies, the same-origin guard, SSE and the SPA service."
 version.workspace = true
@@ -27,3 +28,7 @@ url.workspace = true
 bytes.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

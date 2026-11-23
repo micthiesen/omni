@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-live-intel"
 description = "Livestream intelligence: audio capture, local speech, viewer anomalies, Destiny presence, summaries and alerts."
 version.workspace = true
@@ -51,3 +52,7 @@ tracing.workspace = true
 omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "rt-multi-thread"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

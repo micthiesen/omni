@@ -11,6 +11,7 @@ mod deps;
 mod golden_synth;
 mod mcp;
 mod target_hygiene;
+mod test_layout;
 
 const COMMANDS: &[(&str, &str)] = &[
     (
@@ -33,7 +34,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "golden-check",
         "verify the MCP snapshots match the tool definitions and that committed golden fixtures are unchanged",
     ),
-    ("deps-check", "enforce the crate dependency direction rules"),
+    (
+        "deps-check",
+        "enforce the crate dependency direction rules and one declared integration-test binary per crate",
+    ),
     (
         "hygiene",
         "remove build directories under target/agents/ unused for OMNI_TARGET_STALE_HOURS (default 48) and report Cargo artifact usage; never deletes from the directory in use",

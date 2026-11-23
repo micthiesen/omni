@@ -2,7 +2,7 @@
 //! shortlist run.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_ai::{GenerateResponse, ModelRole};
 use omni_media::shortlist::{compute_composite, format_candidate_details, shortlist_candidates};

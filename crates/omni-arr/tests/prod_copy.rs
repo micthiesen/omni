@@ -4,7 +4,7 @@
 //! like absent ones, are the only allowed difference).
 //!
 //! Ignored by default. Run with
-//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-arr --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-arr --test it prod_copy:: -- --ignored --nocapture`.
 //! The database is copied into a temporary directory; the original is never opened.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![allow(clippy::print_stdout)]

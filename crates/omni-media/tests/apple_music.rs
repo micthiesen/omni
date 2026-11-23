@@ -3,7 +3,7 @@
 //! Every response is checked against the tool's output schema by `typed_tool`.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

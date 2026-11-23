@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-recipes --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-recipes --test it prod_copy:: -- --ignored --nocapture`.
 //!
 //! Runs the one-time removal of the Crouton import's history on the copy and
 //! checks, recipe by recipe, that only that history went: the owner's own

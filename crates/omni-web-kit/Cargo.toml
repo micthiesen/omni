@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-web-kit"
 description = "Leptos CSR kit for the Omni frontend: API client, live data, hooks, components, charts, markdown, utils."
 version.workspace = true
@@ -69,3 +70,7 @@ features = [
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

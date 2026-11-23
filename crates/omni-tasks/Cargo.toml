@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-tasks"
 description = "Scheduler, task registry, run history, run log capture, catch-up and event buses."
 version.workspace = true
@@ -30,3 +31,7 @@ tracing-subscriber.workspace = true
 indexmap.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

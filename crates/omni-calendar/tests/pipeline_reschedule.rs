@@ -4,7 +4,7 @@
 //! AGM created on 11-08 and again on 11-25).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use common::{CALENDAR_URL, FakeSupport, caldav, email, extraction, pipeline};
 use omni_ai::ModelRole;

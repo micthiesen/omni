@@ -1,0 +1,19 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod common;
+mod prod_copy;
+mod recipes_agent_feedback;
+mod recipes_app_amounts;
+mod recipes_backup;
+mod recipes_cook;
+mod recipes_create;
+mod recipes_edit;
+mod recipes_household;
+mod recipes_http;
+mod recipes_images;
+mod recipes_import_history;
+mod recipes_integrity;
+mod recipes_organize;
+mod recipes_pins;
+mod recipes_requests;
+mod recipes_search;
+mod recipes_surface;

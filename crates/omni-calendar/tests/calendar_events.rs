@@ -2,7 +2,7 @@
 //! against a fake CalDAV server and a recording MCP Events port.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod fake_caldav;
+use crate::fake_caldav;
 
 use std::sync::Arc;
 

@@ -1,0 +1,22 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod api;
+mod calendar_events;
+mod common;
+mod deletion_replay;
+mod discovery;
+mod email_core;
+mod extraction_schema;
+mod fake_caldav;
+mod http;
+mod ics;
+mod keywords;
+mod mcp_tools;
+mod persistence;
+mod persistence_atomic;
+mod pipeline_reliability;
+mod pipeline_reschedule;
+mod primary_calendar;
+mod prod_copy;
+mod sanitize;
+mod subsystem;
+mod xml;

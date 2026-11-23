@@ -5,7 +5,7 @@
 //! uncertain writes by reading). All cards are synthetic.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod fake_carddav;
+use crate::fake_carddav;
 
 use std::sync::Arc;
 

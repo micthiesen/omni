@@ -2,7 +2,7 @@
 //! feedback cases.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_api::media::{RecommendationFeedback, RecommendationStatus};
 use omni_media::persistence::{

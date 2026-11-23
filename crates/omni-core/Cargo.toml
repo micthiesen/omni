@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-core"
 description = "Clock, ids, JS-compatible semantics, digests, email model and shared async helpers."
 version.workspace = true
@@ -30,3 +31,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

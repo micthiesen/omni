@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-calendar --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-calendar --test it prod_copy:: -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first. Every
 //! `calendar-created-event` row must decode into the typed entity, recompute its
 //! own primary key, re-encode to the stored value (modulo `undefined` object

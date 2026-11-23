@@ -1,0 +1,21 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod amazon_tools;
+mod claude_resets_policy;
+mod claude_resets_source;
+mod codex_resets_delivery;
+mod codex_resets_history;
+mod codex_resets_policy;
+mod common;
+mod hister_service;
+mod owner_notify;
+mod pet_health_dismissal;
+mod pet_health_watch;
+mod pet_tracker_api;
+mod pet_tracker_task;
+mod printer_service;
+mod prod_copy;
+mod reset_alerts_delivery;
+mod reset_alerts_logging;
+mod reset_alerts_task;
+mod reset_failure_alerts;
+mod subsystem;

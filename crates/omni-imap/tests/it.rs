@@ -1,0 +1,22 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod actions;
+mod archive;
+mod attachments;
+mod auto_read;
+mod common;
+mod email_archive;
+mod email_attachment_pdf;
+mod email_attachment_send;
+mod email_attachments;
+mod email_compose;
+mod map_message;
+mod mime_golden;
+mod polling;
+mod prod_copy;
+mod raw_client;
+mod read_coherence;
+mod sent;
+mod service;
+mod subsystem;
+mod transport;
+mod transport_sent;

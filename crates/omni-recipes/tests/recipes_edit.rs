@@ -8,7 +8,7 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
-mod common;
+use crate::common;
 
 use common::{Harness, PICCATA, doc, only_kept_diet_conflicts};
 use serde_json::{Value, json};

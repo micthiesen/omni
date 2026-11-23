@@ -6,8 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
-mod gateway_support;
+use crate::gateway_support;
 
 use std::sync::atomic::Ordering;
 

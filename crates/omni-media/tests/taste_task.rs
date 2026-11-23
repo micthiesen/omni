@@ -3,7 +3,7 @@
 //! watches, persists evidence and a profile, and reports its run summaries.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

@@ -1,7 +1,7 @@
 //! Recurring reminder completion.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
-mod common;
+use crate::common;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

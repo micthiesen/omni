@@ -3,7 +3,7 @@
 //! expansion, and idempotent verified writes through the MCP tools.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod fake_caldav;
+use crate::fake_caldav;
 
 use std::sync::Arc;
 

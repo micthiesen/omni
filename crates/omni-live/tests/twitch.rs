@@ -1,7 +1,7 @@
 //! Twitch live status, including the escaped-login query.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_live::platform::{FetchedLive, FetchedStatus};
 use omni_live::platforms::{TwitchClient, TwitchGqlResponse, extract_twitch_status, twitch_query};

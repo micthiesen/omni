@@ -12,7 +12,7 @@
 //!    enrolled, at least one later clip must be the same speaker saying
 //!    something else (names starting with the first name), the rest others.
 //! 3. `OMNI_SHERPA_MODELS=MODELS OMNI_SHERPA_CLIPS=CLIPS OMNI_SHERPA_REFERENCE=ref.json
-//!    cargo test -p omni-live-intel --test sherpa_parity -- --ignored --nocapture`
+//!    cargo test -p omni-live-intel --test it sherpa_parity:: -- --ignored --nocapture`
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]
 
 use std::collections::HashMap;

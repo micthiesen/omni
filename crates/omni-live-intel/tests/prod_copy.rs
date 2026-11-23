@@ -1,7 +1,7 @@
 //! Typed decode and re-encode of every livestream intelligence row in a production docstore copy.
 //!
 //! Ignored by default. Run with
-//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-live-intel --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-live-intel --test it prod_copy:: -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first; the original is never opened.
 //! For each entity: every row must decode into the typed model, recompute its
 //! primary key, and re-encode to the same value (fields stored as JS

@@ -1,5 +1,5 @@
 //! Manual check against a copy of the production docstore (never the original):
-//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-presspods --test prod_copy -- --ignored --nocapture`.
+//! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-presspods --test it prod_copy:: -- --ignored --nocapture`.
 //!
 //! Every `press-pods-episode` and `press-pods-job` row must decode into the
 //! typed entities, recompute its primary key, and re-encode to the same

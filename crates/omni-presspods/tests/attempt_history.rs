@@ -3,7 +3,7 @@
 //! expired after 180 days and listed read-only through `presspods_list`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

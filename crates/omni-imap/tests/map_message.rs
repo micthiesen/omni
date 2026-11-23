@@ -3,7 +3,7 @@
 //! intact.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_imap::map_message::{MessageCoords, map_parsed_message};
 use omni_imap::mime::parse_message;

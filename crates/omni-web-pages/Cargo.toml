@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-web-pages"
 description = "Omni frontend domain pages (media, podcasts, pods, workspaces, pets, reminders, briefings, MCP, Claude)."
 version.workspace = true
@@ -51,3 +52,7 @@ features = [
   "UrlSearchParams",
   "Window",
 ]
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

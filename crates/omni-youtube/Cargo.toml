@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "omni-youtube"
 description = "The owner's YouTube account through the YouTube Data API: Google OAuth, playlists, public search and video/channel details, quota accounting and MCP tools."
 version.workspace = true
@@ -42,3 +43,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

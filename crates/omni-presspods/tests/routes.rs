@@ -2,7 +2,7 @@
 //! Byte-range parsing cases are unit tests in `src/routes.rs`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::Body;

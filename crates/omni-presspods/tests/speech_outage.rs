@@ -4,7 +4,7 @@
 //! same way. A server that answers, even with an error, is not an outage.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

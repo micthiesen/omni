@@ -1,7 +1,7 @@
 //! Candidate enrichment with TMDB details.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::collections::HashSet;
 use std::sync::Arc;

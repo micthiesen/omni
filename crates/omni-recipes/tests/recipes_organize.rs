@@ -8,7 +8,7 @@
     clippy::cloned_ref_to_slice_refs
 )]
 
-mod common;
+use crate::common;
 
 use common::{COOKIES, ENCHILADAS, Harness, LASAGNE, PICCATA, doc, png};
 use serde_json::{Value, json};

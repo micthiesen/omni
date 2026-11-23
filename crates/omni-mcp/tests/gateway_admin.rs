@@ -4,8 +4,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
-mod gateway_support;
+use crate::common;
+use crate::gateway_support;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

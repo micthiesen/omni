@@ -1,7 +1,7 @@
 //! Control registration persistence.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_ios_controls::persistence::{
     delete_registration, list_registrations, mark_delivered, replace_device_registrations,

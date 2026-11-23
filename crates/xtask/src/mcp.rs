@@ -15,8 +15,11 @@ use crate::cargo_command;
 pub fn mcp_golden(check: bool) -> Result<()> {
     let mut command = cargo_command();
     command
-        .args(["test", "--locked", "-p", "omni-mcp", "--test", "mcp_golden"])
-        .args(["--", "--nocapture"]);
+        // `--workspace` rather than `-p omni-mcp`: the same dependency features
+        // as the gate, so its build is reused. Other crates' `it` binaries run
+        // no test under this filter.
+        .args(["test", "--workspace", "--locked", "--test", "it"])
+        .args(["--", "--nocapture", "mcp_golden::"]);
     if check {
         command.env_remove("OMNI_MCP_GOLDEN");
     } else {

@@ -1,0 +1,27 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod activity;
+mod claude_sessions_events;
+mod claude_sessions_tools;
+mod common;
+mod device_link_adapter;
+mod events_protocol;
+mod events_publisher;
+mod events_service;
+mod gateway;
+mod gateway_admin;
+mod gateway_events;
+mod gateway_oauth_client;
+mod gateway_oauth_server;
+mod gateway_resilience;
+mod gateway_stdio;
+mod gateway_support;
+mod mcp_golden;
+mod policy;
+mod prod_copy;
+mod protocol_golden;
+mod server;
+mod subsystem;
+mod system_tools;
+mod tool;
+mod webhook;
+mod wire_details;

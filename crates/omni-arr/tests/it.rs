@@ -1,0 +1,19 @@
+//! One integration-test binary for this crate; each module is a former test file.
+mod arr_recovery_boundaries;
+mod arr_recovery_client;
+mod arr_recovery_filesystem;
+mod arr_recovery_llm;
+mod arr_recovery_nzbget;
+mod arr_recovery_persistence;
+mod arr_recovery_policy;
+mod arr_recovery_record_mode;
+mod arr_recovery_service;
+mod common;
+mod js_digests;
+mod observer_client;
+mod observer_repair_agent;
+mod observer_repair_arr;
+mod observer_repair_persistence;
+mod observer_repair_service;
+mod prod_copy;
+mod subsystem;

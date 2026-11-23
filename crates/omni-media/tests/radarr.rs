@@ -1,7 +1,7 @@
 //! Radarr acquisition (wiremock and a raw socket; nothing leaves localhost).
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

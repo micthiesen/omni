@@ -2,7 +2,7 @@
 //! 401 refresh.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_http::public::PublicHttpClient;
 use omni_http::{HttpOverrides, Url};

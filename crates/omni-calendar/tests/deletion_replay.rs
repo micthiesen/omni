@@ -6,8 +6,8 @@
 //! pipeline and calendar tools against the fake CalDAV server.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-mod common;
-mod fake_caldav;
+use crate::common;
+use crate::fake_caldav;
 
 use std::sync::Arc;
 

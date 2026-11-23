@@ -2,7 +2,7 @@
 //! resolution cases for the alias cache.
 #![allow(clippy::expect_used)]
 
-mod common;
+use crate::common;
 
 use omni_media::identity::{
     SearchResult, parse_guid_external_ids, resolve_identity, score_search_results,
