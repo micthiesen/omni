@@ -141,6 +141,10 @@ test.describe('an agent at work', () => {
     await expect(page.locator('.body')).toContainText('3 tbsp red wine vinegar');
     await picker.getByRole('tab', { name: 'Sharper' }).click();
     await expect(page.locator('.body')).toContainText('4 tbsp red wine vinegar');
+    // An amount edit changes the recipe as written, so it waits for "As written".
+    await page.locator('[data-testid=edit-amount]').first().click();
+    await expect(page.locator('[data-testid=toast]')).toContainText('Amounts change the recipe as written');
+    await expect(page.locator('.sheet.open')).toHaveCount(0);
     await page.locator('[data-testid=cook]').click();
     await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
     const sessionId = page.url().split('/').pop();

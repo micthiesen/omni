@@ -18,7 +18,7 @@ use crate::logic::session::is_open;
 use crate::logic::{Route, SCALES, gallery, same_scale, step_servings, tile_color};
 use crate::platform::prefs::{self, RecipeView};
 use crate::platform::shell;
-use crate::store::{Ask, Recipe, Undo, shown_variant, use_store};
+use crate::store::{Ask, Recipe, Undo, VARIANT_AMOUNT, shown_variant, use_store};
 
 /// Step text with ingredient amounts, times and temperatures in bold.
 pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
@@ -414,11 +414,14 @@ pub fn RecipePage(id: String) -> impl IntoView {
             return;
         };
         let session = open_session.clone()().unwrap_or_else(|| {
-            store.start_cook(
-                &recipe,
-                store.scale(&recipe.rec.id),
-                variant.get_untracked(),
-            )
+            // A variant the recipe no longer has (an agent removed it) is not cooked.
+            let picked = variant.get_untracked().filter(|id| {
+                recipe
+                    .doc
+                    .as_ref()
+                    .is_some_and(|doc| doc.variants.iter().any(|v| v.id == *id))
+            });
+            store.start_cook(&recipe, store.scale(&recipe.rec.id), picked)
         });
         navigate(store, Route::Cook(session));
     };
@@ -488,6 +491,9 @@ pub fn RecipePage(id: String) -> impl IntoView {
                 }
                 .into_any();
             };
+            if variant.with_untracked(|id| id.as_ref().is_some_and(|id| !doc.variants.iter().any(|v| v.id == *id))) {
+                variant.set(None);
+            }
             let header = list_view(&doc, 1.0);
             let tools = equipment(&doc);
             let source = doc.source.clone();
@@ -561,6 +567,10 @@ pub fn RecipePage(id: String) -> impl IntoView {
                             } else {
                                 let recipe_id = body_id.clone();
                                 let on_amount = Callback::new(move |ingredient: String| {
+                                    if variant.get_untracked().is_some() {
+                                        store.show_toast(VARIANT_AMOUNT, None);
+                                        return;
+                                    }
                                     amount_target.set(Some(AmountTarget {
                                         recipe: recipe_id.clone(),
                                         ingredient,

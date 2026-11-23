@@ -21,7 +21,7 @@ use crate::logic::Route;
 use crate::logic::session::{Projection, project};
 use crate::platform::prefs::{self, RecipeView};
 use crate::platform::{device, now_ms};
-use crate::store::{Ask, Store, Undo, use_store};
+use crate::store::{Ask, Store, Undo, VARIANT_AMOUNT, use_store};
 
 /// How long the toast after a press and hold stays.
 const HOLD_TOAST: std::time::Duration = std::time::Duration::from_secs(4);
@@ -166,6 +166,10 @@ impl Ctx {
     /// Opens the amount sheet for an ingredient. What it saves is a revision
     /// of the recipe, which this session then moves to.
     fn change_amount(self, ingredient: String) {
+        if self.state.with_untracked(|state| state.variant.is_some()) {
+            self.store.show_toast(VARIANT_AMOUNT, None);
+            return;
+        }
         self.amount_target.set(Some(AmountTarget {
             recipe: self.recipe.get_value(),
             ingredient,
@@ -890,6 +894,11 @@ pub fn CookPage(id: String) -> impl IntoView {
                     .into_iter()
                     .map(|(ingredient, name)| view! {
                         <button data-testid="change-amount" on:click=move |_| {
+                            if state.with_untracked(|state| state.variant.is_some()) {
+                                choosing_amount.set(false);
+                                store.show_toast(VARIANT_AMOUNT, None);
+                                return;
+                            }
                             if let Some(recipe) = recipe_id.get() {
                                 amount_target.set(Some(AmountTarget {
                                     recipe,

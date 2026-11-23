@@ -781,7 +781,7 @@ impl Store {
 
     /// Starts a session on the phone; the server learns of it from the outbox.
     pub fn start_cook(self, recipe: &Recipe, scale: f64, variant: Option<String>) -> String {
-        let id = idb::atomic(|| {
+        idb::atomic(|| {
             let now = now_ms();
             let id = random_id("cook_", 8);
             let request = StartCookRequest {
@@ -804,12 +804,12 @@ impl Store {
                 doc: Some(recipe.rec.doc.clone()),
             });
             self.enqueue(Job::StartCook { request });
+            // In the same transaction, so the session never exists without it.
+            if variant.is_some() {
+                self.cook_event(&id, CookEventKind::Variant { variant });
+            }
             id
-        });
-        if variant.is_some() {
-            self.cook_event(&id, CookEventKind::Variant { variant });
-        }
-        id
+        })
     }
 
     /// Appends an event to a session: applied locally now, sent in order.
@@ -1396,6 +1396,11 @@ fn window_width() -> f64 {
         .and_then(|width| width.as_f64())
         .unwrap_or(390.0)
 }
+
+/// Why an amount cannot be changed while a variant is shown: the change is
+/// to the recipe as written, which a variant may override.
+pub const VARIANT_AMOUNT: &str =
+    "Amounts change the recipe as written. Switch to As written to change one.";
 
 /// `doc` as its variant `id` makes it; as written without one, or when the
 /// revision no longer has it.

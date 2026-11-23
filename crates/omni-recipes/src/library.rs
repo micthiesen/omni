@@ -89,18 +89,7 @@ pub(crate) fn render_chart(doc: &RecipeDoc, factor: f64, ids: bool) -> String {
     let variants: Vec<String> = omni_recipe_format::variant_docs(doc)
         .iter()
         .map(|(variant, made)| {
-            let changed: Vec<String> = omni_recipe_format::diff_summary(doc, made)
-                .iter()
-                .filter_map(|line| line.strip_prefix("~ ").or(Some(line.as_str())))
-                .filter(|line| !line.starts_with("− ") && !line.starts_with("+ "))
-                .filter_map(|line| line.split(['.', ':']).next())
-                .map(str::to_owned)
-                .fold(Vec::new(), |mut ids, id| {
-                    if !ids.contains(&id) {
-                        ids.push(id);
-                    }
-                    ids
-                });
+            let changed = omni_recipe_format::changed_ids(doc, made);
             if changed.is_empty() {
                 format!("{} [{}]", variant.name, variant.id)
             } else {

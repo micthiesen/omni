@@ -108,7 +108,9 @@ variant's name); the page renders `variant_doc` of the chosen one, and Cook
 starts the session with a `variant` event after `startCook`, so the session
 cooks it on every device. Cook mode titles the screen "Title · Variant name"
 and `Store::session_doc` applies the session's variant (the last `variant`
-event) to its pinned document.
+event) to its pinned document. While a variant is shown, on the recipe page
+or in its cook, the amount sheet does not open: a toast says amounts change
+the recipe as written.
 A step's timer is one batch: a step with `repeat` labels its button "Start 9
 min timer (one of 3 batches)" at the session's scale, and the cook starts it
 once per batch. Step text, sizes, heat stages and counts (`{yield}`,

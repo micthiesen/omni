@@ -306,27 +306,35 @@ pub fn fmt_heat_short(stages: &[HeatStage]) -> String {
         .join("→")
 }
 
-/// One length in the other system, the way a ruler reads: inches to the
-/// nearest eighth below an inch and half an inch above; centimetres whole,
-/// or millimetres below a centimetre.
-fn converted(value: f64, unit: &str) -> (f64, &'static str) {
-    if unit == "in" {
-        let cm = value * 2.54;
-        if cm < 1.0 {
-            ((cm * 10.0).round().max(1.0), "mm")
-        } else {
-            (cm.round(), "cm")
-        }
-    } else {
-        let inches = if unit == "mm" {
-            value / 25.4
-        } else {
-            value / 2.54
-        };
-        if inches < 1.0 {
-            (((inches * 8.0).round() / 8.0).max(0.125), "in")
-        } else {
-            ((inches * 2.0).round() / 2.0, "in")
+/// The unit a size reads in the other system, chosen once for all its
+/// parts from the largest: millimetres below a centimetre, else
+/// centimetres; or inches.
+fn other_unit(largest: f64, unit: &str) -> &'static str {
+    match unit {
+        "in" if largest * 2.54 < 1.0 => "mm",
+        "in" => "cm",
+        _ => "in",
+    }
+}
+
+/// One length in `to`, the way a ruler reads: inches to the nearest eighth
+/// below an inch and half an inch above; centimetres and millimetres whole.
+fn converted(value: f64, unit: &str, to: &str) -> f64 {
+    let mm = match unit {
+        "in" => value * 25.4,
+        "cm" => value * 10.0,
+        _ => value,
+    };
+    match to {
+        "mm" => mm.round().max(1.0),
+        "cm" => (mm / 10.0).round().max(1.0),
+        _ => {
+            let inches = mm / 25.4;
+            if inches < 1.0 {
+                ((inches * 8.0).round() / 8.0).max(0.125)
+            } else {
+                (inches * 2.0).round() / 2.0
+            }
         }
     }
 }
@@ -354,9 +362,14 @@ pub fn fmt_size(size: &Size, scaled: bool) -> String {
         format!("{text} {unit}")
     };
     let written = pair(size.value, size.max, size.by, unit);
-    let (value, other) = converted(size.value, unit);
-    let max = size.max.map(|max| converted(max, unit).0);
-    let by = size.by.map(|by| converted(by, unit).0);
+    let largest = [size.max, size.by]
+        .into_iter()
+        .flatten()
+        .fold(size.value, f64::max);
+    let other = other_unit(largest, unit);
+    let value = converted(size.value, unit, other);
+    let max = size.max.map(|max| converted(max, unit, other));
+    let by = size.by.map(|by| converted(by, unit, other));
     let mut note = pair(value, max, by, other);
     if scaled && size.kind == crate::model::SizeKind::Pan {
         note.push_str("; for the unscaled recipe");
@@ -504,6 +517,11 @@ mod tests {
         assert_eq!(fmt_size(&quarter, false), "¼ in (6 mm)");
         let round = size(SizeKind::Pan, 9.0, None, None, "in");
         assert_eq!(fmt_size(&round, false), "9 in (23 cm)");
+        // Both ends read in one unit.
+        let range = size(SizeKind::Thickness, 0.25, Some(0.5), None, "in");
+        assert_eq!(fmt_size(&range, false), "¼–½ in (1 cm)");
+        let small = size(SizeKind::Thickness, 0.125, Some(0.25), None, "in");
+        assert_eq!(fmt_size(&small, false), "⅛–¼ in (3–6 mm)");
     }
 
     #[test]

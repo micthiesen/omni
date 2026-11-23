@@ -140,6 +140,9 @@ before a name became a placeholder reads as it did.
   variant as a `variant` event (`CookEventKind::Variant`); `recipes_cook_start` `variant`
   appends one after checking the id, and the session view shows the variant and computes
   readiness on its document. A revision without the session's variant shows as written.
+  A variant's amounts are its own: a later change to the amount as written (an edit or the
+  app's amount sheet) leaves an amount the variant sets as it was, and the app refuses its
+  amount sheet while a variant is shown (`VARIANT_AMOUNT`).
 - **Sizes** (`format::fmt_size`). `size: [{ kind, value, max?, by?, unit }]`, kind
   `thickness`, `diameter`, `length` or `pan`, unit `mm`, `cm` or `in`, at most four. `{size}`
   renders all of them, `{size:kind}` the first of that kind, each in both systems (inches to

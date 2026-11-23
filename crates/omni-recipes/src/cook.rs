@@ -875,40 +875,43 @@ impl Recipes {
     }
 
     pub async fn cook_start(&self, input: CookStartInput, actor: Actor) -> R<CookStartOutput> {
-        // Checked before the session exists, so a wrong id starts nothing.
-        if let Some(id) = input.variant.clone() {
-            let recipe = input.recipe_id.clone();
-            self.query(move |conn| {
-                let (row, _) = db::recipe_for_read(conn, &recipe)?;
-                let doc = doc_at(conn, &row.id, row.head_rev)?;
-                omni_recipe_format::variant_doc(&doc, &id)
-                    .map(|_| ())
-                    .map_err(|error| invalid(error.to_string()))
+        let start = Start {
+            id: None,
+            recipe_id: input.recipe_id,
+            revision: None,
+            scale: input.scale,
+            servings: input.servings,
+        };
+        let variant = input.variant.clone();
+        let event_id = format!("agent_{}", omni_core::ids::uuid_v4());
+        // The session and its variant are written together: a wrong variant
+        // starts nothing.
+        let appended = self
+            .transact(false, move |conn, now| {
+                let row = start_tx(conn, now, &start)?;
+                let Some(variant) = variant else {
+                    return Ok(Appended {
+                        session: wire_session(conn, &row)?,
+                        seq: 0,
+                        library_seq: None,
+                        finished: None,
+                    });
+                };
+                omni_recipe_format::variant_doc(&session_doc(conn, &row)?, &variant)
+                    .map_err(|error| invalid(error.to_string()))?;
+                let event = Append {
+                    actor: CookActor::Agent,
+                    client_event_id: event_id,
+                    at: now,
+                    kind: CookEventKind::Variant {
+                        variant: Some(variant),
+                    },
+                };
+                append_tx(conn, now, &row.id, vec![event], true, &actor)
             })
             .await?;
-        }
-        let mut session = self
-            .start_session(Start {
-                id: None,
-                recipe_id: input.recipe_id,
-                revision: None,
-                scale: input.scale,
-                servings: input.servings,
-            })
-            .await?;
-        if let Some(variant) = input.variant.clone() {
-            let event = Append {
-                actor: CookActor::Agent,
-                client_event_id: format!("agent_{}", omni_core::ids::uuid_v4()),
-                at: self.now(),
-                kind: CookEventKind::Variant {
-                    variant: Some(variant),
-                },
-            };
-            session = self
-                .append_events(&session.id, vec![event], true, actor)
-                .await?;
-        }
+        self.after_append(&appended).await;
+        let session = appended.session;
         Ok(CookStartOutput {
             variant: input.variant,
             app_url: self

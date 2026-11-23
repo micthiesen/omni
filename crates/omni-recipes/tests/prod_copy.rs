@@ -162,3 +162,45 @@ async fn import_history_leaves_and_everything_else_stays() {
     assert_eq!(restored[&id].notes, before[&id].notes);
     assert_eq!(restored[&id].source, before[&id].source);
 }
+
+/// What the step-data placeholders and the new warnings mean for the stored
+/// library: no stored document fails to read or gains an error, an input
+/// whose id is a placeholder name is listed (it keeps its meaning), and the
+/// new warnings are counted.
+#[tokio::test]
+#[ignore = "needs OMNI_PROD_COPY pointing at a copy of the production docstore"]
+async fn stored_recipes_read_as_before_under_the_new_step_data() {
+    let source = std::env::var("OMNI_PROD_COPY").unwrap();
+    let copy = TestStore::from_fixture(std::path::Path::new(&source)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let recipes = Recipes::new(
+        copy.store.clone(),
+        test_clock(NOW_MS),
+        jiff::tz::TimeZone::UTC,
+        dir.path().to_path_buf(),
+    );
+    let names = ["yield", "portions", "size", "heat", "batches"];
+    let mut warned: BTreeMap<String, usize> = BTreeMap::new();
+    for (id, record) in library(&recipes).await {
+        let doc = omni_recipe_format::upgrade(record.format, record.doc.clone())
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        let report = omni_recipe_format::validate(&doc);
+        assert!(report.is_valid(), "{id}: {:?}", report.errors);
+        for step in doc.components.iter().flat_map(|c| &c.steps) {
+            for input in step
+                .inputs
+                .iter()
+                .filter(|i| names.contains(&i.r#ref.as_str()))
+            {
+                println!("{id}: step {} has an input named {}", step.id, input.r#ref);
+            }
+        }
+        for problem in &report.warnings {
+            if matches!(problem.code.as_str(), "unscaled_number") {
+                *warned.entry(problem.code.as_str().to_owned()).or_default() += 1;
+                println!("{id}: {}", problem.line());
+            }
+        }
+    }
+    println!("new warnings: {warned:?}");
+}

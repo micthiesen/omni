@@ -54,4 +54,4 @@ pub use timeline::{
     DerivedTime, TimelineRow, derived_time, derived_time_at, render_timeline, timeline, timeline_at,
 };
 pub use validate::{Code, Level, Problem, Report, validate};
-pub use variant::{VariantError, variant_doc, variant_docs};
+pub use variant::{VariantError, changed_ids, variant_doc, variant_docs};

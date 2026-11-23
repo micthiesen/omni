@@ -260,7 +260,9 @@ the measuring guideline, with its problems under `variants.<id>.`. Add or change
 along. `recipes_get` with `variant` shows the text or chart as that variant makes it; the text
 view of the recipe as written ends with a Variants section listing what each one changes.
 `recipes_cook_start` takes `variant`, and a `variant` event in `recipes_cook_update` switches an
-open cook (or back, without one). At most six variants, 50 operations each.
+open cook (or back, without one). At most six variants, 50 operations each. An amount a variant
+sets is its own: changing the recipe's amount later leaves it as it was, so update the variant
+too when it should follow.
 
 ## Tags
 

@@ -171,7 +171,7 @@ mod tests {
             (VERSION, crate::db::sha256_hex(text().as_bytes()).as_str()),
             (
                 "7",
-                "461cfe31ce6870555c2460d2b29b70320dbeaf54465b02543da7feb5888c42a2"
+                "daa741f1aa49d7b198892b8ef8c35ceb7b378e5f4a517929f296987493cfe387"
             )
         );
     }

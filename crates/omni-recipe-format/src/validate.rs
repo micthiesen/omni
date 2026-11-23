@@ -354,11 +354,13 @@ fn check_variants(doc: &RecipeDoc, report: &mut Report) {
             ),
         );
     }
-    let base: Vec<(Code, String, String)> = report
+    // Messages can carry numbers a variant changes (the yield in a hint), so
+    // a problem the recipe as written already has is known by code and path.
+    let base: Vec<(Code, String)> = report
         .errors
         .iter()
         .chain(&report.warnings)
-        .map(|p| (p.code, p.path.clone(), p.message.clone()))
+        .map(|p| (p.code, p.path.clone()))
         .collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for variant in &doc.variants {
@@ -411,16 +413,16 @@ fn check_variants(doc: &RecipeDoc, report: &mut Report) {
                     Code::BadValue,
                     format!("{path}.ops"),
                     error.to_string(),
-                    "a variant changes fields of the recipe's own ingredients, steps and inputs, and its yield and time",
+                    "a variant changes fields of the recipe's own ingredients, steps and inputs, and its yield and time; when an edit removes what a variant changes, change or remove the variant too (setVariant, removeVariant)",
                 );
                 continue;
             }
         };
         let own = validate(&made);
         for problem in own.errors.into_iter().chain(own.warnings) {
-            let known = base.iter().any(|(code, at, message)| {
-                *code == problem.code && *at == problem.path && *message == problem.message
-            });
+            let known = base
+                .iter()
+                .any(|(code, at)| *code == problem.code && *at == problem.path);
             if !known {
                 report.push(
                     problem.level,
@@ -469,7 +471,12 @@ fn check_unscaled(doc: &RecipeDoc, report: &mut Report) {
     let made = doc.r#yield.qty;
     for (path, text) in fields {
         for hit in unscaled_numbers(text) {
-            let hint = if hit.word.starts_with("batch") {
+            let counted = hit.word.rsplit(' ').next().unwrap_or(&hit.word);
+            let hint = if path.starts_with("ingredients.") || path.contains(".inputs.") {
+                "a count in prep or a note does not follow the scale: make it the amount (qty with a count, or alt), or say it per item".to_owned()
+            } else if path.ends_with(".until") || path.ends_with(".tip") {
+                "placeholders are not filled in until or tip: move the count into the step text ({yield}, {portions}), or say it per item".to_owned()
+            } else if hit.word.starts_with("batch") {
                 "say how many batches with the step's \"repeat\" and write {batches}; keep a count only when it stays true at any scale".to_owned()
             } else if (hit.value - made).abs() < 1e-9 {
                 format!(
@@ -481,7 +488,7 @@ fn check_unscaled(doc: &RecipeDoc, report: &mut Report) {
                 format!(
                     "give the step \"portions\": {{\"qty\": {}, \"unit\": \"{}\"}} and write {{portions}}; keep a count only when it stays true at any scale (per item, per side)",
                     crate::py::fmt_g(hit.value),
-                    hit.word
+                    counted
                 )
             };
             report.warn(

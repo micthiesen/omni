@@ -86,6 +86,43 @@ fn json_number(x: f64) -> Option<Value> {
     serde_json::Number::from_f64(x).map(Value::Number)
 }
 
+/// What `made` changes of `doc`: "yield" and "time" when those differ, then
+/// the id of every ingredient, step and component whose own fields differ,
+/// in written order.
+pub fn changed_ids(doc: &RecipeDoc, made: &RecipeDoc) -> Vec<String> {
+    let mut out = Vec::new();
+    if doc.r#yield != made.r#yield {
+        out.push("yield".to_owned());
+    }
+    if doc.time != made.time {
+        out.push("time".to_owned());
+    }
+    let before = Index::build(doc);
+    for component in &made.components {
+        let own = |c: &crate::model::Component| (c.name.clone(), c.make_ahead.clone());
+        if before
+            .doc()
+            .components
+            .iter()
+            .find(|known| known.id == component.id)
+            .is_none_or(|known| own(known) != own(component))
+        {
+            out.push(component.id.clone());
+        }
+        for ingredient in &component.ingredients {
+            if before.ingredient(&ingredient.id) != Some(ingredient) {
+                out.push(ingredient.id.clone());
+            }
+        }
+        for step in &component.steps {
+            if before.step(&step.id) != Some(step) {
+                out.push(step.id.clone());
+            }
+        }
+    }
+    out
+}
+
 fn scale_number(value: &mut Value, factor: f64) {
     if let Some(scaled) = value
         .as_f64()

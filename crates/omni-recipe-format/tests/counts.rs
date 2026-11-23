@@ -58,12 +58,14 @@ fn a_count_equal_to_the_yield_warns_and_points_at_yield() {
 fn any_other_count_points_at_portions_and_batches_at_repeat() {
     let mut doc = cookies();
     step_mut(&mut doc, "scoop").text = "Scoop {fold} into 24 balls.".to_owned();
-    step_mut(&mut doc, "bake").tip = Some("Bake in 2 batches if the oven is small.".to_owned());
+    step_mut(&mut doc, "bake").text =
+        "Bake {scoop} in {oven|the hot oven} in 2 batches for {time}.".to_owned();
+    step_mut(&mut doc, "cool").tip = Some("Makes about 30 crumbs.".to_owned());
     doc.components[0].ingredients[0].note = Some("enough for 3 trays".to_owned());
     let found = warnings(&doc, Code::UnscaledNumber);
-    assert_eq!(found.len(), 3, "{found:?}");
+    assert_eq!(found.len(), 4, "{found:?}");
     assert!(
-        found[0].starts_with("ingredients.flour.note:"),
+        found[0].starts_with("ingredients.flour.note:") && found[0].contains("make it the amount"),
         "{}",
         found[0]
     );
@@ -72,8 +74,14 @@ fn any_other_count_points_at_portions_and_batches_at_repeat() {
         "{}",
         found[1]
     );
-    assert!(found[2].starts_with("steps.bake.tip:"), "{}", found[2]);
+    assert!(found[2].starts_with("steps.bake.text:"), "{}", found[2]);
     assert!(found[2].contains("\"repeat\""), "{}", found[2]);
+    assert!(found[3].starts_with("steps.cool.tip:"), "{}", found[3]);
+    assert!(
+        found[3].contains("not filled in until or tip"),
+        "{}",
+        found[3]
+    );
 }
 
 #[test]

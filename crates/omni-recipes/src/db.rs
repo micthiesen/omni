@@ -410,7 +410,7 @@ pub fn cover_of<'a>(row: &RecipeRow, images: &'a [ImageRow]) -> Option<&'a Image
 pub fn is_placeholder(caption: Option<&str>) -> bool {
     caption.is_some_and(|caption| {
         caption
-            .trim_start()
+            .trim_start_matches([' ', '\t', '\n', '\r'])
             .get(..12)
             .is_some_and(|head| head.eq_ignore_ascii_case("placeholder:"))
     })
@@ -421,7 +421,7 @@ pub fn is_placeholder(caption: Option<&str>) -> bool {
 pub const PLACEHOLDER_COVER_SQL: &str = "EXISTS (SELECT 1 FROM recipes_image i WHERE i.id = \
      coalesce((SELECT c.id FROM recipes_image c WHERE c.id = r.cover_image AND c.recipe_id = r.id), \
      (SELECT f.id FROM recipes_image f WHERE f.recipe_id = r.id ORDER BY f.position, f.created_at, f.id LIMIT 1)) \
-     AND lower(substr(ltrim(i.caption), 1, 12)) = 'placeholder:')";
+     AND lower(substr(ltrim(i.caption, ' ' || char(9) || char(10) || char(13)), 1, 12)) = 'placeholder:')";
 
 /// Whether the recipe has a picture of the dish.
 pub fn has_dish_image(conn: &Connection, id: &str) -> R<bool> {

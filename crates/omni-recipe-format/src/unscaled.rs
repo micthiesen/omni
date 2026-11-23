@@ -17,22 +17,30 @@ pub(crate) struct Unscaled {
 }
 
 /// Words after a number that say it stays true at any scale.
-const STABLE_AFTER: [&str; 62] = [
+const STABLE_AFTER: &[&str] = &[
     // Time.
     "s", "sec", "secs", "second", "seconds", "min", "mins", "minute", "minutes", "h", "hr", "hrs",
     "hour", "hours", "day", "days", "week", "weeks", "month", "months", "night", "nights",
     // Temperature.
-    "degree", "degrees", "f", "c", // Size.
-    "mm", "cm", "m", "in", "inch", "inches", "ft", "foot", "feet", "x", "by",
-    // Ratios and repeats.
-    "percent", "times", "time", "turn", "turns", "fold", "folds", "side", "sides", "more", "half",
-    "halves", "thirds", "quarters", "st", "nd", "rd", "th",
-    // Measured amounts: literal_quantity's concern.
-    "g", "kg", "ml", "l", "tsp", "tbsp", "cup",
+    "degree", "degrees", "deg", "f", "c", // Size, of the food or of a pot or tin.
+    "mm", "cm", "m", "in", "inch", "inches", "ft", "foot", "feet", "x", "by", "quart", "quarts",
+    "qt", "cavity", "cavities", // Ratios, repeats and parts of one item.
+    "percent", "part", "parts", "times", "time", "turn", "turns", "fold", "folds", "pulse",
+    "pulses", "stroke", "strokes", "side", "sides", "more", "half", "halves", "thirds", "quarters",
+    "st", "nd", "rd", "th", // Words that do not name what is counted.
+    "and", "or", "with", "to", "of", "the", "a", "an", "at", "on", "for", "from", "until", "into",
+    "per", "each", "then", "as", "if", "is", "are", "plus", "minus",
 ];
 
-/// Measuring words with plural or long forms, also left to literal_quantity.
-const MEASURES: [&str; 12] = [
+/// Measuring words, left to literal_quantity.
+const MEASURES: &[&str] = &[
+    "g",
+    "kg",
+    "ml",
+    "l",
+    "tsp",
+    "tbsp",
+    "cup",
     "cups",
     "grams",
     "gram",
@@ -41,10 +49,36 @@ const MEASURES: [&str; 12] = [
     "tablespoon",
     "tablespoons",
     "oz",
+    "ounce",
+    "ounces",
     "lb",
+    "lbs",
+    "pound",
+    "pounds",
     "litre",
     "litres",
+    "liter",
+    "liters",
+    "millilitre",
     "millilitres",
+    "milliliter",
+    "milliliters",
+    "pint",
+    "pints",
+    "gallon",
+    "gallons",
+    "tbsps",
+    "tsps",
+    "kgs",
+    "pinch",
+    "pinches",
+];
+
+/// Words that describe what is counted rather than name it: "8 medium
+/// potatoes" counts potatoes.
+const MODIFIERS: &[&str] = &[
+    "small", "medium", "large", "big", "extra", "whole", "heaping", "level", "generous", "thin",
+    "thick", "fresh", "baking", "loaf", "round", "square", "equal", "even",
 ];
 
 /// Words before a number that make it a label: "step 3", "gas mark 4".
@@ -56,7 +90,10 @@ const LABEL_BEFORE: [&str; 11] = [
 /// Characters right after a number that make it a ratio, temperature, size or
 /// ordinal.
 fn stable_mark(c: char) -> bool {
-    matches!(c, '%' | '°' | ':' | '×' | '"' | '\'' | '″' | '/')
+    matches!(
+        c,
+        '%' | '°' | 'º' | '˚' | ':' | '×' | '"' | '\'' | '″' | '/'
+    )
 }
 
 fn is_vulgar(c: char) -> bool {
@@ -201,7 +238,13 @@ pub(crate) fn unscaled_numbers(text: &str) -> Vec<Unscaled> {
             at = end;
             continue;
         }
-        let (_, word) = word_at(&chars, next);
+        let (after_word, mut word) = word_at(&chars, next);
+        if MODIFIERS.contains(&word.as_str()) {
+            let (_, noun) = word_at(&chars, skip_space(&chars, after_word));
+            if !noun.is_empty() {
+                word = format!("{word} {noun}");
+            }
+        }
         let before = word_before(&chars, start);
         if word.is_empty()
             || STABLE_AFTER.contains(&word.as_str())
@@ -245,6 +288,10 @@ mod tests {
         );
         assert_eq!(shown("Shape into 10-12 balls"), ["10-12 balls"]);
         assert_eq!(shown("Add 2 cloves garlic"), ["2 cloves"]);
+        assert_eq!(
+            shown("Line 2 baking sheets; about 8 medium potatoes"),
+            ["2 baking sheets", "8 medium potatoes"]
+        );
     }
 
     #[test]
@@ -264,6 +311,11 @@ mod tests {
             "Divide among {bowls|4 bowls}.",
             "Version 2.0",
             "Serves 4.",
+            "Brown it in a 4 quart pot, 1 part sugar to 6 parts flour.",
+            "Pulse 16 to 20 pulses; soak 13 and 12 hours apart.",
+            "A 12 cavity muffin tin and 2 pints of stock.",
+            "Heat to 350ºF or 180˚C, 200 deg; 2 tbsps and 2 pinches.",
+            "Repeat steps 3 and 4 until firm; use 2 of them.",
         ] {
             assert_eq!(shown(text), Vec::<String>::new(), "{text}");
         }
