@@ -111,7 +111,9 @@ Component   { id, name?, makeAhead?: { keeps, where }, ingredients[], steps[] }
 Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { qty, unit },
               optional?, toTaste?, scales?, recipe? }
 Step        { id, action, inputs[], text, time?: { min, max?, attention: active | passive },
-              temp?: { value, unit: "F" | "C" }, portions?: { qty, unit },
+              temp?: { value, unit: "F" | "C" },
+              heat?[]: { temp?: { value, unit }, level?: low | medium-low | medium | medium-high | high, label? },
+              portions?: { qty, unit },
               size?[]: { kind: thickness | diameter | length | pan, value, max?, by?, unit: mm | cm | in },
               until?, equipment?[], output?,
               byproducts?[]: { id, name }, optional?, tip? }
@@ -162,6 +164,12 @@ A setup step, consumed by the step that needs it:
   times"), times, temperatures and sizes. Other numbers in `text`, `until`, `tip`, `prep` and
   `note` are reported as `unscaled_number` warnings with the fix. An input whose id is `yield`
   or `portions` keeps its `{id}` meaning in that step.
+- **Heat that changes is data.** One oven temperature is `temp`. A step that changes its heat
+  ("sear on high, then lower to medium", "return to a 150 °C oven to dry") lists the stages in
+  `heat` instead, each with exactly one of `temp` or a burner `level`, and an optional `label`:
+  `[{ "level": "high", "label": "sear" }, { "level": "medium" }]`. `{heat}` renders every stage
+  ("high heat, then medium heat"), `{heat:sear}` the labelled one. A step has `temp` or `heat`,
+  never both; at most four stages. The chart shows "sear high→med".
 - **Sizes are data.** A rolling thickness, a cutter, a pan or a length goes in the step's `size`
   list, not in prose: `{ "kind": "thickness", "value": 3, "max": 4, "unit": "mm" }`,
   `{ "kind": "pan", "value": 23, "by": 33, "unit": "cm" }`. `{size:thickness}` renders one kind

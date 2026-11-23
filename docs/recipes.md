@@ -112,6 +112,11 @@ before a name became a placeholder reads as it did.
   ordinals, labels (`step 3`, `gas mark 4`) and measured amounts (left to
   `literal_quantity`) are exempt, as are number words. The hint names `{yield}` when the number
   equals the yield, `repeat` for batches, and `portions` otherwise.
+- **Heat in stages** (`format::fmt_heat`). `heat: [{ temp? | level?, label? }]`, levels
+  `low` to `high` in five steps, at most four stages, exactly one of `temp` and `level` each,
+  labels unique, 1 to 20 characters without braces, `|` or `:`. A step has `temp` or `heat`,
+  not both. `{heat}` renders the stages joined by ", then ", `{heat:label}` one stage, and the
+  chart label shows them short ("high→med", "200→150°C").
 - **Sizes** (`format::fmt_size`). `size: [{ kind, value, max?, by?, unit }]`, kind
   `thickness`, `diameter`, `length` or `pan`, unit `mm`, `cm` or `in`, at most four. `{size}`
   renders all of them, `{size:kind}` the first of that kind, each in both systems (inches to

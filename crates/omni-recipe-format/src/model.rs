@@ -170,12 +170,18 @@ pub struct Step {
     /// The edges of the graph; empty for setup steps such as preheating.
     pub inputs: Vec<Input>,
     /// Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,
-    /// `{portions}`, `{size}` and `{size:kind}` placeholders.
+    /// `{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`
+    /// placeholders.
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<StepTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temp: Option<Temp>,
+    /// Heat in stages, for a step that changes it: sear on high, then lower to
+    /// medium; bake hot, then dry at a lower oven temperature. Instead of
+    /// `temp`, never with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heat: Vec<HeatStage>,
     /// What the step divides the food into, following the scale: `{portions}`
     /// renders "16 pieces" at 1 and "24 pieces" at 1.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -240,6 +246,58 @@ pub struct Temp {
 }
 
 pub const SIZES_MAX: usize = 4;
+pub const HEAT_STAGES_MAX: usize = 4;
+pub const HEAT_LABEL_MAX: usize = 20;
+
+/// A burner setting. Variants carry no doc comments (see [`Attention`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum HeatLevel {
+    Low,
+    MediumLow,
+    Medium,
+    MediumHigh,
+    High,
+}
+
+impl HeatLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::MediumLow => "medium-low",
+            Self::Medium => "medium",
+            Self::MediumHigh => "medium-high",
+            Self::High => "high",
+        }
+    }
+
+    /// The chart's short form: "med-high".
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::MediumLow => "med-low",
+            Self::Medium => "med",
+            Self::MediumHigh => "med-high",
+            Self::High => "high",
+        }
+    }
+}
+
+/// One stage of a step's heat: an oven temperature or a burner level,
+/// exactly one of the two.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeatStage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp: Option<Temp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<HeatLevel>,
+    /// What the stage is for, and its `{heat:label}` name: "sear", "dry".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
 
 /// What a size measures. Variants carry no doc comments (see [`Attention`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

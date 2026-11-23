@@ -48242,7 +48242,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48289,6 +48289,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -48908,7 +48951,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48955,6 +48998,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -49706,7 +49792,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -49753,6 +49839,49 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "heat": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "temp": {
+                                            "type": "object",
+                                            "properties": {
+                                              "value": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"F\" or \"C\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "value",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "level": {
+                                            "type": "string",
+                                            "enum": [
+                                              "low",
+                                              "medium-low",
+                                              "medium",
+                                              "medium-high",
+                                              "high"
+                                            ],
+                                            "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "label": {
+                                            "type": "string",
+                                            "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                      },
+                                      "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                     },
                                     "portions": {
                                       "type": "object",
@@ -50035,7 +50164,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -50082,6 +50211,49 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "heat": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "temp": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "value": {
+                                                      "type": "number"
+                                                    },
+                                                    "unit": {
+                                                      "type": "string",
+                                                      "description": "\"F\" or \"C\"."
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "value",
+                                                    "unit"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "level": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "low",
+                                                    "medium-low",
+                                                    "medium",
+                                                    "medium-high",
+                                                    "high"
+                                                  ],
+                                                  "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                                }
+                                              },
+                                              "additionalProperties": false,
+                                              "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                            },
+                                            "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                           },
                                           "portions": {
                                             "type": "object",
@@ -50874,7 +51046,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -50921,6 +51093,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -104460,7 +104675,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104507,6 +104722,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -105126,7 +105384,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -105173,6 +105431,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -105924,7 +106225,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -105971,6 +106272,49 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "heat": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "temp": {
+                                            "type": "object",
+                                            "properties": {
+                                              "value": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"F\" or \"C\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "value",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "level": {
+                                            "type": "string",
+                                            "enum": [
+                                              "low",
+                                              "medium-low",
+                                              "medium",
+                                              "medium-high",
+                                              "high"
+                                            ],
+                                            "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "label": {
+                                            "type": "string",
+                                            "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                      },
+                                      "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                     },
                                     "portions": {
                                       "type": "object",
@@ -106253,7 +106597,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -106300,6 +106644,49 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "heat": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "temp": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "value": {
+                                                      "type": "number"
+                                                    },
+                                                    "unit": {
+                                                      "type": "string",
+                                                      "description": "\"F\" or \"C\"."
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "value",
+                                                    "unit"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "level": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "low",
+                                                    "medium-low",
+                                                    "medium",
+                                                    "medium-high",
+                                                    "high"
+                                                  ],
+                                                  "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                                }
+                                              },
+                                              "additionalProperties": false,
+                                              "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                            },
+                                            "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                           },
                                           "portions": {
                                             "type": "object",
@@ -107092,7 +107479,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -107139,6 +107526,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -160869,7 +161299,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -160916,6 +161346,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -161535,7 +162008,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -161582,6 +162055,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -162333,7 +162849,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -162380,6 +162896,49 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "heat": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "temp": {
+                                            "type": "object",
+                                            "properties": {
+                                              "value": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"F\" or \"C\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "value",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "level": {
+                                            "type": "string",
+                                            "enum": [
+                                              "low",
+                                              "medium-low",
+                                              "medium",
+                                              "medium-high",
+                                              "high"
+                                            ],
+                                            "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "label": {
+                                            "type": "string",
+                                            "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                      },
+                                      "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                     },
                                     "portions": {
                                       "type": "object",
@@ -162662,7 +163221,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -162709,6 +163268,49 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "heat": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "temp": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "value": {
+                                                      "type": "number"
+                                                    },
+                                                    "unit": {
+                                                      "type": "string",
+                                                      "description": "\"F\" or \"C\"."
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "value",
+                                                    "unit"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "level": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "low",
+                                                    "medium-low",
+                                                    "medium",
+                                                    "medium-high",
+                                                    "high"
+                                                  ],
+                                                  "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                                }
+                                              },
+                                              "additionalProperties": false,
+                                              "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                            },
+                                            "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                           },
                                           "portions": {
                                             "type": "object",
@@ -163501,7 +164103,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -163548,6 +164150,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -216539,7 +217184,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -216586,6 +217231,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -217205,7 +217893,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -217252,6 +217940,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",
@@ -218003,7 +218734,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -218050,6 +218781,49 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "heat": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "temp": {
+                                            "type": "object",
+                                            "properties": {
+                                              "value": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"F\" or \"C\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "value",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "level": {
+                                            "type": "string",
+                                            "enum": [
+                                              "low",
+                                              "medium-low",
+                                              "medium",
+                                              "medium-high",
+                                              "high"
+                                            ],
+                                            "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                          },
+                                          "label": {
+                                            "type": "string",
+                                            "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                          }
+                                        },
+                                        "additionalProperties": false,
+                                        "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                      },
+                                      "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                     },
                                     "portions": {
                                       "type": "object",
@@ -218332,7 +219106,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -218379,6 +219153,49 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "heat": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "temp": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "value": {
+                                                      "type": "number"
+                                                    },
+                                                    "unit": {
+                                                      "type": "string",
+                                                      "description": "\"F\" or \"C\"."
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "value",
+                                                    "unit"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "level": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "low",
+                                                    "medium-low",
+                                                    "medium",
+                                                    "medium-high",
+                                                    "high"
+                                                  ],
+                                                  "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                                }
+                                              },
+                                              "additionalProperties": false,
+                                              "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                            },
+                                            "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                           },
                                           "portions": {
                                             "type": "object",
@@ -219171,7 +219988,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}` and `{size:kind}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}`,\n`{portions}`, `{size}`, `{size:kind}`, `{heat}` and `{heat:label}`\nplaceholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -219218,6 +220035,49 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "heat": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "temp": {
+                                              "type": "object",
+                                              "properties": {
+                                                "value": {
+                                                  "type": "number"
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "description": "\"F\" or \"C\"."
+                                                }
+                                              },
+                                              "required": [
+                                                "value",
+                                                "unit"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "level": {
+                                              "type": "string",
+                                              "enum": [
+                                                "low",
+                                                "medium-low",
+                                                "medium",
+                                                "medium-high",
+                                                "high"
+                                              ],
+                                              "description": "A burner setting. Variants carry no doc comments (see [`Attention`])."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "description": "What the stage is for, and its `{heat:label}` name: \"sear\", \"dry\"."
+                                            }
+                                          },
+                                          "additionalProperties": false,
+                                          "description": "One stage of a step's heat: an oven temperature or a burner level,\nexactly one of the two."
+                                        },
+                                        "description": "Heat in stages, for a step that changes it: sear on high, then lower to\nmedium; bake hot, then dry at a lower oven temperature. Instead of\n`temp`, never with it."
                                       },
                                       "portions": {
                                         "type": "object",

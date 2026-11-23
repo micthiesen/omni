@@ -37,9 +37,9 @@ pub use list::{
     ingredient_line, list_view, render_list, render_list_with,
 };
 pub use model::{
-    Amount, Attention, Byproduct, Component, FORMAT, Id, Ingredient, Input, MakeAhead, Portions,
-    RecipeDoc, Size, SizeKind, Source, SourceKind, Step, StepTime, Temp, TimeOverride,
-    UpgradeError, Yield, is_valid_id, is_web_url, upgrade,
+    Amount, Attention, Byproduct, Component, FORMAT, HeatLevel, HeatStage, Id, Ingredient, Input,
+    MakeAhead, Portions, RecipeDoc, Size, SizeKind, Source, SourceKind, Step, StepTime, Temp,
+    TimeOverride, UpgradeError, Yield, is_valid_id, is_web_url, upgrade,
 };
 pub use ops::{Fields, Op, OpError, apply_ops, diff_summary, diff_summary_with_ops, scaled};
 pub use search::{fold, matches, search_text, tokens};

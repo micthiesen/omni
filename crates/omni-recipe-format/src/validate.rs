@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use crate::format::{fmt_amount_exact, is_known_unit, nearest_unit, parse_fraction};
 use crate::index::{Index, Kind};
 use crate::model::{
-    ACTION_MAX, ACTION_WARN, Attention, COMPONENTS_MAX, Component, INGREDIENTS_MAX, Ingredient,
-    Input, RecipeDoc, SIZES_MAX, STEPS_MAX, SizeKind, Step, TITLE_MAX, is_valid_id,
+    ACTION_MAX, ACTION_WARN, Attention, COMPONENTS_MAX, Component, HEAT_LABEL_MAX, HEAT_STAGES_MAX,
+    INGREDIENTS_MAX, Ingredient, Input, RecipeDoc, SIZES_MAX, STEPS_MAX, SizeKind, Step, TITLE_MAX,
+    is_valid_id,
 };
 use crate::py;
 use crate::text::{explicit_total, fraction_value, keyword, placeholders};
@@ -535,21 +536,9 @@ fn check_step_limits(step: &Step, report: &mut Report) {
         );
     }
     if let Some(temp) = &step.temp {
-        if !temp.value.is_finite() {
-            report.error(
-                Code::BadValue,
-                format!("{path}.temp"),
-                "value must be a number",
-            );
-        }
-        if !matches!(temp.unit.as_str(), "F" | "C") {
-            report.error(
-                Code::BadValue,
-                format!("{path}.temp"),
-                format!("temp unit \"{}\" must be \"F\" or \"C\"", temp.unit),
-            );
-        }
+        check_temp(temp, &format!("{path}.temp"), report);
     }
+    check_heat(step, &path, report);
     if step.size.len() > SIZES_MAX {
         report.error(
             Code::TooMany,
@@ -642,6 +631,75 @@ fn check_step_limits(step: &Step, report: &mut Report) {
                 path.as_str(),
                 format!("fraction \"{fraction}\" is not a share between 0 and 1"),
                 "write it as a ratio such as \"2/3\"",
+            );
+        }
+    }
+}
+
+fn check_temp(temp: &crate::model::Temp, path: &str, report: &mut Report) {
+    if !temp.value.is_finite() {
+        report.error(Code::BadValue, path, "value must be a number");
+    }
+    if !matches!(temp.unit.as_str(), "F" | "C") {
+        report.error(
+            Code::BadValue,
+            path,
+            format!("temp unit \"{}\" must be \"F\" or \"C\"", temp.unit),
+        );
+    }
+}
+
+fn check_heat(step: &Step, path: &str, report: &mut Report) {
+    if step.heat.is_empty() {
+        return;
+    }
+    if step.temp.is_some() {
+        report.error_hint(
+            Code::BadValue,
+            format!("{path}.heat"),
+            "a step has temp or heat, not both",
+            "move the temperature into heat as its first stage: {\"temp\": {…}}",
+        );
+    }
+    if step.heat.len() > HEAT_STAGES_MAX {
+        report.error(
+            Code::TooMany,
+            format!("{path}.heat"),
+            format!("a step has at most {HEAT_STAGES_MAX} heat stages"),
+        );
+    }
+    let mut labels: BTreeSet<&str> = BTreeSet::new();
+    for (n, stage) in step.heat.iter().enumerate() {
+        let at = format!("{path}.heat.{n}");
+        match (&stage.temp, stage.level) {
+            (Some(temp), None) => check_temp(temp, &at, report),
+            (None, Some(_)) => {}
+            _ => report.error_hint(
+                Code::BadValue,
+                at.as_str(),
+                "a heat stage has exactly one of temp and level",
+                "an oven temperature is {\"temp\": {\"value\": 150, \"unit\": \"C\"}}; a burner is {\"level\": \"medium-high\"}",
+            ),
+        }
+        let Some(label) = stage.label.as_deref() else {
+            continue;
+        };
+        let length = py::len(label);
+        if label.trim().is_empty()
+            || length > HEAT_LABEL_MAX
+            || label.contains(['{', '}', '|', ':'])
+        {
+            report.error_hint(
+                Code::BadValue,
+                at.as_str(),
+                format!("heat label \"{label}\" must be 1 to {HEAT_LABEL_MAX} characters without braces, | or :"),
+                "a word or two that names the stage: \"sear\", \"dry\"",
+            );
+        } else if !labels.insert(label) {
+            report.error(
+                Code::DuplicateId,
+                at.as_str(),
+                format!("heat label \"{label}\" is used twice in this step"),
             );
         }
     }

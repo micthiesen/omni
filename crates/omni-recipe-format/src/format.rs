@@ -1,6 +1,6 @@
 //! How amounts, units, times and temperatures read.
 
-use crate::model::{Ingredient, Size, Temp};
+use crate::model::{HeatStage, Ingredient, Size, Temp};
 use crate::py;
 
 pub const METRIC_UNITS: [&str; 4] = ["g", "kg", "ml", "l"];
@@ -262,6 +262,48 @@ pub fn fmt_temp(temp: &Temp, both: bool) -> String {
     };
     let other_unit = if fahrenheit { 'C' } else { 'F' };
     format!("{value}°{unit} ({}°{other_unit})", fmt_plain(other))
+}
+
+/// One heat stage in text: "medium-high heat", "150°C (300°F)".
+pub fn fmt_heat_stage(stage: &HeatStage) -> String {
+    match (&stage.temp, stage.level) {
+        (Some(temp), _) => fmt_temp(temp, true),
+        (None, Some(level)) => format!("{} heat", level.as_str()),
+        (None, None) => String::new(),
+    }
+}
+
+/// Every stage in text: "high heat, then medium heat".
+pub fn fmt_heat(stages: &[HeatStage]) -> String {
+    stages
+        .iter()
+        .map(fmt_heat_stage)
+        .collect::<Vec<_>>()
+        .join(", then ")
+}
+
+/// The stages as a chart cell shows them: "high→med", "200→150°C".
+pub fn fmt_heat_short(stages: &[HeatStage]) -> String {
+    let temps: Vec<&Temp> = stages
+        .iter()
+        .filter_map(|stage| stage.temp.as_ref())
+        .collect();
+    if temps.len() == stages.len()
+        && let Some(first) = temps.first()
+        && temps.iter().all(|temp| temp.unit == first.unit)
+    {
+        let values: Vec<String> = temps.iter().map(|temp| fmt_plain(temp.value)).collect();
+        return format!("{}°{}", values.join("→"), first.unit);
+    }
+    stages
+        .iter()
+        .map(|stage| match (&stage.temp, stage.level) {
+            (Some(temp), _) => fmt_temp(temp, false),
+            (None, Some(level)) => level.short().to_owned(),
+            (None, None) => String::new(),
+        })
+        .collect::<Vec<_>>()
+        .join("→")
 }
 
 /// One length in the other system, the way a ruler reads: inches to the

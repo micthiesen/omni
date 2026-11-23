@@ -3,7 +3,10 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use omni_recipe_format::{Code, Index, RecipeDoc, Size, SizeKind, Step, render_text, validate};
+use omni_recipe_format::{
+    Code, HeatLevel, HeatStage, Index, RecipeDoc, Size, SizeKind, Step, Temp, chart_label,
+    render_text, validate,
+};
 
 pub(crate) fn cookies() -> RecipeDoc {
     serde_json::from_str(include_str!("golden/chocolate-chip-cookies.json")).unwrap()
@@ -106,6 +109,101 @@ fn sizes_are_checked() {
         ]
     );
     step_mut(&mut doc, "scoop").size = vec![size(SizeKind::Length, 5.0, None, None, "cm"); 5];
+    assert!(
+        validate(&doc)
+            .errors
+            .iter()
+            .any(|p| p.code == Code::TooMany)
+    );
+}
+
+fn level(level: HeatLevel, label: Option<&str>) -> HeatStage {
+    HeatStage {
+        temp: None,
+        level: Some(level),
+        label: label.map(str::to_owned),
+    }
+}
+
+fn oven(value: f64, label: Option<&str>) -> HeatStage {
+    HeatStage {
+        temp: Some(Temp {
+            value,
+            unit: "C".to_owned(),
+        }),
+        level: None,
+        label: label.map(str::to_owned),
+    }
+}
+
+#[test]
+fn heat_in_stages_renders_in_text_and_on_the_chart() {
+    let mut doc = cookies();
+    let bake = step_mut(&mut doc, "bake");
+    bake.text = "Bake {scoop} in {oven|the hot oven} at {heat}, about {time}.".to_owned();
+    bake.temp = None;
+    bake.heat = vec![oven(200.0, Some("bake")), oven(150.0, Some("dry"))];
+    let cool = step_mut(&mut doc, "cool");
+    cool.text = "Sear {bake} over {heat:sear} then finish on {heat:finish}, {time}.".to_owned();
+    cool.heat = vec![
+        level(HeatLevel::High, Some("sear")),
+        level(HeatLevel::MediumLow, Some("finish")),
+    ];
+    assert!(validate(&doc).is_valid(), "{:?}", validate(&doc).errors);
+    assert_eq!(
+        text_at(&doc, "bake", 1.0),
+        "Bake the scooped dough in the hot oven at 200°C (390°F), then 150°C (300°F), about 9–11 minutes."
+    );
+    assert_eq!(
+        text_at(&doc, "cool", 1.0),
+        "Sear the baked cookies over high heat then finish on medium-low heat, 5 minutes."
+    );
+    let ix = Index::build(&doc);
+    assert_eq!(
+        chart_label(ix.step("bake").unwrap()),
+        "bake 200→150°C 9–11 min"
+    );
+    assert_eq!(
+        chart_label(ix.step("cool").unwrap()),
+        "cool high→med-low 5 min"
+    );
+}
+
+#[test]
+fn heat_stages_are_checked() {
+    let mut doc = cookies();
+    let bake = step_mut(&mut doc, "bake");
+    bake.temp = Some(Temp {
+        value: 375.0,
+        unit: "F".to_owned(),
+    });
+    bake.heat = vec![
+        HeatStage {
+            temp: None,
+            level: None,
+            label: Some("sear".to_owned()),
+        },
+        level(HeatLevel::High, Some("sear")),
+        level(HeatLevel::Low, Some("a:b")),
+    ];
+    bake.text = "Bake {scoop} in {oven|the hot oven} on {heat:dry} for {time}.".to_owned();
+    let found: Vec<String> = validate(&doc)
+        .errors
+        .iter()
+        .filter(|problem| problem.path.starts_with("steps.bake"))
+        .map(|problem| format!("{} [{}]", problem.path, problem.code))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            "steps.bake.heat [bad_value]",
+            "steps.bake.heat.0 [bad_value]",
+            "steps.bake.heat.1 [duplicate_id]",
+            "steps.bake.heat.2 [bad_value]",
+            "steps.bake.text [placeholder_unset]",
+        ]
+    );
+    step_mut(&mut doc, "bake").heat = vec![level(HeatLevel::High, None); 5];
     assert!(
         validate(&doc)
             .errors

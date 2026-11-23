@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::format::{
-    fmt_amount_at, fmt_count, fmt_number, fmt_size, fmt_temp, fmt_time, fmt_time_prose, inflect,
-    parse_fraction,
+    fmt_amount_at, fmt_count, fmt_heat, fmt_heat_short, fmt_heat_stage, fmt_number, fmt_size,
+    fmt_temp, fmt_time, fmt_time_prose, inflect, parse_fraction,
 };
 use crate::index::{Index, Kind, Node};
 use crate::model::{Attention, Id, Input, Step};
@@ -255,7 +255,7 @@ pub enum Segment {
     Temp { text: String },
     /// A count that follows the scale: `{yield}`, `{portions}`.
     Count { text: String },
-    /// A setting the cook works to: `{size}`.
+    /// A setting the cook works to: `{size}`, `{heat}`.
     Setting { text: String },
 }
 
@@ -293,8 +293,10 @@ pub(crate) fn keyword(step: &Step, name: &str) -> Option<bool> {
         "yield" => Some(true),
         "portions" => Some(step.portions.is_some()),
         "size" => Some(!step.size.is_empty()),
+        "heat" => Some(!step.heat.is_empty()),
         _ => match name.split_once(':') {
             Some(("size", kind)) => Some(step.size.iter().any(|size| size.kind.as_str() == kind)),
+            Some(("heat", label)) => Some(heat_stage(step, label).is_some()),
             _ => None,
         },
     }
@@ -317,6 +319,9 @@ fn keyword_segment(ix: &Index<'_>, step: &Step, name: &str, factor: f64) -> Opti
                 portions.unit
             ),
         }),
+        "heat" => (!step.heat.is_empty()).then(|| Segment::Setting {
+            text: fmt_heat(&step.heat),
+        }),
         "size" => Some(Segment::Setting {
             text: step
                 .size
@@ -333,9 +338,18 @@ fn keyword_segment(ix: &Index<'_>, step: &Step, name: &str, factor: f64) -> Opti
                 .map(|size| Segment::Setting {
                     text: fmt_size(size, !exact),
                 }),
+            Some(("heat", label)) => heat_stage(step, label).map(|stage| Segment::Setting {
+                text: fmt_heat_stage(stage),
+            }),
             _ => None,
         },
     }
+}
+
+fn heat_stage<'a>(step: &'a Step, label: &str) -> Option<&'a crate::model::HeatStage> {
+    step.heat
+        .iter()
+        .find(|stage| stage.label.as_deref() == Some(label))
 }
 
 /// Step text split at its placeholders, so a viewer can set amounts in bold
@@ -412,6 +426,10 @@ pub fn chart_label(step: &Step) -> String {
     if let Some(temp) = &step.temp {
         label.push(' ');
         label.push_str(&fmt_temp(temp, false));
+    }
+    if !step.heat.is_empty() {
+        label.push(' ');
+        label.push_str(&fmt_heat_short(&step.heat));
     }
     if let Some(time) = step.time
         && (time.attention == Attention::Passive || time.min >= 3)
