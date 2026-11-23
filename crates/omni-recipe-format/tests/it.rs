@@ -8,3 +8,4 @@ mod properties;
 mod schema;
 mod settings;
 mod validation;
+mod variants;

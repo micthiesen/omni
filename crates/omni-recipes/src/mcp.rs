@@ -215,7 +215,7 @@ pub fn tools(recipes: Arc<Recipes>) -> Result<Vec<McpTool>, ToolMetaError> {
         tool(
             &defs::RECIPES_COOK_START,
             &recipes,
-            |r, input, _| async move { r.cook_start(input).await },
+            |r, input, actor| async move { r.cook_start(input, actor).await },
         )?,
         tool(
             &defs::RECIPES_COOK_GET,

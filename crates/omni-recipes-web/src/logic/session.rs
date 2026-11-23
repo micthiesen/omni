@@ -17,6 +17,8 @@ pub struct Projection {
     /// Running or rung timers by step id, as end times.
     pub timers: BTreeMap<String, Ms>,
     pub finished: bool,
+    /// The recipe variant shown, from the last `variant` event.
+    pub variant: Option<String>,
 }
 
 /// Replays `session.events` in order; a later event wins over an earlier one.
@@ -47,6 +49,7 @@ pub fn project(session: &CookSession) -> Projection {
                 state.finished = true;
                 state.timers.clear();
             }
+            CookEventKind::Variant { variant } => state.variant.clone_from(variant),
             CookEventKind::Unknown => {}
         }
     }
@@ -309,6 +312,33 @@ mod tests {
         assert!(follows(&rebased, "rcp_1", 4, None));
         let finished = session(vec![CookEventKind::Finish { note: None }]);
         assert!(!follows(&finished, "rcp_1", 3, Some("cook_abcdefgh")));
+    }
+
+    #[test]
+    fn the_last_variant_event_names_the_variant_shown() {
+        let picked = session(vec![
+            CookEventKind::Variant {
+                variant: Some("crisp".to_owned()),
+            },
+            check("dredge"),
+        ]);
+        assert_eq!(project(&picked).variant.as_deref(), Some("crisp"));
+        let back = session(vec![
+            CookEventKind::Variant {
+                variant: Some("crisp".to_owned()),
+            },
+            CookEventKind::Variant { variant: None },
+        ]);
+        let state = project(&back);
+        assert_eq!(state.variant, None);
+        // What was crossed off is kept across a switch: variants share ids.
+        let switched = session(vec![
+            check("dredge"),
+            CookEventKind::Variant {
+                variant: Some("crisp".to_owned()),
+            },
+        ]);
+        assert_eq!(project(&switched).done_steps(&doc()), ["dredge"]);
     }
 
     #[test]

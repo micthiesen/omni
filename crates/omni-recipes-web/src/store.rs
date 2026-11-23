@@ -439,7 +439,7 @@ impl Store {
             .map(|(_, doc)| doc);
         pinned
             .or_else(|| recipe.and_then(|recipe| recipe.doc.clone()))
-            .map(|doc| (doc, outdated))
+            .map(|doc| (shown_variant(doc, state.variant.as_deref()), outdated))
     }
 
     pub fn show_toast(self, text: impl Into<String>, undo: Option<Undo>) {
@@ -780,8 +780,8 @@ impl Store {
     }
 
     /// Starts a session on the phone; the server learns of it from the outbox.
-    pub fn start_cook(self, recipe: &Recipe, scale: f64) -> String {
-        idb::atomic(|| {
+    pub fn start_cook(self, recipe: &Recipe, scale: f64, variant: Option<String>) -> String {
+        let id = idb::atomic(|| {
             let now = now_ms();
             let id = random_id("cook_", 8);
             let request = StartCookRequest {
@@ -805,7 +805,11 @@ impl Store {
             });
             self.enqueue(Job::StartCook { request });
             id
-        })
+        });
+        if variant.is_some() {
+            self.cook_event(&id, CookEventKind::Variant { variant });
+        }
+        id
     }
 
     /// Appends an event to a session: applied locally now, sent in order.
@@ -1391,6 +1395,15 @@ fn window_width() -> f64 {
         .ok()
         .and_then(|width| width.as_f64())
         .unwrap_or(390.0)
+}
+
+/// `doc` as its variant `id` makes it; as written without one, or when the
+/// revision no longer has it.
+pub fn shown_variant(doc: Arc<RecipeDoc>, id: Option<&str>) -> Arc<RecipeDoc> {
+    match id.map(|id| omni_recipe_format::variant_doc(&doc, id)) {
+        Some(Ok(made)) => Arc::new(made),
+        _ => doc,
+    }
 }
 
 /// The document stored with a session, decoded.

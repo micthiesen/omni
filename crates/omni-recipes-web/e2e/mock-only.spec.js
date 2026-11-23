@@ -121,6 +121,36 @@ test.describe('an agent at work', () => {
     await expect(page.locator('.session-note')).toHaveText('No buttermilk: use milk and lemon.');
   });
 
+  test('a recipe with a variant shows a picker, and a cook started on it cooks that variant', async ({ page, request }) => {
+    const recipeId = 'rcp_vinaigret1';
+    await request.post('/__mock/revise', {
+      data: {
+        recipeId,
+        variants: [{
+          id: 'sharp', name: 'Sharper',
+          ops: [
+            { op: 'set', target: 'vinegar', fields: { qty: 4 } },
+            { op: 'setInput', step: 'soak', ref: 'vinegar', fields: { qty: 4 } },
+          ],
+        }],
+      },
+    });
+    await page.goto(`/r/${recipeId}`);
+    const picker = page.locator('[data-testid=variants]');
+    await expect(picker.getByRole('tab')).toHaveText(['As written', 'Sharper']);
+    await expect(page.locator('.body')).toContainText('3 tbsp red wine vinegar');
+    await picker.getByRole('tab', { name: 'Sharper' }).click();
+    await expect(page.locator('.body')).toContainText('4 tbsp red wine vinegar');
+    await page.locator('[data-testid=cook]').click();
+    await expect(page).toHaveURL(/\/cook\/cook_[a-z0-9]{8}$/);
+    const sessionId = page.url().split('/').pop();
+    await expect(page.locator('header h1')).toHaveText('Mustard Vinaigrette · Sharper');
+    await expect.poll(async () => {
+      const session = await (await request.get(`/api/cook/${sessionId}`)).json();
+      return session.events.map((event) => [event.type, event.variant]);
+    }).toContainEqual(['variant', 'sharp']);
+  });
+
   test('a running passive step offers what can be done meanwhile', async ({ page }) => {
     // The mock's enchiladas open with a passive step ("boil down") that the next step does not wait for.
     await page.goto('/');

@@ -336,7 +336,102 @@ pub fn validate(doc: &RecipeDoc) -> Report {
             None,
         );
     }
+    check_variants(doc, &mut report);
     report
+}
+
+/// Each variant's own rules, and every problem its document has that the
+/// recipe as written does not, under `variants.<id>.`.
+fn check_variants(doc: &RecipeDoc, report: &mut Report) {
+    use crate::variant::{VARIANT_NAME_MAX, VARIANT_OPS_MAX, VARIANTS_MAX, apply_variant};
+    if doc.variants.len() > VARIANTS_MAX {
+        report.error(
+            Code::TooMany,
+            "variants",
+            format!(
+                "a recipe has at most {VARIANTS_MAX} variants; this one has {}",
+                doc.variants.len()
+            ),
+        );
+    }
+    let base: Vec<(Code, String, String)> = report
+        .errors
+        .iter()
+        .chain(&report.warnings)
+        .map(|p| (p.code, p.path.clone(), p.message.clone()))
+        .collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for variant in &doc.variants {
+        let path = format!("variants.{}", variant.id);
+        if !is_valid_id(&variant.id) {
+            report.error(
+                Code::BadId,
+                path.as_str(),
+                format!(
+                    "variant id \"{}\" must match ^[a-z][a-z0-9_]{{0,23}}$",
+                    variant.id
+                ),
+            );
+        } else if !seen.insert(&variant.id) {
+            report.error(
+                Code::DuplicateId,
+                path.as_str(),
+                format!("variant id \"{}\" is used more than once", variant.id),
+            );
+        }
+        let name = py::len(&variant.name);
+        if variant.name.trim().is_empty() || name > VARIANT_NAME_MAX {
+            report.error(
+                Code::BadValue,
+                path.as_str(),
+                format!("a variant's name is 1 to {VARIANT_NAME_MAX} characters"),
+            );
+        }
+        if variant.ops.is_empty() {
+            report.error_hint(
+                Code::BadValue,
+                path.as_str(),
+                "a variant has no operations",
+                "list what it changes: {\"op\": \"set\", \"target\": \"roll\", \"fields\": {…}}",
+            );
+            continue;
+        }
+        if variant.ops.len() > VARIANT_OPS_MAX {
+            report.error(
+                Code::TooMany,
+                path.as_str(),
+                format!("a variant has at most {VARIANT_OPS_MAX} operations"),
+            );
+            continue;
+        }
+        let made = match apply_variant(doc, variant) {
+            Ok(made) => made,
+            Err(error) => {
+                report.error_hint(
+                    Code::BadValue,
+                    format!("{path}.ops"),
+                    error.to_string(),
+                    "a variant changes fields of the recipe's own ingredients, steps and inputs, and its yield and time",
+                );
+                continue;
+            }
+        };
+        let own = validate(&made);
+        for problem in own.errors.into_iter().chain(own.warnings) {
+            let known = base.iter().any(|(code, at, message)| {
+                *code == problem.code && *at == problem.path && *message == problem.message
+            });
+            if !known {
+                report.push(
+                    problem.level,
+                    problem.code,
+                    format!("{path}.{}", problem.path),
+                    problem.message,
+                    problem.hint,
+                );
+            }
+        }
+    }
 }
 
 /// Numbers in prose that would read the same at any scale: step text, cues

@@ -354,6 +354,13 @@ pub enum CookEventKind {
     /// Discards the session: it closes as abandoned at once, counts as no
     /// cook and drops its timers.
     Abandon {},
+    /// Shows the session as one of the recipe's variants (its id), or as
+    /// written when `variant` is absent. What is crossed off carries over:
+    /// a variant has the recipe's ids.
+    Variant {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variant: Option<String>,
+    },
     /// A kind this build does not have: one a newer build wrote, or one of
     /// the retired `adjust`, `unadjust` and `dismissAdjustment`, which old
     /// logs and an app not yet updated still hold. Every reader skips it and

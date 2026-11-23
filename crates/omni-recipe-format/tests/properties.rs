@@ -8,10 +8,10 @@
 use omni_recipe_format::{
     Amount, Attention, Block, Byproduct, CellKind, Component, HeatLevel, HeatStage, Index,
     Ingredient, Input, Kind, MakeAhead, Marks, Op, Portions, RecipeDoc, Repeat, Size, SizeKind,
-    Source, SourceKind, Step, StepTime, Temp, TimeOverride, Yield, apply_ops, chart_ascii,
-    chart_blocks, chart_html, cook_marks, derived_time, diff_summary, equipment, gather_list,
-    list_view, meanwhile, ready_steps, render_list, render_timeline, scaled, search_text,
-    step_inputs, timeline, tokens, validate,
+    Source, SourceKind, Step, StepTime, Temp, TimeOverride, Variant, VariantOp, Yield, apply_ops,
+    chart_ascii, chart_blocks, chart_html, cook_marks, derived_time, diff_summary, equipment,
+    gather_list, list_view, meanwhile, ready_steps, render_list, render_timeline, scaled,
+    search_text, step_inputs, timeline, tokens, validate,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -295,6 +295,7 @@ fn valid_doc(bytes: &[u8]) -> RecipeDoc {
             detail: None,
         },
         components,
+        variants: Vec::new(),
     }
 }
 
@@ -469,6 +470,14 @@ fn wild_doc(bytes: &[u8]) -> RecipeDoc {
                 steps: (0..tape.below(5)).map(|_| wild_step(tape)).collect(),
             })
             .collect(),
+        variants: (0..tape.below(3))
+            .map(|_| Variant {
+                id: tape.pick(&WILD_IDS).to_owned(),
+                name: tape.pick(&WILD_TEXT).to_owned(),
+                note: wild_text(tape),
+                ops: (0..tape.below(4)).map(|_| wild_variant_op(tape)).collect(),
+            })
+            .collect(),
     }
 }
 
@@ -498,7 +507,7 @@ fn wild_op(tape: &mut Tape<'_>) -> Op {
             .map(str::to_owned)
             .collect()
     };
-    match tape.below(11) {
+    match tape.below(13) {
         0 => Op::Set {
             target: id(tape),
             fields: fields(tape),
@@ -549,8 +558,57 @@ fn wild_op(tape: &mut Tape<'_>) -> Op {
             target: id(tape),
             to: id(tape),
         },
-        _ => Op::Rescale {
+        10 => Op::Rescale {
             factor: tape.pick(&WILD_NUMBERS),
+        },
+        11 => Op::RemoveVariant { id: id(tape) },
+        _ => Op::SetVariant {
+            variant: Box::new(Variant {
+                id: id(tape),
+                name: tape.pick(&WILD_TEXT).to_owned(),
+                note: None,
+                ops: vec![wild_variant_op(tape)],
+            }),
+        },
+    }
+}
+
+fn wild_variant_op(tape: &mut Tape<'_>) -> VariantOp {
+    match wild_op(tape) {
+        Op::Set {
+            target,
+            fields,
+            unset,
+        } => VariantOp::Set {
+            target,
+            fields,
+            unset,
+        },
+        Op::SetRecipe { fields, unset } => VariantOp::SetRecipe { fields, unset },
+        Op::SetInput {
+            step,
+            r#ref,
+            fields,
+            unset,
+            ..
+        } => VariantOp::SetInput {
+            step,
+            r#ref,
+            fields,
+            unset,
+        },
+        Op::ReplaceText {
+            target,
+            find,
+            replace,
+        } => VariantOp::ReplaceText {
+            target,
+            find,
+            replace,
+        },
+        _ => VariantOp::SetRecipe {
+            fields: serde_json::Map::new(),
+            unset: vec!["title".to_owned()],
         },
     }
 }

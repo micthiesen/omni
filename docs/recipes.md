@@ -124,6 +124,22 @@ before a name became a placeholder reads as it did.
   uses the shown scale). The chart label adds "×N" from two batches, `{batches}` renders the
   count, `rescale` multiplies a count, and cook mode labels the step timer "(one of N
   batches)".
+- **Variants** (`variant.rs`). `variants: [{ id, name, note?, ops }]`, at most six, each a list
+  of at most 50 `VariantOp`s: `set`, `setInput` (never `remove`), `replaceText` and
+  `setRecipe` limited to `yield` and `time`. Its own type keeps the schema free of recursion
+  (an `Op::SetVariant` holds a `Variant`) and keeps the ids of a variant the recipe's, so a
+  cook switches without losing what is crossed off. `variant_doc` applies one to the recipe as
+  written; every view of a variant is that plain document. The validator applies each and
+  reports the problems its document has that the recipe as written does not, under
+  `variants.<id>.`; the household diet is checked over every variant too. `setVariant` and
+  `removeVariant` edit them, `rename` rewrites their targets, refs and placeholders, and
+  `rescale` multiplies the amounts they set. The text view ends with a Variants section (name,
+  note, then only the changed yield and time, ingredient lines and steps, with the chart label
+  when it changed); the chart view ends with a "Variants:" line naming what each changes;
+  `recipes_get` `variant` renders text or chart as that variant. A cook session records the
+  variant as a `variant` event (`CookEventKind::Variant`); `recipes_cook_start` `variant`
+  appends one after checking the id, and the session view shows the variant and computes
+  readiness on its document. A revision without the session's variant shows as written.
 - **Sizes** (`format::fmt_size`). `size: [{ kind, value, max?, by?, unit }]`, kind
   `thickness`, `diameter`, `length` or `pan`, unit `mm`, `cm` or `in`, at most four. `{size}`
   renders all of them, `{size:kind}` the first of that kind, each in both systems (inches to
@@ -157,9 +173,9 @@ public URL the caller supplies.
 | `recipes_inbox_list` | Captured material waiting for an agent |
 | `recipes_inbox_get` | One inbox item: text, structured data, photos as image blocks |
 | `recipes_inbox_resolve` | Mark items discarded or duplicate |
-| `recipes_cook_start` | Start a cook session at a scale |
+| `recipes_cook_start` | Start a cook session at a scale, optionally as a variant |
 | `recipes_cook_get` | Active sessions, one session's state, or a recipe's cook log |
-| `recipes_cook_update` | Append events: check, uncheck, note, timer, cancelTimer, rebase, finish, abandon |
+| `recipes_cook_update` | Append events: check, uncheck, note, timer, cancelTimer, rebase, variant, finish, abandon |
 | `recipes_requests_list` | Requests the owner wrote in the app, by status and recipe, oldest first |
 | `recipes_request_update` | A request's status, note and the revision that answers it |
 | `recipes_pins` | The pinned recipes in order: read, or set the whole list |

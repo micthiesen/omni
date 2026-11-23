@@ -801,6 +801,9 @@ class State:
             for field in ("summary", "title"):
                 if isinstance(body.get(field), str):
                     recipe["doc"][field] = body[field]
+            # An agent's setVariant, as the stored document carries it.
+            if isinstance(body.get("variants"), list):
+                recipe["doc"]["variants"] = body["variants"]
             self.touch(recipe)
             self.emit_library()
             return copy.deepcopy(recipe)

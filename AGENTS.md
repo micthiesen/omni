@@ -602,13 +602,21 @@ honors `SideEffectMode`. Request text is untrusted and its tools say so. With a 
 editor open, and always in cook mode, the app never swaps a recipe underneath: it offers
 "Recipe updated" with Reload (`ui::settled`).
 
+What changes with the scale is step data rendered through placeholders (`{yield}`,
+`portions`, `repeat` batches), never a number in prose (`unscaled_number` warns); sizes and heat
+stages are step data too, and an input whose id matches a placeholder name keeps its meaning.
+A variant is a list of field changes to the recipe as written (`VariantOp`): it never adds,
+removes or renames an id, and it is validated, diet-checked and rendered as the document it
+makes. Every recipe gets a cover; a licensed stand-in is captioned `Placeholder:` and
+`missing_image` only warns.
+
 A recipe holds no history of how it was imported or converted: no import date, change list or
 swap explanation in notes, summary, source or ingredient notes (the guide says so; the revision
 summary and `recipes_history` carry that). `source.kind: "crouton"` is retired: keep it
 readable for old revisions and never write it.
 
 A cook session holds no recipe text of its own: it is an append-only event
-log (crossing off, notes, timers, `rebase`, finish, abandon), each
+log (crossing off, notes, timers, `rebase`, `variant`, finish, abandon), each
 `clientEventId` applied once, shown at a scale that never becomes a recipe
 change. A change made while cooking is a recipe revision (the app's amount
 change, an agent's `recipes_edit`) and a `rebase` event moves the session to

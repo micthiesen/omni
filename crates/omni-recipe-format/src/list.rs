@@ -335,5 +335,78 @@ pub fn render_list_with(doc: &RecipeDoc, factor: f64, options: ListOptions) -> S
         }
         out.push(String::new());
     }
+    out.extend(variant_lines(doc, &view, factor, options));
     format!("{}\n", out.join("\n").trim_end())
+}
+
+/// The "Variants" section: each variant's name and note, then only what it
+/// changes: the yield and time, ingredient lines, and steps in full with
+/// their chart label when that changed.
+fn variant_lines(
+    doc: &RecipeDoc,
+    view: &ListView,
+    factor: f64,
+    options: ListOptions,
+) -> Vec<String> {
+    let made = crate::variant::variant_docs(doc);
+    if made.is_empty() {
+        return Vec::new();
+    }
+    let mark = |id: &str| {
+        if options.ids {
+            format!(" [{id}]")
+        } else {
+            String::new()
+        }
+    };
+    let base = Index::build(doc);
+    let label = |ix: &Index<'_>, id: &str| {
+        ix.step(id).map(|step| {
+            crate::text::chart_label_at(step, step.batches(ix.doc().r#yield.qty, factor))
+        })
+    };
+    let mut out = vec!["## Variants".to_owned(), String::new()];
+    for (variant, other) in made {
+        out.push(format!("**{}**{}", variant.name, mark(&variant.id)));
+        if let Some(note) = variant.note.as_deref().filter(|note| !note.is_empty()) {
+            out.push(note.to_owned());
+        }
+        let theirs = list_view(&other, factor);
+        let mut changes = Vec::new();
+        if theirs.makes != view.makes || theirs.time != view.time {
+            changes.push(format!("- {} · {}", theirs.makes, theirs.time));
+        }
+        let lines = view.groups.iter().flat_map(|group| &group.lines);
+        for line in theirs.groups.iter().flat_map(|group| &group.lines) {
+            if !lines.clone().any(|known| known == line) {
+                changes.push(format!("- {}{}", line.text, mark(&line.id)));
+            }
+        }
+        let ix = Index::build(&other);
+        for step in &theirs.steps {
+            let before = view.steps.iter().find(|known| known.id == step.id);
+            let (now, was) = (label(&ix, &step.id), label(&base, &step.id));
+            let text_changed = before.is_none_or(|known| known.text != step.text);
+            if !text_changed && now == was {
+                continue;
+            }
+            let id = if options.ids {
+                format!("[{}] ", step.id)
+            } else {
+                String::new()
+            };
+            let cell = match now.filter(|now| Some(now) != was.as_ref()) {
+                Some(now) => format!(" ({now})"),
+                None => String::new(),
+            };
+            changes.push(format!("{}. {id}{}{cell}", step.number, step.text));
+        }
+        if changes.is_empty() {
+            changes.push("- (the recipe as written)".to_owned());
+        }
+        out.push(String::new());
+        out.extend(changes);
+        out.push(String::new());
+    }
+    out
 }

@@ -19,3 +19,4 @@ mod recipes_pins;
 mod recipes_requests;
 mod recipes_search;
 mod recipes_surface;
+mod recipes_variants;

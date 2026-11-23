@@ -747,9 +747,22 @@ pub fn CookPage(id: String) -> impl IntoView {
                     }
                 }>{icon("close")}</button>
                 <h1>{move || {
-                    session
+                    let title = session
                         .with(|s| s.as_ref().and_then(|s| store.recipe(&s.recipe_id)))
-                        .map(|recipe| recipe.title.clone())
+                        .map(|recipe| recipe.title.clone())?;
+                    // The variant being cooked, by the name the recipe gives it.
+                    let variant = state.with(|state| state.variant.clone()).and_then(|id| {
+                        session
+                            .with(|s| s.as_ref().and_then(|s| store.recipe(&s.recipe_id)))
+                            .and_then(|recipe| recipe.doc.clone())
+                            .and_then(|doc| {
+                                doc.variants.iter().find(|v| v.id == id).map(|v| v.name.clone())
+                            })
+                    });
+                    Some(match variant {
+                        Some(name) => format!("{title} · {name}"),
+                        None => title,
+                    })
                 }}</h1>
                 <Connection/>
                 <Show when=move || store.wake_refused.get()>

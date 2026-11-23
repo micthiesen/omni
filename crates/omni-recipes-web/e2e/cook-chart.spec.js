@@ -309,7 +309,8 @@ test('press and hold marks a step done without the sheet; a scroll is not a hold
     'cook-press',
     'no-repeat',
   ]);
-  await page.waitForTimeout(250);
+  // Past HOLD_MS (400 ms): without screenshots nothing else fills the time.
+  await page.waitForTimeout(450);
   await shot(page, 'cook-chart-pressing');
   await page.mouse.up();
   await expect(cell).not.toHaveClass(/pressing/);

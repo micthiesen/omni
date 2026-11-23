@@ -105,7 +105,8 @@ An amount off this grid is reported as an `awkward_amount` warning with what to 
 ## Format reference
 
 ```
-RecipeDoc   { title, summary?, yield: { qty, unit }, time?: { activeMin, totalMin }, source, components[] }
+RecipeDoc   { title, summary?, yield: { qty, unit }, time?: { activeMin, totalMin }, source, components[],
+              variants?[] }
 source      { kind: web | book | person | original | crouton, name?, url?, author?, detail? }
 Component   { id, name?, makeAhead?: { keeps, where }, ingredients[], steps[] }
 Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { qty, unit },
@@ -118,6 +119,8 @@ Step        { id, action, inputs[], text, time?: { min, max?, attention: active 
               until?, equipment?[], output?,
               byproducts?[]: { id, name }, optional?, tip? }
 Input       { ref, qty?, unit?, fraction?, rest?, part?, prep? }
+Variant     { id, name, note?, ops[]: { op: set | setInput | replaceText | setRecipe, target?, step?,
+              ref?, fields?, unset?, find?, replace? } }   (the edit operations below; setRecipe: yield, time)
 ```
 
 A `?` marks an optional key; leave it out, never send `null`. Everything else is required:
@@ -228,10 +231,36 @@ sauce is built on).
 { op: "replaceText", target, find, replace }      find must occur exactly once
 { op: "rename", target, to }                      renames an id everywhere, placeholders included
 { op: "rescale", factor }                         multiplies every amount and the yield
+{ op: "setVariant", variant }                     adds a variant, or replaces the one with its id
+{ op: "removeVariant", id }
 ```
 
 The result carries the change list and the rendered recipe. Read it: a renamed ingredient may leave
 an `output` name that no longer fits.
+
+## Variants
+
+A recipe that has a second way of making it ("hardtack style: roll 3 to 4 mm and bake longer")
+keeps it as a variant of the same recipe, not as a separate recipe. A variant has an `id`, a
+`name` the app shows ("Hardtack style"), an optional `note`, and `ops`: `set`, `setInput`,
+`replaceText` and `setRecipe` (yield and time only), applied in order to the recipe as written.
+It never adds or removes an ingredient, a step or a component, so a cook can switch between
+versions and keep what is crossed off; a different dish is a different recipe.
+
+```json
+{ "id": "hardtack", "name": "Hardtack style", "note": "Thinner and drier; keeps for weeks.",
+  "ops": [
+    { "op": "set", "target": "roll", "fields": { "size": [{ "kind": "thickness", "value": 3, "max": 4, "unit": "mm" }] } },
+    { "op": "set", "target": "bake", "fields": { "time": { "min": 40, "max": 50, "attention": "passive" } } } ] }
+```
+
+Every variant is checked as the document it makes: the format's rules, the household diet and
+the measuring guideline, with its problems under `variants.<id>.`. Add or change one with the
+`setVariant` operation, remove it with `removeVariant`; `rename` and `rescale` carry variants
+along. `recipes_get` with `variant` shows the text or chart as that variant makes it; the text
+view of the recipe as written ends with a Variants section listing what each one changes.
+`recipes_cook_start` takes `variant`, and a `variant` event in `recipes_cook_update` switches an
+open cook (or back, without one). At most six variants, 50 operations each.
 
 ## Tags
 
@@ -279,7 +308,7 @@ the placeholder (one `recipes_images_edit` call with `add`, then `cover` and `re
 
 ## Cooking
 
-A cook session pins one revision and one scale, and records what the cook did: steps and
+A cook session pins one revision, one scale and, optionally, one variant, and records what the cook did: steps and
 ingredients crossed off, notes, timers. It holds no recipe text of its own, and its scale is only
 how the session is shown; it never changes the recipe's amounts.
 

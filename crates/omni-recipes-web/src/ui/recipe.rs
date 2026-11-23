@@ -18,7 +18,7 @@ use crate::logic::session::is_open;
 use crate::logic::{Route, SCALES, gallery, same_scale, step_servings, tile_color};
 use crate::platform::prefs::{self, RecipeView};
 use crate::platform::shell;
-use crate::store::{Ask, Recipe, Undo, use_store};
+use crate::store::{Ask, Recipe, Undo, shown_variant, use_store};
 
 /// Step text with ingredient amounts, times and temperatures in bold.
 pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
@@ -363,6 +363,8 @@ pub fn RecipePage(id: String) -> impl IntoView {
     let amount_target = RwSignal::new(None::<AmountTarget>);
     let step_sheet = RwSignal::new(false);
     let step = RwSignal::new(String::new());
+    // The variant on screen; a cook started here cooks it.
+    let variant = RwSignal::new(None::<String>);
     let slide = RwSignal::new(0usize);
     // The recipe on screen. A change made elsewhere (an agent, another
     // device) shows by itself, but never under an open sheet or while the
@@ -411,8 +413,13 @@ pub fn RecipePage(id: String) -> impl IntoView {
         let Some(recipe) = latest.get_untracked() else {
             return;
         };
-        let session = open_session.clone()()
-            .unwrap_or_else(|| store.start_cook(&recipe, store.scale(&recipe.rec.id)));
+        let session = open_session.clone()().unwrap_or_else(|| {
+            store.start_cook(
+                &recipe,
+                store.scale(&recipe.rec.id),
+                variant.get_untracked(),
+            )
+        });
         navigate(store, Route::Cook(session));
     };
 
@@ -520,8 +527,26 @@ pub fn RecipePage(id: String) -> impl IntoView {
                             <button role="tab" class:on=move || chart.get() aria-selected=move || chart.get().to_string()
                                 on:click=move |_| show(RecipeView::Chart)>"Chart"</button>
                         </div>
+                        {(!doc.variants.is_empty()).then(|| {
+                            let names: Vec<(Option<String>, String)> = std::iter::once((None, "As written".to_owned()))
+                                .chain(doc.variants.iter().map(|v| (Some(v.id.clone()), v.name.clone())))
+                                .collect();
+                            view! {
+                                <div class="seg wide variants" role="tablist" aria-label="Variant" data-testid="variants">
+                                    {names.into_iter().map(|(id, name)| {
+                                        let (on, selected) = (id.clone(), id.clone());
+                                        view! {
+                                            <button role="tab" class:on=move || variant.get() == on
+                                                aria-selected=move || (variant.get() == selected).to_string()
+                                                on:click=move |_| variant.set(id.clone())>{name}</button>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            }
+                        })}
                         {move || {
                             let factor = store.scale(&body_id);
+                            let body_doc = shown_variant(body_doc.clone(), variant.get().as_deref());
                             if chart.get() {
                                 view! {
                                     <section class="charts" data-testid="chart">
@@ -602,7 +627,10 @@ pub fn RecipePage(id: String) -> impl IntoView {
                         Index::build(&doc).step(&id).map(|step| step.action.clone()).unwrap_or_default()
                     }
                 })>
-                    {move || step_detail(&sheet_doc, store.scale(&sheet_id), &step.get())}
+                    {move || {
+                        let doc = shown_variant(sheet_doc.clone(), variant.get().as_deref());
+                        step_detail(&doc, store.scale(&sheet_id), &step.get())
+                    }}
                 </Sheet>
             }
             .into_any()

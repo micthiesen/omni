@@ -331,6 +331,9 @@ pub struct GetInput {
     /// For text and chart: mark ingredients, steps, by-products and
     /// components with their ids ("[salt]") for recipes_edit operations.
     pub ids: Option<bool>,
+    /// For text and chart: show the recipe as this variant (its id) makes it.
+    #[schemars(length(max = 24))]
+    pub variant: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -414,6 +417,9 @@ pub struct GetOutput {
     /// The scale applied to text or chart.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
+    /// The variant text or chart shows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<RecipeDoc>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1138,6 +1144,9 @@ pub struct CookStartInput {
     pub scale: Option<f64>,
     #[schemars(range(min = 0.05, max = 10000.0))]
     pub servings: Option<f64>,
+    /// Cook one of the recipe's variants (its id); default as written.
+    #[schemars(length(max = 24))]
+    pub variant: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -1147,6 +1156,8 @@ pub struct CookStartOutput {
     pub recipe_id: String,
     pub revision: u32,
     pub scale: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
     /// Where the session opens in the app, when the app is served.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_url: Option<String>,
@@ -1188,6 +1199,9 @@ pub struct SessionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merged_from: Option<String>,
     pub scale: f64,
+    /// The variant the session shows; absent as written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
     pub started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -1274,6 +1288,12 @@ pub enum CookEventInput {
     },
     /// Discards the session: no cook is counted.
     Abandon {},
+    /// Shows the session as a variant of the recipe (its id), or as written
+    /// without one; what is crossed off carries over.
+    Variant {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variant: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]

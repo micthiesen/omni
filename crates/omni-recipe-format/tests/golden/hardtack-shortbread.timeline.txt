@@ -1,0 +1,8 @@
+0:00 → 0:03  hands-on    cream 3 min
+0:03 → 0:05  hands-on    mix
+0:05 → 0:35  unattended  chill 30 min
+0:30 → 0:45  unattended  heat oven 170°C 15 min
+0:35 → 0:45  hands-on    roll and cut 10 min
+0:45 → 1:17  unattended  bake 14–16 min ×2
+1:17 → 1:27  unattended  cool 10 min
+elapsed 1:27

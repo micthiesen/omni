@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::index::{Index, Kind, Node};
 use crate::model::{
-    Component, Id, Ingredient, Input, RecipeDoc, Source, Step, TimeOverride, Yield,
+    Component, Id, Ingredient, Input, RecipeDoc, Source, Step, TimeOverride, Variant, Yield,
 };
 use crate::py;
 
@@ -86,6 +86,87 @@ pub enum Op {
     Rename { target: Id, to: Id },
     /// Multiply the yield and every amount that scales.
     Rescale { factor: f64 },
+    /// Add a variant, or replace the one with the same id.
+    SetVariant { variant: Box<Variant> },
+    /// Remove a variant by id.
+    RemoveVariant { id: Id },
+}
+
+/// An operation a variant holds: the subset of [`Op`] that changes fields
+/// and never adds, removes, moves or renames anything.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
+pub enum VariantOp {
+    /// Merge `fields` into an ingredient, step or component.
+    Set {
+        target: Id,
+        #[serde(default, skip_serializing_if = "Map::is_empty")]
+        fields: Fields,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unset: Vec<String>,
+    },
+    /// Change the yield or the time override.
+    SetRecipe {
+        #[serde(default, skip_serializing_if = "Map::is_empty")]
+        fields: Fields,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unset: Vec<String>,
+    },
+    /// Add or change one input of a step.
+    SetInput {
+        step: Id,
+        r#ref: Id,
+        #[serde(default, skip_serializing_if = "Map::is_empty")]
+        fields: Fields,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unset: Vec<String>,
+    },
+    /// Replace part of a step's text. `find` must occur exactly once.
+    ReplaceText {
+        target: Id,
+        find: String,
+        replace: String,
+    },
+}
+
+impl VariantOp {
+    /// The same change as an edit operation.
+    pub fn to_op(&self) -> Op {
+        match self.clone() {
+            Self::Set {
+                target,
+                fields,
+                unset,
+            } => Op::Set {
+                target,
+                fields,
+                unset,
+            },
+            Self::SetRecipe { fields, unset } => Op::SetRecipe { fields, unset },
+            Self::SetInput {
+                step,
+                r#ref,
+                fields,
+                unset,
+            } => Op::SetInput {
+                step,
+                r#ref,
+                fields,
+                unset,
+                remove: false,
+            },
+            Self::ReplaceText {
+                target,
+                find,
+                replace,
+            } => Op::ReplaceText {
+                target,
+                find,
+                replace,
+            },
+        }
+    }
 }
 
 impl Op {
@@ -103,6 +184,8 @@ impl Op {
             Self::ReplaceText { .. } => "replaceText",
             Self::Rename { .. } => "rename",
             Self::Rescale { .. } => "rescale",
+            Self::SetVariant { .. } => "setVariant",
+            Self::RemoveVariant { .. } => "removeVariant",
         }
     }
 }
@@ -145,6 +228,9 @@ pub fn scaled(doc: &RecipeDoc, factor: f64) -> RecipeDoc {
     };
     let mut new = doc.clone();
     new.r#yield.qty *= factor;
+    for variant in &mut new.variants {
+        crate::variant::scale_ops(doc, &mut variant.ops, factor);
+    }
     for component in &mut new.components {
         for ingredient in component.ingredients.iter_mut().filter(|i| i.scales) {
             if let Some(qty) = &mut ingredient.qty {
@@ -422,6 +508,19 @@ fn apply(doc: &mut RecipeDoc, op: &Op) -> Result<(), String> {
             }
             *doc = scaled(doc, *factor);
         }
+        Op::SetVariant { variant } => {
+            match doc.variants.iter_mut().find(|known| known.id == variant.id) {
+                Some(known) => *known = (**variant).clone(),
+                None => doc.variants.push((**variant).clone()),
+            }
+        }
+        Op::RemoveVariant { id } => {
+            let before = doc.variants.len();
+            doc.variants.retain(|variant| variant.id != *id);
+            if doc.variants.len() == before {
+                return Err(format!("the recipe has no variant \"{id}\""));
+            }
+        }
     }
     Ok(())
 }
@@ -502,7 +601,58 @@ fn rename(doc: &mut RecipeDoc, old: &str, to: &str) -> Result<(), String> {
         }
         step.text = rename_placeholders(&step.text, old, to);
     }
+    // A variant names the same ids: its targets, refs and the placeholders
+    // in the text it writes follow the rename.
+    let renamed = |id: &mut Id| {
+        if id == old {
+            *id = to.to_owned();
+        }
+    };
+    for op in doc.variants.iter_mut().flat_map(|variant| &mut variant.ops) {
+        match op {
+            VariantOp::Set { target, fields, .. } => {
+                renamed(target);
+                rename_in_fields(fields, old, to);
+            }
+            VariantOp::SetInput {
+                step,
+                r#ref,
+                fields,
+                ..
+            } => {
+                renamed(step);
+                renamed(r#ref);
+                rename_in_fields(fields, old, to);
+            }
+            VariantOp::ReplaceText {
+                target,
+                find,
+                replace,
+            } => {
+                renamed(target);
+                *find = rename_placeholders(find, old, to);
+                *replace = rename_placeholders(replace, old, to);
+            }
+            VariantOp::SetRecipe { .. } => {}
+        }
+    }
     Ok(())
+}
+
+/// Renames `old` in the step text and the input refs a variant sets.
+fn rename_in_fields(fields: &mut Fields, old: &str, to: &str) {
+    if let Some(Value::String(text)) = fields.get_mut("text") {
+        *text = rename_placeholders(text, old, to);
+    }
+    if let Some(Value::Array(inputs)) = fields.get_mut("inputs") {
+        for input in inputs {
+            if let Some(reference) = input.get_mut("ref")
+                && reference.as_str() == Some(old)
+            {
+                *reference = Value::String(to.to_owned());
+            }
+        }
+    }
 }
 
 /// Rewrites `{old}` and `{old|label}` to name `to`.
@@ -597,6 +747,18 @@ pub fn diff_summary(old: &RecipeDoc, new: &RecipeDoc) -> Vec<String> {
     header("yield", dumps(&old.r#yield), dumps(&new.r#yield));
     header("time", dumps(&old.time), dumps(&new.time));
     header("source", dumps(&old.source), dumps(&new.source));
+    for variant in &old.variants {
+        match new.variants.iter().find(|known| known.id == variant.id) {
+            None => out.push(format!("− variant {}", variant.id)),
+            Some(now) if now != variant => out.push(format!("~ variant {}", variant.id)),
+            Some(_) => {}
+        }
+    }
+    for variant in &new.variants {
+        if !old.variants.iter().any(|known| known.id == variant.id) {
+            out.push(format!("+ variant {}", variant.id));
+        }
+    }
     for id in a.ids() {
         if let Some(kind) = a.kind(id).filter(|_| !b.contains(id)) {
             out.push(format!("− {} {id}", kind.as_str()));

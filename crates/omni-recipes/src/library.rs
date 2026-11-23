@@ -86,6 +86,40 @@ pub(crate) fn render_chart(doc: &RecipeDoc, factor: f64, ids: bool) -> String {
             chart_ascii(&block, &Marks::new())
         })
         .collect();
+    let variants: Vec<String> = omni_recipe_format::variant_docs(doc)
+        .iter()
+        .map(|(variant, made)| {
+            let changed: Vec<String> = omni_recipe_format::diff_summary(doc, made)
+                .iter()
+                .filter_map(|line| line.strip_prefix("~ ").or(Some(line.as_str())))
+                .filter(|line| !line.starts_with("− ") && !line.starts_with("+ "))
+                .filter_map(|line| line.split(['.', ':']).next())
+                .map(str::to_owned)
+                .fold(Vec::new(), |mut ids, id| {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                    ids
+                });
+            if changed.is_empty() {
+                format!("{} [{}]", variant.name, variant.id)
+            } else {
+                format!(
+                    "{} [{}] (changes {})",
+                    variant.name,
+                    variant.id,
+                    changed.join(", ")
+                )
+            }
+        })
+        .collect();
+    if !variants.is_empty() {
+        return format!(
+            "{}\n\nVariants: {}\n",
+            charts.join("\n\n"),
+            variants.join("; ")
+        );
+    }
     format!("{}\n", charts.join("\n\n"))
 }
 
@@ -397,6 +431,17 @@ impl Recipes {
                     "scale and servings apply to view \"text\" or \"chart\"; the stored document is never scaled (use the rescale operation to change the base yield)",
                 ));
             }
+            if view == View::Document && input.variant.is_some() {
+                return Err(invalid(
+                    "variant applies to view \"text\" or \"chart\"; the stored document holds every variant under \"variants\"",
+                ));
+            }
+            let shown = match &input.variant {
+                Some(id) => {
+                    omni_recipe_format::variant_doc(&doc, id).map_err(|e| invalid(e.to_string()))?
+                }
+                None => doc.clone(),
+            };
             let factor = factor(&doc, input.scale, input.servings)?;
             let options = ListOptions {
                 ids: input.ids.unwrap_or(false),
@@ -442,8 +487,9 @@ impl Recipes {
                     warnings: household::check(&doc, Some(&doc), false).warnings,
                 linked,
                 scale: (view != View::Document).then_some(factor),
-                text: (view == View::Text).then(|| render_list_with(&doc, factor, options)),
-                chart: (view == View::Chart).then(|| render_chart(&doc, factor, options.ids)),
+                variant: input.variant.clone().filter(|_| view != View::Document),
+                text: (view == View::Text).then(|| render_list_with(&shown, factor, options)),
+                chart: (view == View::Chart).then(|| render_chart(&shown, factor, options.ids)),
                 document: (view == View::Document).then_some(doc),
                 id: row.id,
             })

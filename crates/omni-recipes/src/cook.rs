@@ -119,6 +119,7 @@ fn kind_name(kind: &CookEventKind) -> &'static str {
         CookEventKind::Rebase { .. } => "rebase",
         CookEventKind::Finish { .. } => "finish",
         CookEventKind::Abandon {} => "abandon",
+        CookEventKind::Variant { .. } => "variant",
         CookEventKind::Unknown => "unknown",
     }
 }
@@ -225,6 +226,8 @@ pub struct Projection {
     /// `(step, endsAt)` of the timers still running or rung.
     pub timers: Vec<(String, i64)>,
     pub notes: Vec<String>,
+    /// The variant shown, from the last `variant` event.
+    pub variant: Option<String>,
 }
 
 pub fn project(events: &[CookEvent]) -> Projection {
@@ -248,10 +251,20 @@ pub fn project(events: &[CookEvent]) -> Projection {
             CookEventKind::Finish { note } => out.notes.extend(note.clone()),
             // A discarded cook has nothing left to ring.
             CookEventKind::Abandon {} => out.timers.clear(),
+            CookEventKind::Variant { variant } => out.variant.clone_from(variant),
             CookEventKind::Rebase { .. } | CookEventKind::Unknown => {}
         }
     }
     out
+}
+
+/// The session's document as its variant makes it; as written when the
+/// variant is unset or the revision no longer has it.
+pub fn shown_doc(doc: RecipeDoc, variant: Option<&str>) -> RecipeDoc {
+    match variant.map(|id| omni_recipe_format::variant_doc(&doc, id)) {
+        Some(Ok(made)) => made,
+        _ => doc,
+    }
 }
 
 fn step_ids(doc: &RecipeDoc) -> Vec<&str> {
@@ -274,8 +287,13 @@ fn done_steps(doc: &RecipeDoc, projection: &Projection) -> Vec<String> {
 fn view(conn: &Connection, row: &SessionRow, now: i64) -> R<SessionView> {
     let recipe = db::recipe(conn, &row.recipe_id)?
         .ok_or_else(|| not_found(format!("no recipe has id {:?}", row.recipe_id)))?;
-    let doc = session_doc(conn, row)?;
     let projection = project(&session_events(conn, &row.id)?);
+    let base = session_doc(conn, row)?;
+    let variant = projection
+        .variant
+        .clone()
+        .filter(|id| base.variants.iter().any(|known| known.id == *id));
+    let doc = shown_doc(base, variant.as_deref());
     let done = done_steps(&doc, &projection);
     let steps = step_ids(&doc);
     Ok(SessionView {
@@ -289,6 +307,7 @@ fn view(conn: &Connection, row: &SessionRow, now: i64) -> R<SessionView> {
         head_revision: recipe.head_rev,
         merged_from: (row.doc_recipe_id != row.recipe_id).then(|| row.doc_recipe_id.clone()),
         scale: row.scale,
+        variant,
         started_at: iso(row.started_at),
         finished_at: row.finished_at.map(iso),
         last_event_at: iso(row.last_event_at),
@@ -395,6 +414,22 @@ fn check_event(doc: &RecipeDoc, kind: &CookEventKind) -> R<()> {
         CookEventKind::Note { text } => text_ok(text),
         CookEventKind::Timer { step, .. } | CookEventKind::CancelTimer { step } => step_ok(step),
         CookEventKind::Rebase { .. } | CookEventKind::Abandon {} | CookEventKind::Unknown => Ok(()),
+        CookEventKind::Variant { variant: None } => Ok(()),
+        CookEventKind::Variant { variant: Some(id) } => {
+            if doc.variants.iter().any(|known| known.id == *id) {
+                Ok(())
+            } else {
+                let known: Vec<&str> = doc.variants.iter().map(|v| v.id.as_str()).collect();
+                Err(not_found(format!(
+                    "the session's recipe has no variant {id:?}; its variants: {}",
+                    if known.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        known.join(", ")
+                    }
+                )))
+            }
+        }
         CookEventKind::Finish { note } => note.as_deref().map_or(Ok(()), text_ok),
     }
 }
@@ -839,8 +874,20 @@ impl Recipes {
         Ok(session)
     }
 
-    pub async fn cook_start(&self, input: CookStartInput) -> R<CookStartOutput> {
-        let session = self
+    pub async fn cook_start(&self, input: CookStartInput, actor: Actor) -> R<CookStartOutput> {
+        // Checked before the session exists, so a wrong id starts nothing.
+        if let Some(id) = input.variant.clone() {
+            let recipe = input.recipe_id.clone();
+            self.query(move |conn| {
+                let (row, _) = db::recipe_for_read(conn, &recipe)?;
+                let doc = doc_at(conn, &row.id, row.head_rev)?;
+                omni_recipe_format::variant_doc(&doc, &id)
+                    .map(|_| ())
+                    .map_err(|error| invalid(error.to_string()))
+            })
+            .await?;
+        }
+        let mut session = self
             .start_session(Start {
                 id: None,
                 recipe_id: input.recipe_id,
@@ -849,7 +896,21 @@ impl Recipes {
                 servings: input.servings,
             })
             .await?;
+        if let Some(variant) = input.variant.clone() {
+            let event = Append {
+                actor: CookActor::Agent,
+                client_event_id: format!("agent_{}", omni_core::ids::uuid_v4()),
+                at: self.now(),
+                kind: CookEventKind::Variant {
+                    variant: Some(variant),
+                },
+            };
+            session = self
+                .append_events(&session.id, vec![event], true, actor)
+                .await?;
+        }
         Ok(CookStartOutput {
+            variant: input.variant,
             app_url: self
                 .app_url
                 .as_ref()
@@ -947,6 +1008,7 @@ impl Recipes {
                     CookEventInput::Rebase { revision } => CookEventKind::Rebase { revision },
                     CookEventInput::Finish { note } => CookEventKind::Finish { note },
                     CookEventInput::Abandon {} => CookEventKind::Abandon {},
+                    CookEventInput::Variant { variant } => CookEventKind::Variant { variant },
                 };
                 Ok(Append {
                     actor: CookActor::Agent,

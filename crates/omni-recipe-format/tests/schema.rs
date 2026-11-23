@@ -92,7 +92,9 @@ fn operations_are_a_union_discriminated_by_op() {
             "move",
             "replaceText",
             "rename",
-            "rescale"
+            "rescale",
+            "setVariant",
+            "removeVariant"
         ]
     );
 }

@@ -103,6 +103,12 @@ Timers are end times in the log; the app rings (Web Audio and vibration)
 while it is in front, and Omni's own alert covers the rest.
 Running timers are docked under the cook screen and count up once they run
 out; marking a step done stops its timer (`docs/fond/cook-chart-steps.md`).
+A recipe with variants shows a picker under the scale ("As written" and each
+variant's name); the page renders `variant_doc` of the chosen one, and Cook
+starts the session with a `variant` event after `startCook`, so the session
+cooks it on every device. Cook mode titles the screen "Title · Variant name"
+and `Store::session_doc` applies the session's variant (the last `variant`
+event) to its pinned document.
 A step's timer is one batch: a step with `repeat` labels its button "Start 9
 min timer (one of 3 batches)" at the session's scale, and the cook starts it
 once per batch. Step text, sizes, heat stages and counts (`{yield}`,

@@ -1,0 +1,91 @@
+{
+  "title": "Shortbread rounds",
+  "summary": "Buttery rounds cut from chilled dough, with a thin, dry hardtack-style version that keeps for weeks.",
+  "yield": { "qty": 24, "unit": "rounds" },
+  "source": { "kind": "original" },
+  "components": [
+    {
+      "id": "main",
+      "ingredients": [
+        { "id": "butter", "qty": 225, "unit": "g", "name": "unsalted butter", "prep": "softened", "alt": { "qty": 1, "unit": "cup" } },
+        { "id": "sugar", "qty": 100, "unit": "g", "name": "granulated sugar", "alt": { "qty": 0.5, "unit": "cup" } },
+        { "id": "flour", "qty": 300, "unit": "g", "name": "all-purpose flour" },
+        { "id": "salt", "qty": 0.25, "unit": "tsp", "name": "fine sea salt" }
+      ],
+      "steps": [
+        {
+          "id": "oven", "action": "heat oven", "inputs": [], "output": "hot oven",
+          "text": "Heat the oven to {temp} and line two baking sheets with parchment.",
+          "time": { "min": 15, "attention": "passive" }, "temp": { "value": 170, "unit": "C" },
+          "size": [{ "kind": "pan", "value": 30, "by": 40, "unit": "cm" }]
+        },
+        {
+          "id": "cream", "action": "cream", "output": "creamed butter",
+          "inputs": [{ "ref": "butter" }, { "ref": "sugar" }],
+          "text": "Beat {butter} with {sugar} until pale and soft, {time}.",
+          "time": { "min": 3, "attention": "active" }
+        },
+        {
+          "id": "dough", "action": "mix", "output": "dough",
+          "inputs": [{ "ref": "cream" }, { "ref": "flour" }, { "ref": "salt" }],
+          "text": "Mix {flour} and {salt} into {cream} until it just comes together.",
+          "time": { "min": 2, "attention": "active" }
+        },
+        {
+          "id": "chill", "action": "chill", "output": "chilled dough",
+          "inputs": [{ "ref": "dough" }],
+          "text": "Flatten {dough} into a disc, wrap it and chill for {time}.",
+          "time": { "min": 30, "attention": "passive" }
+        },
+        {
+          "id": "roll", "action": "roll and cut", "output": "rounds",
+          "inputs": [{ "ref": "chill" }],
+          "text": "Roll {chill} {size:thickness} thick and cut {yield} with a {size:diameter} cutter, rerolling the scraps once.",
+          "time": { "min": 10, "attention": "active" },
+          "size": [
+            { "kind": "thickness", "value": 6, "max": 7, "unit": "mm" },
+            { "kind": "diameter", "value": 6, "unit": "cm" }
+          ]
+        },
+        {
+          "id": "bake", "action": "bake", "output": "baked rounds",
+          "inputs": [{ "ref": "roll" }, { "ref": "oven" }],
+          "text": "Bake {roll} in {oven} in {batches}, one sheet at a time, {time} each.",
+          "until": "pale gold at the edges",
+          "time": { "min": 14, "max": 16, "attention": "passive" },
+          "repeat": { "capacity": 12 }
+        },
+        {
+          "id": "cool", "action": "cool", "output": "shortbread",
+          "inputs": [{ "ref": "bake" }],
+          "text": "Cool {bake} on the sheet for {time}, then on a rack.",
+          "time": { "min": 10, "attention": "passive" }
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "id": "hardtack",
+      "name": "Hardtack style",
+      "note": "Thinner and dried out in a cooler oven; keeps for weeks in a tin.",
+      "ops": [
+        { "op": "setRecipe", "fields": { "yield": { "qty": 36, "unit": "rounds" } } },
+        { "op": "set", "target": "roll", "fields": { "size": [
+          { "kind": "thickness", "value": 3, "max": 4, "unit": "mm" },
+          { "kind": "diameter", "value": 6, "unit": "cm" }
+        ] } },
+        { "op": "set", "target": "oven", "unset": ["temp"], "fields": { "text": "Heat the oven and line two baking sheets with parchment." } },
+        { "op": "set", "target": "bake", "fields": {
+          "heat": [
+            { "temp": { "value": 170, "unit": "C" }, "label": "bake" },
+            { "temp": { "value": 120, "unit": "C" }, "label": "dry" }
+          ],
+          "time": { "min": 40, "max": 50, "attention": "passive" },
+          "text": "Bake {roll} in {oven} in {batches} at {heat:bake} until pale gold, then lower the oven to {heat:dry} and dry them out, {time} each in all.",
+          "until": "dry and crisp right through"
+        } }
+      ]
+    }
+  ]
+}

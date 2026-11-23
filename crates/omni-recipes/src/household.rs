@@ -2,7 +2,9 @@
 //! fetches a page or opens an inbox item: the diet and how amounts are
 //! measured. They are code, like the guide: change them here.
 
-use omni_recipe_format::{Level, Problem, RecipeDoc, Report, diet_flag, diet_problems, validate};
+use omni_recipe_format::{
+    Level, Problem, RecipeDoc, Report, diet_flag, diet_problems, validate, variant_docs,
+};
 
 use crate::api::{DietNote, Household};
 
@@ -57,7 +59,16 @@ pub fn check(doc: &RecipeDoc, previous: Option<&RecipeDoc>, keep: bool) -> Repor
             .map(|ingredient| ingredient.name.to_lowercase())
             .collect()
     };
-    let known = previous.map(conflicting).unwrap_or_default();
+    // What the earlier revision already had, in any of its variants too.
+    let known: Vec<String> = previous
+        .map(|previous| {
+            let mut names = conflicting(previous);
+            for (_, made) in variant_docs(previous) {
+                names.extend(conflicting(&made));
+            }
+            names
+        })
+        .unwrap_or_default();
     let names: Vec<(String, String)> = doc
         .components
         .iter()
@@ -82,6 +93,38 @@ pub fn check(doc: &RecipeDoc, previous: Option<&RecipeDoc>, keep: bool) -> Repor
             });
         } else {
             report.errors.push(problem);
+        }
+    }
+    // A variant may rename an ingredient: its own conflicts count too.
+    let base: Vec<(String, String)> = diet_problems(doc)
+        .into_iter()
+        .map(|problem| (problem.path, problem.message))
+        .collect();
+    for (variant, made) in variant_docs(doc) {
+        for problem in diet_problems(&made) {
+            if base.contains(&(problem.path.clone(), problem.message.clone())) {
+                continue;
+            }
+            let name = made
+                .components
+                .iter()
+                .flat_map(|component| &component.ingredients)
+                .find(|ingredient| format!("ingredients.{}", ingredient.id) == problem.path)
+                .map(|ingredient| ingredient.name.to_lowercase());
+            let accepted = keep || name.is_some_and(|name| known.contains(&name));
+            let problem = Problem {
+                path: format!("variants.{}.{}", variant.id, problem.path),
+                ..problem
+            };
+            if accepted {
+                report.warnings.push(Problem {
+                    level: Level::Warning,
+                    hint: Some("kept as an exception to the household diet".to_owned()),
+                    ..problem
+                });
+            } else {
+                report.errors.push(problem);
+            }
         }
     }
     report

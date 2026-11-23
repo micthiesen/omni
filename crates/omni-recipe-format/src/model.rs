@@ -37,6 +37,30 @@ pub struct RecipeDoc {
     pub source: Source,
     /// 1 to 8, in cooking order.
     pub components: Vec<Component>,
+    /// Named versions of this recipe ("hardtack style"), each a short list
+    /// of changes to the recipe as written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Variant>,
+}
+
+/// A named version of the recipe: `set`, `setInput`, `replaceText` and
+/// `setRecipe` (yield and time only) operations applied to the recipe as
+/// written. A variant never adds or removes an ingredient, a
+/// step or a component, so a cook can switch between versions and keep
+/// what is crossed off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Variant {
+    /// Unique among the recipe's variants: `^[a-z][a-z0-9_]{0,23}$`.
+    pub id: Id,
+    /// 1 to 60 characters: "Hardtack style".
+    pub name: String,
+    /// A sentence on what the variant is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// 1 to 50 operations, applied in order to the recipe as written.
+    pub ops: Vec<crate::ops::VariantOp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
