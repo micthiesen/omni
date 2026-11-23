@@ -37,6 +37,25 @@ fn player_ahead(video: &web_sys::HtmlVideoElement) -> Option<f64> {
     Some((end - video.current_time()).max(0.0))
 }
 
+/// Players that ignore `EXT-X-START` (Chromium) join at the live edge and
+/// stall whenever a segment is late; move them back so they hold this much of
+/// their own buffer, as Safari does.
+const PLAYER_BUFFER_SECS: f64 = 18.0;
+
+fn settle_behind_edge(video: &web_sys::HtmlVideoElement) {
+    let seekable = video.seekable();
+    let count = seekable.length();
+    if count == 0 {
+        return;
+    }
+    let (Ok(start), Ok(end)) = (seekable.start(0), seekable.end(count - 1)) else {
+        return;
+    };
+    if end - video.current_time() < PLAYER_BUFFER_SECS - 6.0 {
+        video.set_current_time((end - PLAYER_BUFFER_SECS).max(start));
+    }
+}
+
 /// `webkitEnterFullscreen` (iPad and iPhone: the system player), else the
 /// standard Fullscreen API.
 fn enter_fullscreen(video: &web_sys::HtmlVideoElement) {
@@ -249,7 +268,14 @@ pub fn StreamerWatchPage(#[prop(into)] streamer_id: String) -> impl IntoView {
                 controls=true
                 playsinline=true
                 preload="none"
-                on:playing=move |_| started.set(true)
+                on:playing=move |_| {
+                    if !started.get_untracked()
+                        && let Some(v) = video.get_untracked()
+                    {
+                        settle_behind_edge(&v);
+                    }
+                    started.set(true);
+                }
                 on:waiting=move |_| {
                     if started.get_untracked() {
                         player_stalls.update(|n| *n += 1);
