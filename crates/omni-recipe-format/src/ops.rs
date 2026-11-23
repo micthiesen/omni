@@ -154,6 +154,13 @@ pub fn scaled(doc: &RecipeDoc, factor: f64) -> RecipeDoc {
                 alt.qty *= factor;
             }
         }
+        for portions in component
+            .steps
+            .iter_mut()
+            .filter_map(|s| s.portions.as_mut())
+        {
+            portions.qty *= factor;
+        }
         for input in component.steps.iter_mut().flat_map(|s| &mut s.inputs) {
             if let Some(qty) = &mut input.qty
                 && !fixed.contains(&input.r#ref)

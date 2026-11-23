@@ -264,6 +264,22 @@ pub fn fmt_temp(temp: &Temp, both: bool) -> String {
     format!("{value}°{unit} ({}°{other_unit})", fmt_plain(other))
 }
 
+/// A count of things a cook makes (rolls, pieces, batches): as stored when
+/// `exact`, otherwise the nearest whole number (at least 1), read "about"
+/// when that is more than a tenth away from the scaled value.
+pub fn fmt_count(value: f64, exact: bool) -> String {
+    if exact {
+        return fmt_number_exact(value, None);
+    }
+    let whole = value.round().max(1.0);
+    let text = py::fmt_g(whole);
+    if (whole - value).abs() > 0.1 * value {
+        format!("about {text}")
+    } else {
+        text
+    }
+}
+
 /// A scale factor for display: `1.5`, `2`.
 pub fn fmt_factor(factor: f64) -> String {
     py::fmt_g(factor)
@@ -362,6 +378,15 @@ mod tests {
         let mut leaf = count("bay leaf");
         leaf.plural = Some("bay leaves".to_owned());
         assert_eq!(inflect("bay leaf", Some(2.0), None, &leaf), "bay leaves");
+    }
+
+    #[test]
+    fn scaled_counts_are_whole_and_say_about_when_far_off() {
+        assert_eq!(fmt_count(8.0, true), "8");
+        assert_eq!(fmt_count(12.0, false), "12");
+        assert_eq!(fmt_count(4.8, false), "5");
+        assert_eq!(fmt_count(2.5, false), "about 3");
+        assert_eq!(fmt_count(0.4, false), "about 1");
     }
 
     #[test]

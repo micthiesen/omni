@@ -14,7 +14,8 @@ write the graph. Read this once per session, then use the tools.
    the registry lacks (`unknown_tag`) and a source that already exists (`duplicate_source`) as
    problems. Warnings never block a save, but read them: `missing_time` is a step without a time,
    `missing_source_url` a web source without its address, `awkward_amount` an amount that is hard
-   to measure (see The household).
+   to measure (see The household), `unscaled_number` a count in prose that would not follow the
+   scale (see Counts that scale).
 4. **Verify.** Every create and replace returns the recipe as a person reads it (`text`), a
    deterministic comparison with the source (`fidelity.issues`) and a model review
    (`fidelity.review.issues`). Compare `text` with the source line by line, and explain or fix every
@@ -97,7 +98,9 @@ An amount off this grid is reported as an `awkward_amount` warning with what to 
    ahead.
 9. Write amounts the household's way (grams, spoons, counts; see The household), and keep the
    source's other measure in `alt`.
-10. Keep numbers out of `prep`, `note` and `tip` unless they stay true at any scale.
+10. Keep numbers out of prose (`text`, `until`, `prep`, `note`, `tip`) unless they stay true at
+    any scale. A count that follows the recipe is a placeholder: `{yield}` for the yield, or the
+    step's `portions` with `{portions}` (see Counts that scale).
 
 ## Format reference
 
@@ -108,7 +111,7 @@ Component   { id, name?, makeAhead?: { keeps, where }, ingredients[], steps[] }
 Ingredient  { id, qty?, unit?, name, plural?, singular?, prep?, note?, alt?: { qty, unit },
               optional?, toTaste?, scales?, recipe? }
 Step        { id, action, inputs[], text, time?: { min, max?, attention: active | passive },
-              temp?: { value, unit: "F" | "C" }, until?, equipment?[], output?,
+              temp?: { value, unit: "F" | "C" }, portions?: { qty, unit }, until?, equipment?[], output?,
               byproducts?[]: { id, name }, optional?, tip? }
 Input       { ref, qty?, unit?, fraction?, rest?, part?, prep? }
 ```
@@ -148,6 +151,15 @@ A setup step, consumed by the step that needs it:
   Durations that do not scale ("3 to 4 minutes per side") may stay in prose.
 - **Every ingredient is used**, every step's result is used by a later step (except the last step
   of a component), and every component except the last is used by a later one.
+- **Counts that scale.** A number in prose stays the same when the recipe is scaled, so "Divide
+  the dough into 8 pieces" still says 8 at double. When the count is the yield, write `{yield}`
+  (it renders the scaled yield and its unit: "8 rolls", "12 rolls" at 1.5). When it is something
+  else, give the step `portions: { "qty": 16, "unit": "pieces" }` and write `{portions}`. Scaled
+  counts are whole numbers, with "about" when rounding moves them more than a tenth. Counts that
+  hold at any scale stay prose: per item ("cut each in half"), per side, repeats ("fold 3
+  times"), times, temperatures and sizes. Other numbers in `text`, `until`, `tip`, `prep` and
+  `note` are reported as `unscaled_number` warnings with the fix. An input whose id is `yield`
+  or `portions` keeps its `{id}` meaning in that step.
 - **`toTaste: true`** for seasoning without an amount; it may be an input of several steps.
   **`scales: false`** for amounts that do not follow the yield ("butter for the dish").
 - **`recipe`** on an ingredient links another recipe by id ("1 batch pizza dough").

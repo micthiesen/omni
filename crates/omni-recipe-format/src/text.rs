@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::format::{
-    fmt_amount_at, fmt_number, fmt_temp, fmt_time, fmt_time_prose, inflect, parse_fraction,
+    fmt_amount_at, fmt_count, fmt_number, fmt_temp, fmt_time, fmt_time_prose, inflect,
+    parse_fraction,
 };
 use crate::index::{Index, Kind, Node};
 use crate::model::{Attention, Id, Input, Step};
@@ -252,6 +253,8 @@ pub enum Segment {
     Time { text: String },
     /// The step's temperature.
     Temp { text: String },
+    /// A count that follows the scale: `{yield}`, `{portions}`.
+    Count { text: String },
 }
 
 impl Segment {
@@ -260,8 +263,45 @@ impl Segment {
             Self::Text { text }
             | Self::Input { text, .. }
             | Self::Time { text }
-            | Self::Temp { text } => text,
+            | Self::Temp { text }
+            | Self::Count { text } => text,
         }
+    }
+}
+
+/// Whether `name` is a placeholder the step fills from its own fields or the
+/// recipe's (`{yield}`, `{portions}`), and if so whether it can be filled. An
+/// input with the same id takes precedence, so documents written before a
+/// name became a placeholder read as they did.
+pub(crate) fn keyword(step: &Step, name: &str) -> Option<bool> {
+    if step.inputs.iter().any(|input| input.r#ref == name) {
+        return None;
+    }
+    match name {
+        "yield" => Some(true),
+        "portions" => Some(step.portions.is_some()),
+        _ => None,
+    }
+}
+
+fn keyword_segment(ix: &Index<'_>, step: &Step, name: &str, factor: f64) -> Option<Segment> {
+    #[allow(clippy::float_cmp)]
+    let exact = factor == 1.0;
+    match name {
+        "yield" => {
+            let made = &ix.doc().r#yield;
+            Some(Segment::Count {
+                text: format!("{} {}", fmt_count(made.qty * factor, exact), made.unit),
+            })
+        }
+        "portions" => step.portions.as_ref().map(|portions| Segment::Count {
+            text: format!(
+                "{} {}",
+                fmt_count(portions.qty * factor, exact),
+                portions.unit
+            ),
+        }),
+        _ => None,
     }
 }
 
@@ -282,6 +322,14 @@ pub fn render_step_segments(ix: &Index<'_>, step: &Step, factor: f64) -> Vec<Seg
             "temp" => step.temp.as_ref().map(|temp| Segment::Temp {
                 text: fmt_temp(temp, true),
             }),
+            id if keyword(step, id).is_some() => {
+                keyword_segment(ix, step, id, factor).map(|segment| match placeholder.label {
+                    Some(label) => Segment::Count {
+                        text: label.to_owned(),
+                    },
+                    None => segment,
+                })
+            }
             id => step
                 .inputs
                 .iter()

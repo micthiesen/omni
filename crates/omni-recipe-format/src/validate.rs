@@ -14,7 +14,8 @@ use crate::model::{
     Input, RecipeDoc, STEPS_MAX, Step, TITLE_MAX, is_valid_id,
 };
 use crate::py;
-use crate::text::{explicit_total, fraction_value, placeholders};
+use crate::text::{explicit_total, fraction_value, keyword, placeholders};
+use crate::unscaled::unscaled_numbers;
 
 /// The rule a problem breaks. Beyond the rules of the design's table:
 /// `bad_value` is a number, fraction, unit or required word that cannot be
@@ -56,6 +57,7 @@ pub enum Code {
     MissingTime,
     MissingSourceUrl,
     AwkwardAmount,
+    UnscaledNumber,
     // Reported by the library, not by `validate`: the household diet, which
     // the owner may override for one ingredient, and a recipe without a
     // picture of the dish.
@@ -103,6 +105,7 @@ impl Code {
             Self::MissingTime => "missing_time",
             Self::MissingSourceUrl => "missing_source_url",
             Self::AwkwardAmount => "awkward_amount",
+            Self::UnscaledNumber => "unscaled_number",
             Self::DietConflict => "diet_conflict",
             Self::MissingImage => "missing_image",
             Self::UnknownTag => "unknown_tag",
@@ -301,6 +304,7 @@ pub fn validate(doc: &RecipeDoc) -> Report {
             "set source.url to the page's address, so the original stays one tap away and duplicates are found",
         );
     }
+    check_unscaled(doc, &mut report);
     for awkward in crate::measure::awkward_amounts(doc) {
         report.warn(
             Code::AwkwardAmount,
@@ -326,6 +330,69 @@ pub fn validate(doc: &RecipeDoc) -> Report {
         );
     }
     report
+}
+
+/// Numbers in prose that would read the same at any scale: step text, cues
+/// and tips, and the prep and notes of ingredients and inputs.
+fn check_unscaled(doc: &RecipeDoc, report: &mut Report) {
+    let mut fields: Vec<(String, &str)> = Vec::new();
+    for component in &doc.components {
+        for ingredient in &component.ingredients {
+            let path = format!("ingredients.{}", ingredient.id);
+            fields.extend(
+                ingredient
+                    .prep
+                    .as_deref()
+                    .map(|t| (format!("{path}.prep"), t)),
+            );
+            fields.extend(
+                ingredient
+                    .note
+                    .as_deref()
+                    .map(|t| (format!("{path}.note"), t)),
+            );
+        }
+        for step in &component.steps {
+            let path = format!("steps.{}", step.id);
+            fields.push((format!("{path}.text"), step.text.as_str()));
+            fields.extend(step.until.as_deref().map(|t| (format!("{path}.until"), t)));
+            fields.extend(step.tip.as_deref().map(|t| (format!("{path}.tip"), t)));
+            for input in &step.inputs {
+                if let Some(prep) = input.prep.as_deref() {
+                    fields.push((format!("{path}.inputs.{}.prep", input.r#ref), prep));
+                }
+            }
+        }
+    }
+    let made = doc.r#yield.qty;
+    for (path, text) in fields {
+        for hit in unscaled_numbers(text) {
+            let hint = if hit.word.starts_with("batch") {
+                "say how many batches with the step's \"repeat\" and write {batches}; keep a count only when it stays true at any scale".to_owned()
+            } else if (hit.value - made).abs() < 1e-9 {
+                format!(
+                    "write {{yield}}, which reads \"{} {}\" scaled; keep a count only when it stays true at any scale (per item, per side)",
+                    fmt_amount_exact(Some(made), None),
+                    doc.r#yield.unit
+                )
+            } else {
+                format!(
+                    "give the step \"portions\": {{\"qty\": {}, \"unit\": \"{}\"}} and write {{portions}}; keep a count only when it stays true at any scale (per item, per side)",
+                    crate::py::fmt_g(hit.value),
+                    hit.word
+                )
+            };
+            report.warn(
+                Code::UnscaledNumber,
+                path.as_str(),
+                format!(
+                    "\"{} {}\" will not change when the recipe is scaled",
+                    hit.shown, hit.word
+                ),
+                hint,
+            );
+        }
+    }
 }
 
 fn usable(number: f64) -> bool {
@@ -480,6 +547,23 @@ fn check_step_limits(step: &Step, report: &mut Report) {
                 Code::BadValue,
                 format!("{path}.temp"),
                 format!("temp unit \"{}\" must be \"F\" or \"C\"", temp.unit),
+            );
+        }
+    }
+    if let Some(portions) = &step.portions {
+        if !(portions.qty.is_finite() && portions.qty > 0.0) {
+            report.error(
+                Code::BadValue,
+                format!("{path}.portions"),
+                "portions qty must be a number above 0",
+            );
+        }
+        if portions.unit.trim().is_empty() {
+            report.error_hint(
+                Code::BadValue,
+                format!("{path}.portions"),
+                "portions unit is required",
+                "say what the pieces are: \"pieces\", \"rounds\"",
             );
         }
     }
@@ -776,6 +860,17 @@ fn check_text(ix: &Index<'_>, step: &Step, step_path: &str, report: &mut Report)
                     Code::PlaceholderUnset,
                     path.as_str(),
                     format!("{{{id}}} is used but the step has no {id}"),
+                );
+            }
+            continue;
+        }
+        if let Some(set) = keyword(step, id) {
+            if !set {
+                report.error_hint(
+                    Code::PlaceholderUnset,
+                    path.as_str(),
+                    format!("{{{id}}} is used but the step has no {id}"),
+                    format!("give the step \"{id}\", or write the words without braces"),
                 );
             }
             continue;

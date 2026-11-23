@@ -94,6 +94,25 @@ standard measure plus spoons ("¼ cup + 2 tbsp"), grams to 5 from 50 g and to 10
 millilitres as spoons, and part of a kilogram or litre in grams or millilitres. A stored amount
 at scale 1 always reads exactly as written.
 
+## Step data beyond prose
+
+Prose does not follow the scale, so what changes with it is data on the step, rendered
+through placeholders. Every field is optional; a document without them reads exactly as before
+(the four sample recipes' list, chart and timeline goldens are unchanged). A placeholder name
+that is also the id of one of the step's inputs keeps its input meaning, so a document written
+before a name became a placeholder reads as it did.
+
+- **Counts** (`text.rs`, `unscaled.rs`). `{yield}` renders the scaled yield with its unit;
+  `portions: { qty, unit }` with `{portions}` renders a count the step divides the food into.
+  Scaled counts are whole (`format::fmt_count`), with "about" when rounding moves them more
+  than a tenth, and the `rescale` operation multiplies `portions`. The validator warns
+  `unscaled_number` for a number in step `text`, `until` or `tip`, or in an ingredient's or
+  input's `prep` or `note`, that is followed by a counted word: times, temperatures, sizes
+  (`mm`, `cm`, `in`, `x`), ratios, repeats (`times`, `sides`), parts of an item (`halves`),
+  ordinals, labels (`step 3`, `gas mark 4`) and measured amounts (left to
+  `literal_quantity`) are exempt, as are number words. The hint names `{yield}` when the number
+  equals the yield, `repeat` for batches, and `portions` otherwise.
+
 ## Tools
 
 All 24 are recommended `allow`: each changes only Omni's own recipe data and is

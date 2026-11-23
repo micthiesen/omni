@@ -64,7 +64,7 @@ fn the_document_schema_refuses_unknown_fields_and_keeps_enums_plain() {
         serde_json::json!(["web", "book", "person", "original", "crouton"])
     );
     let code = &inlined::<Report>()["properties"]["errors"]["items"]["properties"]["code"];
-    assert_eq!(code["enum"].as_array().unwrap().len(), 36);
+    assert_eq!(code["enum"].as_array().unwrap().len(), 37);
 }
 
 #[test]

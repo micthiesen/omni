@@ -47936,6 +47936,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -48241,7 +48242,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48288,6 +48289,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -48848,7 +48867,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -48895,6 +48914,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -49078,6 +49115,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -49180,6 +49218,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -49585,7 +49624,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -49632,6 +49671,24 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "portions": {
+                                      "type": "object",
+                                      "properties": {
+                                        "qty": {
+                                          "type": "number"
+                                        },
+                                        "unit": {
+                                          "type": "string",
+                                          "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                        }
+                                      },
+                                      "required": [
+                                        "qty",
+                                        "unit"
+                                      ],
+                                      "additionalProperties": false,
+                                      "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                     },
                                     "until": {
                                       "type": "string",
@@ -49855,7 +49912,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -49902,6 +49959,24 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "portions": {
+                                            "type": "object",
+                                            "properties": {
+                                              "qty": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "qty",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false,
+                                            "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                           },
                                           "until": {
                                             "type": "string",
@@ -50165,6 +50240,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -50247,6 +50323,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -50633,7 +50710,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -50680,6 +50757,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -50837,6 +50932,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -50919,6 +51015,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -51144,6 +51241,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -51352,6 +51450,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -103850,6 +103949,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -104155,7 +104255,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104202,6 +104302,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -104762,7 +104880,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -104809,6 +104927,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -104992,6 +105128,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -105094,6 +105231,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -105499,7 +105637,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -105546,6 +105684,24 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "portions": {
+                                      "type": "object",
+                                      "properties": {
+                                        "qty": {
+                                          "type": "number"
+                                        },
+                                        "unit": {
+                                          "type": "string",
+                                          "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                        }
+                                      },
+                                      "required": [
+                                        "qty",
+                                        "unit"
+                                      ],
+                                      "additionalProperties": false,
+                                      "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                     },
                                     "until": {
                                       "type": "string",
@@ -105769,7 +105925,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -105816,6 +105972,24 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "portions": {
+                                            "type": "object",
+                                            "properties": {
+                                              "qty": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "qty",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false,
+                                            "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                           },
                                           "until": {
                                             "type": "string",
@@ -106079,6 +106253,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -106161,6 +106336,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -106547,7 +106723,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -106594,6 +106770,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -106751,6 +106945,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -106833,6 +107028,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -107058,6 +107254,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -107266,6 +107463,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -159955,6 +160153,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -160260,7 +160459,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -160307,6 +160506,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -160867,7 +161084,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -160914,6 +161131,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -161097,6 +161332,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -161199,6 +161435,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -161604,7 +161841,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -161651,6 +161888,24 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "portions": {
+                                      "type": "object",
+                                      "properties": {
+                                        "qty": {
+                                          "type": "number"
+                                        },
+                                        "unit": {
+                                          "type": "string",
+                                          "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                        }
+                                      },
+                                      "required": [
+                                        "qty",
+                                        "unit"
+                                      ],
+                                      "additionalProperties": false,
+                                      "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                     },
                                     "until": {
                                       "type": "string",
@@ -161874,7 +162129,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -161921,6 +162176,24 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "portions": {
+                                            "type": "object",
+                                            "properties": {
+                                              "qty": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "qty",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false,
+                                            "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                           },
                                           "until": {
                                             "type": "string",
@@ -162184,6 +162457,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -162266,6 +162540,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -162652,7 +162927,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -162699,6 +162974,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -162856,6 +163149,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -162938,6 +163232,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -163163,6 +163458,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -163371,6 +163667,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -215321,6 +215618,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -215626,7 +215924,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -215673,6 +215971,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -216233,7 +216549,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -216280,6 +216596,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -216463,6 +216797,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -216565,6 +216900,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -216970,7 +217306,7 @@
                                     },
                                     "text": {
                                       "type": "string",
-                                      "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                      "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                     },
                                     "time": {
                                       "type": "object",
@@ -217017,6 +217353,24 @@
                                         "unit"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "portions": {
+                                      "type": "object",
+                                      "properties": {
+                                        "qty": {
+                                          "type": "number"
+                                        },
+                                        "unit": {
+                                          "type": "string",
+                                          "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                        }
+                                      },
+                                      "required": [
+                                        "qty",
+                                        "unit"
+                                      ],
+                                      "additionalProperties": false,
+                                      "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                     },
                                     "until": {
                                       "type": "string",
@@ -217240,7 +217594,7 @@
                                           },
                                           "text": {
                                             "type": "string",
-                                            "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                            "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                           },
                                           "time": {
                                             "type": "object",
@@ -217287,6 +217641,24 @@
                                               "unit"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "portions": {
+                                            "type": "object",
+                                            "properties": {
+                                              "qty": {
+                                                "type": "number"
+                                              },
+                                              "unit": {
+                                                "type": "string",
+                                                "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                              }
+                                            },
+                                            "required": [
+                                              "qty",
+                                              "unit"
+                                            ],
+                                            "additionalProperties": false,
+                                            "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                           },
                                           "until": {
                                             "type": "string",
@@ -217550,6 +217922,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -217632,6 +218005,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -218018,7 +218392,7 @@
                                       },
                                       "text": {
                                         "type": "string",
-                                        "description": "Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders."
+                                        "description": "Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and\n`{portions}` placeholders."
                                       },
                                       "time": {
                                         "type": "object",
@@ -218065,6 +218439,24 @@
                                           "unit"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "portions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "qty": {
+                                            "type": "number"
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "description": "\"pieces\", \"rounds\", \"wedges\"."
+                                          }
+                                        },
+                                        "required": [
+                                          "qty",
+                                          "unit"
+                                        ],
+                                        "additionalProperties": false,
+                                        "description": "What the step divides the food into, following the scale: `{portions}`\nrenders \"16 pieces\" at 1 and \"24 pieces\" at 1.5."
                                       },
                                       "until": {
                                         "type": "string",
@@ -218222,6 +218614,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -218304,6 +218697,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -218529,6 +218923,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",
@@ -218737,6 +219132,7 @@
                                 "missing_time",
                                 "missing_source_url",
                                 "awkward_amount",
+                                "unscaled_number",
                                 "diet_conflict",
                                 "missing_image",
                                 "unknown_tag",

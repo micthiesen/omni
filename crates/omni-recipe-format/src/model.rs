@@ -169,12 +169,17 @@ pub struct Step {
     pub action: String,
     /// The edges of the graph; empty for setup steps such as preheating.
     pub inputs: Vec<Input>,
-    /// Prose with `{id}`, `{id|label}`, `{time}` and `{temp}` placeholders.
+    /// Prose with `{id}`, `{id|label}`, `{time}`, `{temp}`, `{yield}` and
+    /// `{portions}` placeholders.
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<StepTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temp: Option<Temp>,
+    /// What the step divides the food into, following the scale: `{portions}`
+    /// renders "16 pieces" at 1 and "24 pieces" at 1.5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portions: Option<Portions>,
     /// Doneness cue: "edges golden, centres soft".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<String>,
@@ -228,6 +233,17 @@ pub struct Temp {
     #[serde(serialize_with = "number")]
     pub value: f64,
     /// "F" or "C".
+    pub unit: String,
+}
+
+/// A count a step divides the food into: "16 pieces".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Portions {
+    #[serde(serialize_with = "number")]
+    pub qty: f64,
+    /// "pieces", "rounds", "wedges".
     pub unit: String,
 }
 

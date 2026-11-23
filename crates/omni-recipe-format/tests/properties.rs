@@ -7,10 +7,10 @@
 
 use omni_recipe_format::{
     Amount, Attention, Block, Byproduct, CellKind, Component, Index, Ingredient, Input, Kind,
-    MakeAhead, Marks, Op, RecipeDoc, Source, SourceKind, Step, StepTime, Temp, TimeOverride, Yield,
-    apply_ops, chart_ascii, chart_blocks, chart_html, cook_marks, derived_time, diff_summary,
-    equipment, gather_list, list_view, meanwhile, ready_steps, render_list, render_timeline,
-    scaled, search_text, step_inputs, timeline, tokens, validate,
+    MakeAhead, Marks, Op, Portions, RecipeDoc, Source, SourceKind, Step, StepTime, Temp,
+    TimeOverride, Yield, apply_ops, chart_ascii, chart_blocks, chart_html, cook_marks,
+    derived_time, diff_summary, equipment, gather_list, list_view, meanwhile, ready_steps,
+    render_list, render_timeline, scaled, search_text, step_inputs, timeline, tokens, validate,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -297,8 +297,12 @@ fn valid_doc(bytes: &[u8]) -> RecipeDoc {
     }
 }
 
-const WILD_IDS: [&str; 10] = ["a", "b", "c", "d", "e", "time", "temp", "", "Bad Id", "x1"];
-const WILD_TEXT: [&str; 12] = [
+const WILD_IDS: [&str; 12] = [
+    "a", "b", "c", "d", "e", "time", "temp", "", "Bad Id", "x1", "yield", "portions",
+];
+const WILD_TEXT: [&str; 14] = [
+    "Cut {a} into {portions} for {yield|the batch}: 8 pieces, 2-3 cm, 10 balls.",
+    "{heat} {heat:sear} {size} {size:pan} {batches} {yield}",
     "",
     "mix",
     "Add {a} and {b|the b} for {time} at {temp}.",
@@ -384,6 +388,10 @@ fn wild_step(tape: &mut Tape<'_>) -> Step {
         temp: tape.chance(30).then(|| Temp {
             value: tape.pick(&WILD_NUMBERS),
             unit: tape.pick(&WILD_UNITS).to_owned(),
+        }),
+        portions: tape.chance(20).then(|| Portions {
+            qty: tape.pick(&WILD_NUMBERS),
+            unit: tape.pick(&WILD_TEXT).to_owned(),
         }),
         until: wild_text(tape),
         equipment: (0..tape.below(3))

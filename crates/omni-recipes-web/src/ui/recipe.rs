@@ -31,7 +31,8 @@ pub fn segments_view(segments: &[Segment]) -> Vec<AnyView> {
                 ..
             }
             | Segment::Time { text }
-            | Segment::Temp { text } => view! { <b>{text.clone()}</b> }.into_any(),
+            | Segment::Temp { text }
+            | Segment::Count { text } => view! { <b>{text.clone()}</b> }.into_any(),
             other => other.text().to_owned().into_any(),
         })
         .collect()
