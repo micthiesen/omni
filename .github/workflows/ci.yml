@@ -67,6 +67,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # The cache save deletes superseded entries of its own flavor.
+    permissions:
+      contents: read
+      actions: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,6 +139,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # The cache save deletes superseded entries of its own flavor.
+    permissions:
+      contents: read
+      actions: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -200,6 +210,11 @@ jobs:
     timeout-minutes: 45
     container: rust:1.97.1-bookworm
 
+    # The cache save deletes superseded entries of its own flavor.
+    permissions:
+      contents: read
+      actions: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -262,6 +277,11 @@ jobs:
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
+    # The cache save deletes superseded entries of its own flavor.
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout code

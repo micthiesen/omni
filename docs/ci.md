@@ -59,8 +59,14 @@ workspace crates and recompile only what changed:
    bookworm glibc as the `node:*-slim` runtime. The Dockerfile's default
    `SERVER_SOURCE=build` still compiles them itself (with cargo-chef layers)
    for a plain local `docker build`, and `WEB_SOURCE=build` runs trunk there.
-6. **Superseded entries are pruned.** `prune` keeps only the newest entry of
-   each Cargo cache name, across toolchains. A cache grows with each
+6. **Superseded entries are pruned.** Before saving on `main`, each job
+   deletes its flavor's older entries (`scripts/ci/drop-superseded-cache.py`,
+   hence `actions: write`); it has already restored the one it needed. Saving
+   beside them would pass the 10 GB quota mid-run, and GitHub would evict the
+   least recently used entries, which are the Docker layer cache (the first
+   run of this layout lost it that way and spent 5 minutes rebuilding and
+   re-exporting it). `prune` then keeps only the newest entry of each Cargo
+   cache name, across toolchains. A cache grows with each
    dependency bump until the toolchain changes; check `gh cache list` sizes
    if the repository nears its 10 GB quota. The `test` cache keeps the linked
    test executables: each crate's integration tests are one binary

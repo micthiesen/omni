@@ -30,6 +30,18 @@ runs:
           target/
         key: cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
         restore-keys: cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+    # Drop this flavor's older entries first (the job already restored the one
+    # it needed): saving beside them would pass the 10 GB quota, and GitHub
+    # would evict the least recently used entries, the Docker layer cache.
+    # Needs `actions: write`.
+    - if: inputs.mode == 'save' && github.ref == 'refs/heads/main'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: >-
+        python3 scripts/ci/drop-superseded-cache.py
+        'cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-'
+        'cargo-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}'
     # The commit the saved build comes from; restore-mtimes.py marks every
     # file changed since it as new, so nothing committed earlier is skipped.
     - if: inputs.mode == 'save' && github.ref == 'refs/heads/main'
