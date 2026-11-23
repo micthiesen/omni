@@ -9,16 +9,14 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::repo_root;
+use crate::cargo_command;
 
 /// Regenerates the snapshots, or with `check` fails when any differs.
 pub fn mcp_golden(check: bool) -> Result<()> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut command = std::process::Command::new(cargo);
+    let mut command = cargo_command();
     command
         .args(["test", "--locked", "-p", "omni-mcp", "--test", "mcp_golden"])
-        .args(["--", "--nocapture"])
-        .current_dir(repo_root());
+        .args(["--", "--nocapture"]);
     if check {
         command.env_remove("OMNI_MCP_GOLDEN");
     } else {
@@ -42,7 +40,7 @@ pub fn mcp_golden(check: bool) -> Result<()> {
 mod tests {
     use serde_json::Value;
 
-    use super::*;
+    use crate::repo_root;
 
     /// The published policy inventory and the golden copy.
     const POLICY_PATHS: [&str; 2] = [

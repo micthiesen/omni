@@ -1,153 +1,199 @@
-//! `hygiene`: keep Cargo's build directories from silently growing until builds slow
-//! down.
+//! `hygiene`: keep abandoned build directories from filling the disk, without
+//! ever deleting from a build directory someone is using.
 //!
-//! Cargo never deletes superseded artifacts: every feature set, profile, target and
-//! source change leaves dependency objects and incremental sessions behind, and a
-//! directory with millions of entries makes every rustc invocation slow. This repo
-//! also keeps per-agent build directories under `target/` (`target/agents/<name>`)
-//! next to the native and `wasm32-unknown-unknown` profiles, so the check measures
-//! every Cargo profile directory (one holding `.fingerprint`) below `target/` and
-//! below `CARGO_TARGET_DIR` when that lies elsewhere. Above the limit
-//! (`OMNI_TARGET_LIMIT_GIB`, default 40) it removes the oldest artifacts with
-//! `cargo sweep --maxsize` (which walks nested build directories too) until half
-//! the limit remains, then
-//! prunes the least recently changed incremental directories, which `cargo sweep`
-//! leaves alone; rustc rebuilds missing incremental state. Other files under
-//! `target/` are never measured or touched. Disk usage alone never fails the gate.
+//! Deleting artifacts from the directory in use forces the next build to start
+//! cold (15 minutes or more for this workspace), and a size-based sweep did that
+//! on every gate once one full build passed the limit. So this check removes
+//! only whole directories under `target/agents/` that nothing has used for
+//! `OMNI_TARGET_STALE_HOURS` (default 48): neither their `.omni-last-used`
+//! stamp, which every run writes into the directory in use, nor any profile's
+//! `deps/` directory, which every build rewrites, changed in that time. The
+//! directory in use (`CARGO_TARGET_DIR`, else `target/`) is never deleted from.
+//! Then it measures every Cargo profile directory (one holding `.fingerprint`)
+//! and, above `OMNI_TARGET_LIMIT_GIB` (default 80), names the largest build
+//! directory and suggests `cargo clean`. Disk usage alone never fails the gate.
 
 use std::{
     path::{Path, PathBuf},
-    process::Command,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result};
 
-/// Above this many GiB of Cargo artifacts, the check sweeps stale ones.
-const DEFAULT_LIMIT_GIB: u64 = 40;
+const DEFAULT_LIMIT_GIB: u64 = 80;
 const LIMIT_VARIABLE: &str = "OMNI_TARGET_LIMIT_GIB";
+const DEFAULT_STALE_HOURS: u64 = 48;
+const STALE_VARIABLE: &str = "OMNI_TARGET_STALE_HOURS";
+/// Written into the directory in use on every run.
+const STAMP: &str = ".omni-last-used";
 const GIB: u64 = 1 << 30;
 /// `target/agents/<name>/<triple>/<profile>` is the deepest layout in use.
 const MAX_DEPTH: usize = 5;
 
-/// Measures Cargo artifacts and sweeps stale ones when they exceed the limit.
+/// Removes stale agent build directories and reports Cargo artifact usage.
 pub fn maintain(workspace: &Path) -> Result<()> {
     let workspace = &workspace
         .canonicalize()
         .with_context(|| format!("resolving {}", workspace.display()))?;
-    let limit = limit_gib(std::env::var(LIMIT_VARIABLE).ok().as_deref());
-    let roots = search_roots(workspace);
-    let before = artifact_bytes(&roots)?;
-    if before <= limit * GIB {
-        println!(
-            "hygiene: {} of Cargo artifacts (limit {limit} GiB)",
-            gib(before)
-        );
-        return Ok(());
-    }
-    let goal = limit / 2 * GIB;
-    println!(
-        "hygiene: {} of Cargo artifacts exceeds {limit} GiB; removing the oldest down to {} GiB",
-        gib(before),
-        limit / 2
+    let limit = positive(
+        std::env::var(LIMIT_VARIABLE).ok().as_deref(),
+        DEFAULT_LIMIT_GIB,
     );
-    // `cargo sweep` walks a whole build directory, nested agent directories
-    // included, so each search root is swept once with its share of the goal.
-    for directory in &roots {
-        let bytes = artifact_bytes(std::slice::from_ref(directory))?;
-        if bytes == 0 {
-            continue;
-        }
-        let share = proportional_share(bytes, before, goal);
-        let swept = Command::new(cargo())
-            .args(["sweep", "--maxsize", &format!("{}MB", share / (1 << 20))])
-            .env("CARGO_TARGET_DIR", directory)
-            .current_dir(workspace)
-            .status();
-        if !matches!(swept, Ok(status) if status.success()) {
-            println!(
-                "hygiene: `cargo sweep` is unavailable (brew install cargo-sweep) or failed for {}; pruning incremental state only",
-                directory.display()
-            );
-        }
+    let stale_hours = positive(
+        std::env::var(STALE_VARIABLE).ok().as_deref(),
+        DEFAULT_STALE_HOURS,
+    );
+    let target = workspace.join("target");
+    let in_use = in_use_directory(workspace);
+    stamp(&in_use)?;
+    let in_use = in_use.canonicalize().unwrap_or(in_use);
+
+    let stale_after = Duration::from_secs(stale_hours * 3600);
+    let agents = target.join("agents");
+    for directory in stale_agent_directories(&agents, &in_use, SystemTime::now(), stale_after)? {
+        let bytes = artifact_bytes(std::slice::from_ref(&directory))?;
+        std::fs::remove_dir_all(&directory)
+            .with_context(|| format!("removing {}", directory.display()))?;
+        println!(
+            "hygiene: removed {} ({}, unused for over {stale_hours} h)",
+            directory.display(),
+            gib(bytes)
+        );
     }
-    prune_incremental(&roots, goal)?;
-    let after = artifact_bytes(&roots)?;
-    println!("hygiene: {} -> {}", gib(before), gib(after));
-    if after > limit * GIB {
-        println!("hygiene: still above {limit} GiB; run `cargo clean` when convenient");
+
+    let directories = build_directories(&target, &in_use);
+    let mut sizes = Vec::new();
+    for directory in &directories {
+        sizes.push((profile_bytes(directory, &agents)?, directory));
+    }
+    let total: u64 = sizes.iter().map(|(bytes, _)| bytes).sum();
+    println!(
+        "hygiene: {} of Cargo artifacts (limit {limit} GiB)",
+        gib(total)
+    );
+    if total > limit * GIB
+        && let Some((bytes, largest)) = sizes.iter().max_by_key(|(bytes, _)| *bytes)
+    {
+        println!(
+            "hygiene: above {limit} GiB; the largest build directory is {} ({}). \
+             Run `cargo clean` there when no build is using it.",
+            largest.display(),
+            gib(*bytes)
+        );
     }
     Ok(())
 }
 
-fn cargo() -> std::ffi::OsString {
-    std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
-}
-
-/// The configured limit; an unset or unparsable value keeps the default.
-fn limit_gib(value: Option<&str>) -> u64 {
+/// A positive whole number from `value`; unset or unparsable keeps `default`.
+fn positive(value: Option<&str>, default: u64) -> u64 {
     value
         .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|limit| *limit > 0)
-        .unwrap_or(DEFAULT_LIMIT_GIB)
+        .filter(|number| *number > 0)
+        .unwrap_or(default)
 }
 
-/// `target/` plus `CARGO_TARGET_DIR` when it is not already inside it.
-fn search_roots(workspace: &Path) -> Vec<PathBuf> {
-    let target = workspace.join("target");
-    let mut roots = vec![target.clone()];
-    if let Some(custom) = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
-        let custom = if custom.is_absolute() {
-            custom
-        } else {
-            workspace.join(custom)
-        };
-        let inside = match (custom.canonicalize(), target.canonicalize()) {
-            (Ok(custom), Ok(target)) => custom.starts_with(target),
-            _ => custom.starts_with(&target),
-        };
-        if !inside {
-            roots.push(custom);
-        }
+/// `CARGO_TARGET_DIR` (relative to the workspace) when set, else `target/`.
+fn in_use_directory(workspace: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(custom) if custom.is_absolute() => custom,
+        Some(custom) => workspace.join(custom),
+        None => workspace.join("target"),
     }
-    roots
 }
 
-/// The part of `goal` a build directory holding `bytes` of `total` may keep.
-fn proportional_share(bytes: u64, total: u64, goal: u64) -> u64 {
-    if total == 0 {
-        return goal;
-    }
-    u64::try_from(u128::from(bytes) * u128::from(goal) / u128::from(total)).unwrap_or(goal)
+fn stamp(directory: &Path) -> Result<()> {
+    std::fs::create_dir_all(directory)
+        .with_context(|| format!("creating {}", directory.display()))?;
+    let path = directory.join(STAMP);
+    std::fs::write(&path, b"").with_context(|| format!("writing {}", path.display()))
 }
 
-/// Removes the least recently changed per-crate incremental directories until the
-/// artifacts fit `goal` bytes.
-fn prune_incremental(roots: &[PathBuf], goal: u64) -> Result<()> {
-    let mut total = artifact_bytes(roots)?;
-    let mut sessions = Vec::new();
-    for profile in profile_directories(roots)? {
-        let Ok(entries) = std::fs::read_dir(profile.join("incremental")) else {
+/// Directories under `agents` whose stamp, own entry and every profile `deps/`
+/// were last modified before `now - stale_after`, excluding `in_use` and any
+/// directory that contains it.
+fn stale_agent_directories(
+    agents: &Path,
+    in_use: &Path,
+    now: SystemTime,
+    stale_after: Duration,
+) -> Result<Vec<PathBuf>> {
+    let Ok(entries) = std::fs::read_dir(agents) else {
+        return Ok(Vec::new());
+    };
+    let cutoff = now
+        .checked_sub(stale_after)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let mut stale = Vec::new();
+    for entry in entries {
+        let entry = entry.with_context(|| format!("reading {}", agents.display()))?;
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
-        };
-        for entry in entries.flatten() {
-            let modified = entry
-                .metadata()
+        }
+        let directory = entry.path();
+        let canonical = directory
+            .canonicalize()
+            .unwrap_or_else(|_| directory.clone());
+        if in_use.starts_with(&canonical) {
+            continue;
+        }
+        if last_used(&directory)? < cutoff {
+            stale.push(directory);
+        }
+    }
+    stale.sort();
+    Ok(stale)
+}
+
+/// The newest of the directory's own entry, its stamp and its profiles' `deps/`.
+fn last_used(directory: &Path) -> Result<SystemTime> {
+    let mut candidates = vec![directory.to_path_buf(), directory.join(STAMP)];
+    for profile in profile_directories(&[directory.to_path_buf()])? {
+        candidates.push(profile.join("deps"));
+    }
+    Ok(candidates
+        .iter()
+        .filter_map(|path| {
+            path.metadata()
                 .and_then(|metadata| metadata.modified())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            sessions.push((modified, entry.path()));
-        }
+                .ok()
+        })
+        .max()
+        .unwrap_or(SystemTime::UNIX_EPOCH))
+}
+
+/// `target/`, each directory under `target/agents/`, and the directory in use
+/// when it lies outside `target/`.
+fn build_directories(target: &Path, in_use: &Path) -> Vec<PathBuf> {
+    let mut directories = vec![target.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(target.join("agents")) {
+        let mut agents: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect();
+        agents.sort();
+        directories.extend(agents);
     }
-    sessions.sort();
-    for (_, path) in sessions {
-        if total <= goal {
-            break;
-        }
-        let bytes = tree_bytes(&path)?;
-        std::fs::remove_dir_all(&path).with_context(|| format!("removing {}", path.display()))?;
-        total = total.saturating_sub(bytes);
+    let target = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
+    if !in_use.starts_with(&target) {
+        directories.push(in_use.to_path_buf());
     }
-    Ok(())
+    directories
+}
+
+/// Bytes in the profile directories below `directory`, leaving out `agents`
+/// (measured as directories of their own).
+fn profile_bytes(directory: &Path, agents: &Path) -> Result<u64> {
+    let mut total = 0;
+    for profile in profile_directories(&[directory.to_path_buf()])? {
+        if !directory.starts_with(agents) && profile.starts_with(agents) {
+            continue;
+        }
+        total += tree_bytes(&profile)?;
+    }
+    Ok(total)
 }
 
 /// Bytes in every Cargo profile directory below `roots`.
@@ -211,15 +257,96 @@ fn gib(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
+
+    const HOUR: Duration = Duration::from_secs(3600);
+    const STALE: Duration = Duration::from_secs(48 * 3600);
 
     fn write(path: &Path, bytes: usize) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(path, vec![0; bytes])
+    }
+
+    fn age(path: &Path, now: SystemTime, by: Duration) -> std::io::Result<()> {
+        std::fs::File::open(path)?.set_modified(now - by)
+    }
+
+    /// An agent build directory with one native profile, every entry aged `by`.
+    fn agent(target: &Path, name: &str, now: SystemTime, by: Duration) -> Result<PathBuf> {
+        let directory = target.join("agents").join(name);
+        std::fs::create_dir_all(directory.join("debug/.fingerprint"))?;
+        write(&directory.join("debug/deps/libx.rlib"), 100)?;
+        write(
+            &directory.join("debug/incremental/x-1/query-cache.bin"),
+            100,
+        )?;
+        age(&directory.join("debug/deps"), now, by)?;
+        age(&directory, now, by)?;
+        Ok(directory)
+    }
+
+    #[test]
+    fn a_stale_agent_directory_is_removed_whole() -> Result<()> {
+        let scratch = tempfile::tempdir()?;
+        let target = scratch.path().join("target");
+        let now = SystemTime::now();
+        let old = agent(&target, "old", now, STALE + HOUR)?;
+        let in_use = target.clone();
+
+        let stale = stale_agent_directories(&target.join("agents"), &in_use, now, STALE)?;
+        assert_eq!(stale, vec![old]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_recently_used_agent_directory_is_kept() -> Result<()> {
+        let scratch = tempfile::tempdir()?;
+        let target = scratch.path().join("target");
+        let now = SystemTime::now();
+        // Built an hour ago.
+        let built = agent(&target, "built", now, STALE + HOUR)?;
+        age(&built.join("debug/deps"), now, HOUR)?;
+        // Not built for days, but a gate ran in it an hour ago.
+        let stamped = agent(&target, "stamped", now, STALE + HOUR)?;
+        write(&stamped.join(STAMP), 0)?;
+        age(&stamped.join(STAMP), now, HOUR)?;
+        age(&stamped, now, STALE + HOUR)?;
+        // A wasm32 profile counts like the native one.
+        let wasm = agent(&target, "wasm", now, STALE + HOUR)?;
+        let wasm_profile = wasm.join("wasm32-unknown-unknown/debug");
+        std::fs::create_dir_all(wasm_profile.join(".fingerprint"))?;
+        write(&wasm_profile.join("deps/liby.rlib"), 100)?;
+        age(&wasm, now, STALE + HOUR)?;
+        age(&wasm.join("wasm32-unknown-unknown"), now, STALE + HOUR)?;
+
+        let stale = stale_agent_directories(&target.join("agents"), &target, now, STALE)?;
+        assert!(stale.is_empty(), "{stale:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn the_directory_in_use_is_never_touched() -> Result<()> {
+        let scratch = tempfile::tempdir()?;
+        let target = scratch.path().join("target");
+        let now = SystemTime::now();
+        let current = agent(&target, "current", now, STALE * 10)?;
+        let in_use = current.canonicalize()?;
+
+        let stale = stale_agent_directories(&target.join("agents"), &in_use, now, STALE)?;
+        assert!(stale.is_empty(), "{stale:?}");
+
+        // The stamp is the only write to the directory in use.
+        stamp(&in_use)?;
+        assert!(in_use.join(STAMP).is_file());
+        assert!(in_use.join("debug/deps/libx.rlib").is_file());
+        assert!(
+            in_use
+                .join("debug/incremental/x-1/query-cache.bin")
+                .is_file()
+        );
+        Ok(())
     }
 
     #[test]
@@ -241,43 +368,19 @@ mod tests {
 
         assert_eq!(artifact_bytes(std::slice::from_ref(&target))?, 1800);
         assert_eq!(artifact_bytes(&[scratch.path().join("missing")])?, 0);
+        // Each build directory is measured on its own.
+        let agents = target.join("agents");
+        assert_eq!(profile_bytes(&target, &agents)?, 1500);
+        assert_eq!(profile_bytes(&agent, &agents)?, 300);
         Ok(())
     }
 
     #[test]
-    fn the_oldest_incremental_state_is_pruned_first() -> Result<()> {
-        let scratch = tempfile::tempdir()?;
-        let target = scratch.path().join("target");
-        let incremental = target.join("debug/incremental");
-        std::fs::create_dir_all(target.join("debug/.fingerprint"))?;
-        let now = SystemTime::now();
-        for (name, age) in [("old-1", 60), ("new-2", 0)] {
-            let session = incremental.join(name);
-            write(&session.join("query-cache.bin"), 1000)?;
-            std::fs::File::open(&session)?.set_modified(now - Duration::from_secs(age))?;
-        }
-
-        prune_incremental(std::slice::from_ref(&target), 1500)?;
-        assert!(!incremental.join("old-1").exists());
-        assert!(incremental.join("new-2").exists());
-        assert_eq!(artifact_bytes(&[target])?, 1000);
-        Ok(())
-    }
-
-    #[test]
-    fn the_limit_defaults_to_forty_gib() {
-        assert_eq!(limit_gib(None), 40);
-        assert_eq!(limit_gib(Some("12")), 12);
-        assert_eq!(limit_gib(Some(" 60 ")), 60);
-        assert_eq!(limit_gib(Some("0")), 40);
-        assert_eq!(limit_gib(Some("lots")), 40);
-    }
-
-    #[test]
-    fn each_build_directory_keeps_its_share_of_the_goal() {
-        assert_eq!(proportional_share(30, 40, 20), 15);
-        assert_eq!(proportional_share(10, 40, 20), 5);
-        assert_eq!(proportional_share(0, 0, 20), 20);
-        assert_eq!(proportional_share(u64::MAX, u64::MAX, 20 * GIB), 20 * GIB);
+    fn limits_default_when_unset_or_invalid() {
+        assert_eq!(positive(None, DEFAULT_LIMIT_GIB), 80);
+        assert_eq!(positive(Some("12"), DEFAULT_LIMIT_GIB), 12);
+        assert_eq!(positive(Some(" 60 "), DEFAULT_LIMIT_GIB), 60);
+        assert_eq!(positive(Some("0"), DEFAULT_STALE_HOURS), 48);
+        assert_eq!(positive(Some("lots"), DEFAULT_STALE_HOURS), 48);
     }
 }

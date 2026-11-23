@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-use crate::repo_root;
+use crate::cargo_command;
 
 #[derive(Deserialize)]
 struct Metadata {
@@ -166,9 +166,8 @@ pub fn violations(packages: &Graph) -> Vec<String> {
 }
 
 pub fn deps_check() -> Result<()> {
-    let output = std::process::Command::new("cargo")
+    let output = cargo_command()
         .args(["metadata", "--format-version", "1", "--no-deps"])
-        .current_dir(repo_root())
         .output()
         .context("running cargo metadata")?;
     if !output.status.success() {

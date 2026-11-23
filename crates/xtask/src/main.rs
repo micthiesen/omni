@@ -36,7 +36,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("deps-check", "enforce the crate dependency direction rules"),
     (
         "hygiene",
-        "measure Cargo build directories under target/ and sweep the oldest artifacts above OMNI_TARGET_LIMIT_GIB (default 40)",
+        "remove build directories under target/agents/ unused for OMNI_TARGET_STALE_HOURS (default 48) and report Cargo artifact usage; never deletes from the directory in use",
     ),
     (
         "gate",
@@ -54,13 +54,38 @@ const WASM_CRATES: &[&str] = &[
     "omni-recipe-format",
 ];
 
+/// A `cargo` command run from the repository root without the package variables
+/// `cargo run` set for xtask itself. Build scripts such as ring's declare
+/// `rerun-if-env-changed` on them, so inheriting them would rebuild those crates
+/// (and everything linking them) each time a session switches between
+/// `cargo xtask` and plain `cargo`.
+pub fn cargo_command() -> std::process::Command {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = std::process::Command::new(cargo);
+    command.current_dir(repo_root());
+    for (name, _) in std::env::vars_os() {
+        let text = name.to_string_lossy();
+        if text.starts_with("CARGO_PKG_")
+            || matches!(
+                text.as_ref(),
+                "CARGO_MANIFEST_DIR"
+                    | "CARGO_MANIFEST_PATH"
+                    | "CARGO_CRATE_NAME"
+                    | "CARGO_BIN_NAME"
+                    | "CARGO_PRIMARY_PACKAGE"
+            )
+        {
+            command.env_remove(&name);
+        }
+    }
+    command
+}
+
 /// Runs `cargo <args>` from the repository root, failing on a non-zero exit.
 fn cargo(args: &[&str]) -> Result<()> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     println!("gate: cargo {}", args.join(" "));
-    let status = std::process::Command::new(cargo)
+    let status = cargo_command()
         .args(args)
-        .current_dir(repo_root())
         .status()
         .context("starting cargo")?;
     if !status.success() {
@@ -72,8 +97,7 @@ fn cargo(args: &[&str]) -> Result<()> {
 /// Whether `cargo nextest` runs. The workspace has no doctests, so nextest covers
 /// every test `cargo test` would run.
 fn nextest_installed() -> bool {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    std::process::Command::new(cargo)
+    cargo_command()
         .args(["nextest", "--version"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
