@@ -5,7 +5,8 @@
 #              segmentation; speaker and parakeet from the previous image
 #   rust:      chef -> planner -> server-build (cook, then workspace build),
 #              or server-prebuilt from CI (SERVER_SOURCE)
-#                             \-> web (cook, then trunk twice: Omni and Fond) -> web-dist
+#                             \-> web (cook, then trunk twice: Omni and Fond) -> web-dist-build,
+#              or web-dist-prebuilt from CI (WEB_SOURCE)
 #   runtime:   apt layer, then static assets, then the frequently changing outputs
 # Every download is pinned and SHA-256 verified in its own stage, so it caches
 # independently of the Rust sources and of every other download.
@@ -18,6 +19,10 @@
 # prebuilt/server/ in the context, where CI's server job puts binaries compiled
 # in this same Rust image with a whole-target cache (docs/ci.md).
 ARG SERVER_SOURCE=build
+# The same for the two compressed web bundles: build (default) runs trunk here;
+# prebuilt takes them from prebuilt/web/{dist,recipes-dist}, where CI's web job
+# puts bundles built and compressed with the same pinned tools.
+ARG WEB_SOURCE=build
 
 # --- Downloads (the Rust image already carries curl, bzip2 and sha256sum) ---
 FROM rust:1.97.1-bookworm AS fetch
@@ -188,7 +193,7 @@ COPY crates/omni-recipes-web ./crates/omni-recipes-web
 RUN cd crates/omni-recipes-web && trunk build --release --offline --locked
 
 # The SPA service serves .br/.gz siblings when the client accepts them.
-FROM fetch AS web-dist
+FROM fetch AS web-dist-build
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
@@ -199,6 +204,12 @@ COPY --from=web /src/crates/omni-recipes-web/dist /recipes-dist
 RUN find /dist /recipes-dist -type f \
     \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
     -exec brotli -k -q 11 {} + -exec gzip -k -n -9 {} +
+
+FROM scratch AS web-dist-prebuilt
+COPY prebuilt/web/dist /dist
+COPY prebuilt/web/recipes-dist /recipes-dist
+
+FROM web-dist-${WEB_SOURCE} AS web-dist
 
 # Stdio MCP servers the gateway can run (gateway/bundled.rs), installed from the
 # committed lockfile: exact versions, integrity hashes, no install scripts.

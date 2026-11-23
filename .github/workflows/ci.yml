@@ -9,12 +9,32 @@ on:
     paths-ignore:
       - slate/**
       - .github/workflows/slate.yml
+      # Prose, agent instructions and the iOS app never reach the image or a
+      # Rust test. docs/mcp-policy.json (read by omni-mcp tests) and
+      # docs/licenses/ (copied into the image) still trigger a run.
+      - 'docs/**/*.md'
+      - AGENTS.md
+      - README.md
+      - .agents/**
+      - ios/**
+      - scripts/ios-live/**
+      - scripts/brand/**
   pull_request:
     branches:
       - main
     paths-ignore:
       - slate/**
       - .github/workflows/slate.yml
+      # Prose, agent instructions and the iOS app never reach the image or a
+      # Rust test. docs/mcp-policy.json (read by omni-mcp tests) and
+      # docs/licenses/ (copied into the image) still trigger a run.
+      - 'docs/**/*.md'
+      - AGENTS.md
+      - README.md
+      - .agents/**
+      - ios/**
+      - scripts/ios-live/**
+      - scripts/brand/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,17 +50,17 @@ env:
 
 # Actions are pinned to full commit SHAs; the comment names the release.
 #
-# lint, test and server start together. Each restores its own whole-target
-# cache (.github/actions/cargo-cache) saved by the newest main commit, with
-# file mtimes set to commit times, so only crates changed since then rebuild.
-# See docs/ci.md.
+# lint, test, server and web start together. Each restores its own
+# whole-target cache (.github/actions/cargo-cache) saved by the newest main
+# commit, with file mtimes set to commit times, so only crates changed since
+# then rebuild. See docs/ci.md.
 #
 # server compiles the release binaries in the Dockerfile's own Rust image (same
-# glibc as the runtime); image packages them (SERVER_SOURCE=prebuilt) and writes
-# its layers to the GitHub Actions cache without pushing. publish runs only after
-# lint, test and image pass and repeats the same build, then fully cached, to
-# push; nothing untested reaches the registry. Pull requests build everything but
-# neither push nor save caches.
+# glibc as the runtime) and web builds both release bundles. publish runs only
+# after all four pass and packages both artifacts (SERVER_SOURCE=prebuilt,
+# WEB_SOURCE=prebuilt) in one Docker build that pushes; nothing untested
+# reaches the registry. Pull requests build everything but neither push nor
+# save caches.
 
 jobs:
   lint:
@@ -92,14 +112,15 @@ jobs:
           -p omni-recipes-web -p omni-recipe-format
           --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
 
+      - name: Check crate dependency direction
+        run: cargo xtask deps-check
+
       - name: Save the lint build
+        # After deps-check, so the cache holds xtask's build too.
         uses: ./.github/actions/cargo-cache
         with:
           name: lint
           mode: save
-
-      - name: Check crate dependency direction
-        run: cargo xtask deps-check
 
       - name: Install pinned cargo-deny
         uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
@@ -154,20 +175,14 @@ jobs:
         with:
           tool: cargo-nextest@0.9.143
 
+      - name: Build tests
+        run: cargo nextest run --workspace --locked --profile ci --no-run
+
       - name: Run tests
         # The ci profile in .config/nextest.toml: no retries, no fail-fast, and
         # hung tests are terminated. The workspace has no doctests, which nextest
         # would skip; add `cargo test --workspace --locked --doc` if that changes.
         run: cargo nextest run --workspace --locked --profile ci
-
-      - name: Drop the linked test executables before saving
-        # Each links the whole dependency graph (4.5 GB together, most of the
-        # cache quota); relinking them costs less than storing them. Proc-macro
-        # libraries (.so) and build scripts stay, or their dependents rebuild.
-        if: success() || failure()
-        run: >-
-          find target/debug/deps -maxdepth 1 -type f -perm -u+x
-          ! -name '*.so' ! -name '*.d' -delete
 
       - name: Save the test build
         # A failing test still leaves a valid build to start the fix from.
@@ -242,46 +257,76 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # The image's web stage runs the release trunk builds (Omni and Fond) with the
-  # pinned tools, so the frontend builds are checked here rather than in lint or
-  # test.
-  image:
+  # Both release bundles (Omni and Fond) with the pinned tools, compressed the
+  # way the Dockerfile's web-dist-build stage does, for WEB_SOURCE=prebuilt.
+  web:
     runs-on: ubuntu-latest
-    needs: server
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Download the server binaries
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: server
+          fetch-depth: 0
 
-      - name: Unpack the server binaries into the build context
-        run: mkdir -p prebuilt/server && tar -C prebuilt/server -xf server.tar && rm server.tar
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Install the pinned frontend tools and brotli
+        run: |
+          deploy/web-tools/install.sh "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq && sudo apt-get install -y -qq brotli
 
-      - name: Build Docker image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - name: Restore the web build
+        uses: ./.github/actions/cargo-cache
         with:
-          context: .
-          file: Dockerfile
-          push: false
-          # Same build args as publish, so its build is a cache hit.
-          build-args: |
-            OMNI_REVISION=${{ github.sha }}
-            SERVER_SOURCE=prebuilt
-          # mode=max keeps every stage, including the cargo-chef dependency layers.
-          cache-from: type=gha,scope=omni
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni,mode=max,ignore-error=true' || '' }}
+          name: web
+          mode: restore
 
+      - name: Date files so only crates changed since the cached build rebuild
+        run: python3 scripts/ci/restore-mtimes.py
+
+      - name: Build Omni's bundle
+        run: cd crates/omni-web && trunk build --release --locked
+
+      - name: Build Fond's bundle
+        # Its post-build hook writes sw.js before the compressed copies exist.
+        run: cd crates/omni-recipes-web && trunk build --release --locked
+
+      - name: Save the web build
+        uses: ./.github/actions/cargo-cache
+        with:
+          name: web
+          mode: save
+
+      - name: Compress and package the bundles
+        # The SPA service serves .br/.gz siblings when the client accepts them.
+        # A tarball keeps the layout exactly as the Dockerfile copies it.
+        run: |
+          mkdir -p prebuilt/web
+          cp -R crates/omni-web/dist prebuilt/web/dist
+          cp -R crates/omni-recipes-web/dist prebuilt/web/recipes-dist
+          find prebuilt/web -type f \
+            \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
+            -exec brotli -k -q 11 {} + -exec gzip -k -n -9 {} +
+          tar -C prebuilt/web -cf web.tar dist recipes-dist
+
+      - name: Upload the bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web
+          path: web.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  # Packages the tested binaries and bundles into the image and pushes it
+  # (main only). Its own steps are downloads and the runtime layers.
   publish:
     runs-on: ubuntu-latest
-    needs: [lint, test, image]
-    if: github.event_name != 'pull_request'
+    needs: [lint, test, server, web]
 
     permissions:
       contents: read
@@ -296,39 +341,50 @@ jobs:
         with:
           name: server
 
-      - name: Unpack the server binaries into the build context
-        run: mkdir -p prebuilt/server && tar -C prebuilt/server -xf server.tar && rm server.tar
+      - name: Download the web bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web
+
+      - name: Unpack them into the build context
+        run: |
+          mkdir -p prebuilt/server prebuilt/web
+          tar -C prebuilt/server -xf server.tar && rm server.tar
+          tar -C prebuilt/web -xf web.tar && rm web.tar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Docker image
-        # Same inputs as the image job, so every step is a cache hit.
+      - name: Build and push Docker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           build-args: |
             OMNI_REVISION=${{ github.sha }}
             SERVER_SOURCE=prebuilt
+            WEB_SOURCE=prebuilt
           tags: |
             ghcr.io/${{ github.repository_owner }}/omni:latest
             ghcr.io/${{ github.repository_owner }}/omni:${{ github.sha }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # mode=max keeps every stage (downloads, models, runtime layers).
           cache-from: type=gha,scope=omni
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni,mode=max,ignore-error=true' || '' }}
 
       - name: Logout from GitHub Container Registry
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: docker logout ghcr.io
 
   # Each main commit saves its own Cargo cache keys, so delete superseded ones
@@ -337,7 +393,7 @@ jobs:
   # toolchain bump drops the old toolchain's build too). Also removes the retired Swatinem/rust-cache entries.
   prune:
     runs-on: ubuntu-latest
-    needs: [lint, test, server]
+    needs: [lint, test, server, web]
     if: always() && github.ref == 'refs/heads/main'
     permissions:
       actions: write
@@ -356,12 +412,12 @@ jobs:
 
   notify:
     runs-on: ubuntu-latest
-    needs: [lint, test, server, image, publish]
+    needs: [lint, test, server, web, publish]
     if: >-
       always() &&
       github.ref == 'refs/heads/main' &&
       (needs.lint.result == 'failure' || needs.test.result == 'failure' ||
-      needs.server.result == 'failure' || needs.image.result == 'failure' ||
+      needs.server.result == 'failure' || needs.web.result == 'failure' ||
       needs.publish.result == 'failure')
 
     steps:
@@ -375,7 +431,7 @@ jobs:
           [ "${{ needs.lint.result }}" = "failure" ] && FAILED="lint"
           [ "${{ needs.test.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }test"
           [ "${{ needs.server.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }server"
-          [ "${{ needs.image.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }image"
+          [ "${{ needs.web.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }web"
           [ "${{ needs.publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }publish"
           MESSAGE="Failed jobs: ${FAILED}"
           curl -s -o /dev/null \

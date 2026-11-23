@@ -1,7 +1,12 @@
 # CI and build caching
 
 `.github/workflows/ci.yml` runs on every push to `main` (which deploys) and
-on pull requests. The repository is public, so the standard GitHub-hosted
+on pull requests, except pushes that touch only Markdown under `docs/`,
+`AGENTS.md`, `README.md`, `.agents/`, `ios/`, `scripts/ios-live/`,
+`scripts/brand/` or `slate/` (`paths-ignore`). Those never reach the image or a
+Rust test, and a new image would restart production for nothing: Boris
+recreates the container whenever `latest` changes. `docs/mcp-policy.json` and
+`docs/licenses/` still trigger a run. The repository is public, so the standard GitHub-hosted
 runners are free; Linux runners have 4 cores. Change the workflow and this
 file together. The caching scheme comes from the wt repository's CI.
 
@@ -10,21 +15,22 @@ file together. The caching scheme comes from the wt repository's CI.
 | Job | What it does |
 |---|---|
 | `lint` | `cargo fmt --check`, clippy (native, and wasm32 for the web crates, `omni-recipes-web` and `omni-recipe-format`), `deps-check`, `cargo deny` |
-| `test` | `cargo nextest run --workspace --profile ci`, after installing `tzdata-legacy` (Ubuntu 26.04 runners lack the backward-compatible zone names that the Debian runtime image has) |
+| `test` | `cargo nextest run --workspace --profile ci`, built (`--no-run`) and run as separate steps, after installing `tzdata-legacy` (Ubuntu 26.04 runners lack the backward-compatible zone names that the Debian runtime image has) |
 | `server` | Release build of `omni`, `omni-voice-enroll` and `omni-intel-doctor` in `rust:1.97.1-bookworm`, uploaded as the `server` artifact |
-| `image` | Docker build with `SERVER_SOURCE=prebuilt`, packaging the `server` artifact; its web stage runs both release trunk builds (`omni-web` and Fond's `omni-recipes-web`); layers go to the GitHub Actions cache |
-| `publish` | `main` only, after `lint`, `test` and `image`: the same build (fully cached) pushed to GHCR, which Boris deploys |
+| `web` | Both release trunk builds (`omni-web` and Fond's `omni-recipes-web`) with the pinned tools, compressed (`.br`, `.gz`) like the Dockerfile's `web-dist-build` stage, uploaded as the `web` artifact |
+| `publish` | After `lint`, `test`, `server` and `web`: one Docker build with `SERVER_SOURCE=prebuilt` and `WEB_SOURCE=prebuilt` that packages both artifacts and, on `main`, pushes to GHCR, which Boris deploys; layers go to the GitHub Actions cache |
 | `prune` | `main` only: deletes superseded Cargo cache entries |
 | `notify` | Pushover on a failed `main` run |
 
-`lint`, `test` and `server` start together, so a push reports in about the
-time of `server` plus the image packaging.
+`lint`, `test`, `server` and `web` start together, so a push reports in about
+the time of the longest of them plus about a minute of packaging. Pull
+requests run the same build without pushing.
 
 ## Caching
 
 Each Rust job restores and saves its whole `target/` directory and the Cargo
 registry through `.github/actions/cargo-cache`, under a flavor name (`lint`,
-`test`, `release-server`). These rules let a job reuse `main`'s compiled
+`test`, `release-server`, `web`). These rules let a job reuse `main`'s compiled
 workspace crates and recompile only what changed:
 
 1. **Only `main` saves.** GitHub scopes a cache to the ref that saved it; a
@@ -52,12 +58,14 @@ workspace crates and recompile only what changed:
    Dockerfile's Rust image, so the binaries link against the same Debian
    bookworm glibc as the `node:*-slim` runtime. The Dockerfile's default
    `SERVER_SOURCE=build` still compiles them itself (with cargo-chef layers)
-   for a plain local `docker build`.
+   for a plain local `docker build`, and `WEB_SOURCE=build` runs trunk there.
 6. **Superseded entries are pruned.** `prune` keeps only the newest entry of
    each Cargo cache name, across toolchains. A cache grows with each
    dependency bump until the toolchain changes; check `gh cache list` sizes
-   if the repository nears its 10 GB quota. The `test` job deletes its linked
-   test executables before saving (4.5 GB of the cache); relinking them is
-   cheaper than storing them. The Docker layer cache (`type=gha,scope=omni`) is
-   left to GitHub's least-recently-used eviction; with the server built
-   outside Docker it holds only downloads, the web bundle and the runtime.
+   if the repository nears its 10 GB quota. The `test` cache keeps the linked
+   test executables: each crate's integration tests are one binary
+   (`tests/it.rs`), so there are few of them, and unchanged crates then
+   relink nothing. `lint` saves after `deps-check` so xtask's build is cached
+   too. The Docker layer cache (`type=gha,scope=omni`) is left to GitHub's
+   least-recently-used eviction; with the server and web bundles built outside
+   Docker it holds only downloads and the runtime.
