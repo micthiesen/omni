@@ -214,14 +214,16 @@ pub fn Shell(route: Memo<Route>, path: Memo<String>, children: ChildrenFn) -> im
         let route = route.get();
         let page = path.with(|p| chrome.label_for(p));
         let streamer = match &route {
-            Route::Streamer(id) | Route::StreamerIntelligence(id) => live.snapshot.with(|s| {
-                s.as_ref().and_then(|s| {
-                    s.streamers.iter().find(|v| v.id() == id).map(|v| match v {
-                        StreamerView::Live(l) => l.display_name.clone(),
-                        StreamerView::Offline(o) => o.display_name.clone(),
+            Route::Streamer(id) | Route::StreamerIntelligence(id) | Route::StreamerWatch(id) => {
+                live.snapshot.with(|s| {
+                    s.as_ref().and_then(|s| {
+                        s.streamers.iter().find(|v| v.id() == id).map(|v| match v {
+                            StreamerView::Live(l) => l.display_name.clone(),
+                            StreamerView::Offline(o) => o.display_name.clone(),
+                        })
                     })
                 })
-            }),
+            }
             _ => None,
         };
         CrumbNames { page, streamer }
@@ -229,7 +231,9 @@ pub fn Shell(route: Memo<Route>, path: Memo<String>, children: ChildrenFn) -> im
     let trail = Signal::derive(move || {
         let route = route.get();
         let streamer_id = match &route {
-            Route::Streamer(id) | Route::StreamerIntelligence(id) => Some(id.as_str()),
+            Route::Streamer(id) | Route::StreamerIntelligence(id) | Route::StreamerWatch(id) => {
+                Some(id.as_str())
+            }
             _ => None,
         };
         path.with(|p| crumbs(p, streamer_id, &names.get()))

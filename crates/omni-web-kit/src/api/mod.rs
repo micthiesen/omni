@@ -39,7 +39,7 @@ use omni_api::streamer_config::{
     LiveSettings, StreamerConfigCreate, StreamerConfigOrder, StreamerConfigPatch,
     StreamerConfigResponse, StreamerConfigView,
 };
-use omni_api::streamers::{StreamSessionsResponse, StreamerMetricsResponse};
+use omni_api::streamers::{StreamRelayStatus, StreamSessionsResponse, StreamerMetricsResponse};
 use omni_api::stylist::StylistOverview;
 use omni_api::tasks::{RunNowResponse, TasksResponse};
 use serde_json::{Map, Value, json};
@@ -225,6 +225,16 @@ pub async fn save_live_settings(settings: LiveSettings) -> Result<LiveSettings, 
 
 pub async fn fetch_streamer_metrics(id: &str) -> Result<StreamerMetricsResponse, ApiClientError> {
     get(&format!("/api/streamers/{}/metrics", enc(id))).await
+}
+
+/// The streamer's Kick relay status (never starts it).
+pub async fn fetch_streamer_relay(id: &str) -> Result<StreamRelayStatus, ApiClientError> {
+    get(&format!("/api/streamers/{}/relay", enc(id))).await
+}
+
+/// Starts the streamer's Kick relay when none runs.
+pub async fn start_streamer_relay(id: &str) -> Result<StreamRelayStatus, ApiClientError> {
+    post(&format!("/api/streamers/{}/relay", enc(id)), NO_BODY).await
 }
 
 pub async fn fetch_streamer_sessions(id: &str) -> Result<StreamSessionsResponse, ApiClientError> {

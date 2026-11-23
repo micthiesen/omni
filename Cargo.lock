@@ -3501,6 +3501,7 @@ name = "omni-live"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
  "futures",
  "html-escape",
  "indexmap 2.14.2",
@@ -3525,6 +3526,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
+ "tower",
  "tracing",
  "url",
  "wiremock",

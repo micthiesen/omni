@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast as _;
 
 use crate::pages::{
     CostsPage, DataPage, EmailActivityPage, HomePage, LivePage, LivestreamIntelligencePage,
-    OperationsPage, StreamerPage,
+    OperationsPage, StreamerPage, StreamerWatchPage,
 };
 use crate::routes::{Route, match_route, normalize_path, page_title};
 use crate::shell::{Shell, ShellContext};
@@ -77,6 +77,7 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::StreamerIntelligence(streamer_id) => {
             view! { <LivestreamIntelligencePage streamer_id/> }.into_any()
         }
+        Route::StreamerWatch(streamer_id) => view! { <StreamerWatchPage streamer_id/> }.into_any(),
         Route::Emails => view! { <EmailActivityPage/> }.into_any(),
         Route::Data => view! { <DataPage/> }.into_any(),
         Route::Costs => view! { <CostsPage/> }.into_any(),

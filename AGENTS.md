@@ -163,7 +163,8 @@ change; reuse authorization already given in the conversation.
   vCard edits, contact groups and membership, verified writes, `contacts_*`
   tools.
 - `omni-live`: database streamer configuration (UI and MCP), aggregate streamer state, notifications, viewer
-  metrics and records, DGG discovery, `LiveCheckTask`, cached streamer avatars (`StreamerAvatars`).
+  metrics and records, DGG discovery, `LiveCheckTask`, cached streamer avatars (`StreamerAvatars`),
+  the on-demand Kick stream relay (`relay`) behind `/streamers/:id/watch`.
 - `omni-ios-controls`: the iOS app backend: signed routes, device registry,
   APNs alert route, live control slots, On Air widget.
 - `omni-live-intel`: livestream audio capture, local speech and speaker models,
@@ -291,6 +292,18 @@ presence, which keeps its own short voice samples and LLM confirmation.
 A capture that finds the stream has ended (yt-dlp "not currently live", an m3u8
 404, or a `post_live`/`was_live`/`not_live`/`is_upcoming` status) is
 `AudioError::NotLive`: never retried, recorded as a Skipped stage, no WARN.
+
+The Kick relay (`omni-live/src/relay/`, `docs/kick-relay.md`) runs only while
+a player fetches from it: only `POST /api/streamers/:id/relay` (same-origin
+guarded) starts one, one per channel and at most two, and a relay with no
+playlist or segment fetch for 90 s stops and frees its buffer. Status reads
+never start a relay and keep one alive only during startup and a five-minute
+prebuffer before the first player fetch. It
+pins the master playlist's top variant and never switches down, copies segments
+byte for byte into memory under a 160 MiB cap, and releases them at real-time
+pace behind a 30 s cushion, so the served playlist keeps moving through Kick
+stalls and re-resolves. Signed playback URLs never leave the module or reach a
+log. Its relay URLs carry a generation that changes on every start.
 
 ### Email
 

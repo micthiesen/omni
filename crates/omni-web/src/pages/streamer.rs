@@ -851,6 +851,14 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
         });
         let avatar = current.with_untracked(|s| s.avatar_url().map(str::to_owned));
         let intel_href = format!("/streamers/{}/intelligence", encode_uri_component(&page_id));
+        let watch_here = (is_live && bindings.iter().any(|b| b.platform == "kick")).then(|| {
+            let href = format!("/streamers/{}/watch", encode_uri_component(&page_id));
+            view! {
+                <ButtonLink to=href icon=Icon::Play title="Watch Kick at top quality through Omni's relay">
+                    "Watch here"
+                </ButtonLink>
+            }
+        });
         let sub_line = move || match current.get() {
             StreamerView::Live(l) => clean_stream_title(&l.title),
             StreamerView::Offline(o) => match o.last_ended_at {
@@ -912,6 +920,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
                 </div>
                 <div class="page-actions">
                     <ButtonLink to=intel_href icon=Icon::Pulse>"Intelligence"</ButtonLink>
+                    {watch_here}
                     {watch}
                 </div>
             </header>

@@ -36,6 +36,7 @@ pub mod outage;
 pub mod platform;
 pub mod platforms;
 pub mod profile_links;
+pub mod relay;
 pub mod routes;
 pub mod sessions;
 pub mod status;
@@ -337,9 +338,17 @@ impl LiveModule {
                 }),
             });
         }
+        let relays = relay::KickRelays::new(
+            relay::source::KickPlaybackSource::new(self.ctx.public_http.clone()),
+            self.ctx.clock.clone(),
+            self.ctx.tracker.clone(),
+            self.ctx.shutdown.clone(),
+            relay::RelayConfig::default(),
+        );
         subsystem.router = routes::router(routes::LiveRoutesState {
             store: self.ctx.store.clone(),
             roster: self.roster.clone(),
+            relays,
         })
         .merge(config_routes::router(self.service.clone()));
         subsystem.mcp_tools = mcp::tools(&self.service)?;

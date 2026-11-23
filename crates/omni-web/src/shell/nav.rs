@@ -190,14 +190,21 @@ pub fn crumbs(path: &str, streamer_id: Option<&str>, names: &CrumbNames) -> Vec<
             .clone()
             .or_else(|| page.clone())
             .unwrap_or_else(|| id.to_owned());
-        return if path.ends_with("/intelligence") {
+        let sub = if path.ends_with("/intelligence") {
+            Some("Intelligence")
+        } else if path.ends_with("/watch") {
+            Some("Watch")
+        } else {
+            None
+        };
+        return if let Some(sub) = sub {
             vec![
                 link("Live", LIVE_HREF),
                 link(
                     name,
                     format!("/streamers/{}", omni_api::common::encode_uri_component(id)),
                 ),
-                here("Intelligence"),
+                here(sub),
             ]
         } else {
             vec![link("Live", LIVE_HREF), here(name)]

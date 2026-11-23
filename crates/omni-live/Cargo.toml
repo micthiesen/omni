@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 axum.workspace = true
+bytes.workspace = true
 futures.workspace = true
 html-escape.workspace = true
 indexmap.workspace = true
@@ -34,6 +35,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 url.workspace = true
 
@@ -41,4 +43,5 @@ url.workspace = true
 omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
 wiremock.workspace = true

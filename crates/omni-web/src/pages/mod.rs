@@ -8,6 +8,7 @@ mod live;
 mod livestream_intelligence;
 mod operations;
 mod streamer;
+mod streamer_watch;
 
 pub use costs::CostsPage;
 pub use data::DataPage;
@@ -17,3 +18,4 @@ pub use live::LivePage;
 pub use livestream_intelligence::LivestreamIntelligencePage;
 pub use operations::OperationsPage;
 pub use streamer::StreamerPage;
+pub use streamer_watch::StreamerWatchPage;

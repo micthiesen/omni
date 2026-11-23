@@ -310,6 +310,56 @@ pub struct LivestreamDetails {
     pub sessions: Vec<StreamSessionView>,
 }
 
+/// What the Kick stream relay is doing (`GET /api/streamers/:id/relay`;
+/// `POST` to the same path starts it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamRelayState {
+    /// No relay runs for the channel (`POST` starts one).
+    Stopped,
+    /// Pulling from Kick and filling the cushion; nothing to play yet.
+    Starting,
+    /// The served playlist is advancing.
+    Playing,
+    /// The cushion ran dry and is refilling.
+    Rebuffering,
+    /// Kick reports the channel offline.
+    Offline,
+    /// Kick could not be reached or answered with something unusable.
+    Error,
+}
+
+/// The relay's state and the numbers the watch page shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamRelayStatus {
+    pub state: StreamRelayState,
+    /// The served HLS playlist, once playable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_url: Option<String>,
+    /// Content held back from the player.
+    pub cushion_ms: i64,
+    pub target_cushion_ms: i64,
+    /// While starting: content still needed before playback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_remaining_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth: Option<u64>,
+    /// Times the cushion ran dry.
+    pub stalls: u32,
+    /// Playback URL re-resolves after the first.
+    pub refreshes: u32,
+    pub discontinuities: u32,
+    /// Bytes held in memory.
+    pub buffered_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// Path builders for the streamer routes.
 pub mod paths {
     use super::encode_uri_component;
@@ -325,6 +375,19 @@ pub mod paths {
     /// `GET /api/streamers/:id/sessions`.
     pub fn streamer_sessions(id: &str) -> String {
         format!("/api/streamers/{}/sessions", encode_uri_component(id))
+    }
+
+    /// `GET /api/streamers/:id/relay` (status) and `POST` (start).
+    pub fn streamer_relay(id: &str) -> String {
+        format!("/api/streamers/{}/relay", encode_uri_component(id))
+    }
+
+    /// The relay's served playlist for one relay generation.
+    pub fn streamer_relay_playlist(id: &str, generation: u64) -> String {
+        format!(
+            "/api/streamers/{}/relay/{generation}/index.m3u8",
+            encode_uri_component(id)
+        )
     }
 }
 

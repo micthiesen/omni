@@ -18,6 +18,8 @@ pub enum Route {
     PodsDetail(String),
     Streamer(String),
     StreamerIntelligence(String),
+    /// The Kick relay player.
+    StreamerWatch(String),
     Emails,
     Data,
     Costs,
@@ -103,6 +105,11 @@ pub fn match_route(path: &str) -> Route {
         && parts[1] == "intelligence"
     {
         return Route::StreamerIntelligence(decoded(parts[0]));
+    }
+    if let Some(parts) = segments(path, "/streamers", 2)
+        && parts[1] == "watch"
+    {
+        return Route::StreamerWatch(decoded(parts[0]));
     }
     if let Some(parts) = segments(path, "/streamers", 1) {
         return Route::Streamer(decoded(parts[0]));
@@ -197,6 +204,10 @@ mod tests {
         assert_eq!(
             route("/streamers/destiny/intelligence"),
             Route::StreamerIntelligence("destiny".into())
+        );
+        assert_eq!(
+            route("/streamers/destiny/watch"),
+            Route::StreamerWatch("destiny".into())
         );
         assert_eq!(route("/streamers/destiny/other"), Route::NotFound);
         assert_eq!(route("/briefings"), Route::NotFound);

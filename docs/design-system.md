@@ -691,7 +691,9 @@ It opens in a new tab with `rel="noopener"`.
    with a fresh read the live topic (h3, `--text`), the summary (lede,
    `--text`) and the cleaned stream title (small, `--text-3`); without one,
    the cleaned title as the lede. Binding chips (platform, handle, primary
-   flag, DGG embed count). Actions: "Intelligence" (secondary) and primary "Watch on <platform>".
+   flag, DGG embed count). Actions: "Intelligence" (secondary), "Watch here"
+   (secondary, Play icon, only while live with a Kick binding; opens
+   `/streamers/:id/watch`) and primary "Watch on <platform>".
 2. Readout band as a **Stage**: Watching now (`read-xl`, value tick) with the
    session Sparkline and dashed typical-peak line *(from B)*; Session peak (since
    08:01); DGG with Delta; Typical peak with all-time record and date.
@@ -724,6 +726,21 @@ Same layout without the Stage glow: Avatar desaturated, no LiveTag; hero line
 All-time, Streams in 30 days. Actions: "Intelligence" and primary "Open
 channel". The This session panel becomes "Last session", and the Baseline
 panel is hidden.
+
+### `/streamers/:id/watch`
+
+- Crumbs `Live / Destiny / Watch`. PageHead "Watch Destiny" with a "Details"
+  action; the lede says it plays through Omni's relay about 50 s behind live.
+- A 16:9 black stage (`.watch-stage`, capped to the viewport height) holding a
+  native `<video controls playsinline preload="none">`. Until playback starts,
+  an overlay line (`h3`) states the relay: "Connecting to Kick…", "Buffering,
+  about 18 s to go", "Ready. Press Play.", offline or retrying (muted).
+- Below it, "Play" (primary, disabled until the relay is playable) and
+  "Fullscreen" (`webkitEnterFullscreen`, the iPad system player), then a mono
+  `label` diagnostics line: resolution and fps, bitrate, relay cushion plus
+  the player's own buffer, relay and player stalls, refreshes, restarts.
+- Nothing autoplays; the status poll runs every 2 s with `use_visible_poll`.
+  See `docs/kick-relay.md`.
 
 ### `/streamers/:id/intelligence`
 

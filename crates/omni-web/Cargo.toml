@@ -30,8 +30,11 @@ features = [
   "History",
   "HtmlElement",
   "HtmlInputElement",
+  "HtmlMediaElement",
+  "HtmlVideoElement",
   "KeyboardEvent",
   "Location",
   "MouseEvent",
+  "TimeRanges",
   "Window",
 ]
