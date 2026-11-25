@@ -280,7 +280,7 @@ and no sub-tab strip (`SectionNav` is removed).
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
 | **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
-| **System** | Operations (`/operations`), Failures (`/failures`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
+| **System** | Operations (`/operations`), Failures (`/failures`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`), Settings (`/settings`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
   `routes.rs` with tests; every existing route, alias and normalization rule is
@@ -1031,6 +1031,37 @@ Inspector with args and result JSON. "Load older" stays as ShowMore.
 - The overview polls every 30 s and every 5 s while a sign-in waits. The OAuth
   callback (`?integration=&oauth=connected|error&message=`) shows a toast and
   leaves the URL.
+
+### `/settings`
+
+Every configuration value Omni reads (`GET /api/settings`), changed without
+SSH. h1 "Settings" with the lede "Saved values apply after a restart. Stored
+values win over the container environment." An untrusted browser gets a warn
+note linking to `/gateway` to trust it; values stay hidden and Edit is
+disabled. While a saved value waits, a warn attention row "Saved changes
+apply after a restart" with "Restart Omni" (a ConfirmButton: it interrupts
+running work for about a minute); after it the row shows a running
+"Restarting…" until the settings answer with a new `bootedAt` (health is
+only the liveness probe; it gives up after 3 minutes), then they load again. A filter field
+(`/`) matches every term against the key or the group, with a count. One
+Panel per group, sorted by name with the key count; rows sorted by key: the
+key in mono (wrapping), a source Tag (Stored, Environment, Default), Tags
+for "secret", "restart needed" (warn) and "environment differs" (dim and
+dashed, its title says the stored value wins); then the value in mono,
+truncated with the full text on hover, or "set" / "not set" for secrets and
+hidden values, and "saved 3d ago" for stored rows. Rows Omni needs before it
+reads its settings, or paths the image sets, read "Set by the container
+environment only" (the title says why) and have no Edit. Edit (one form at a time; the
+open row stays listed whatever the filter) opens an inline form under the
+row: a mono input (a password input for secrets, never filled in; filled
+with the current value otherwise, a textarea when it has line breaks),
+help, Save and Cancel (Escape), and for stored rows a ConfirmButton named
+after the fallback: "Use environment value" when the environment sets the
+key, else "Use default"; for a secret the environment lacks it is
+destructive and arms to "Lose the stored copy". An empty value is refused before sending. The
+server's validation message shows under the field and in a toast; results
+are toasts that say when the change applies. Loads once, and again after
+each change and after a restart; no polling.
 
 ### `/claude`
 

@@ -63,7 +63,7 @@ const fn item(
 }
 
 /// Every destination except `/live` (the On air header), in rail order.
-pub const NAV: [NavItem; 16] = [
+pub const NAV: [NavItem; 17] = [
     item("Home", "/", Icon::Home, Group::Top, Some('h')),
     item("Movies & TV", "/media", Icon::Film, Group::Watch, Some('m')),
     item(
@@ -104,6 +104,7 @@ pub const NAV: [NavItem; 16] = [
     item("MCP gateway", "/gateway", Icon::Grid, Group::System, None),
     item("Claude", "/claude", Icon::Terminal, Group::System, None),
     item("Data", "/data", Icon::Database, Group::System, Some('d')),
+    item("Settings", "/settings", Icon::Doc, Group::System, None),
 ];
 
 pub const LIVE_HREF: &str = "/live";
@@ -255,6 +256,7 @@ mod tests {
         assert_eq!(current_href("/stylistx"), None);
         assert_eq!(current_href("/gateway"), Some("/gateway"));
         assert_eq!(current_href("/failures"), Some("/failures"));
+        assert_eq!(current_href("/settings"), Some("/settings"));
         assert_eq!(current_href("/podsx"), None);
         assert_eq!(current_href("/nope"), None);
     }

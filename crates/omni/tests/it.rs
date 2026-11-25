@@ -8,6 +8,7 @@ mod owner_trust;
 mod preview;
 mod route_precedence;
 mod run_log_stream;
+mod settings;
 mod stylist_cli;
 mod task_health;
 mod wiring;

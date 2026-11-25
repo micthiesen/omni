@@ -182,6 +182,34 @@ skips), checked, fsynced and renamed.
   `volumes/omni/docstore.db`, delete `docstore.db-wal` and `docstore.db-shm`,
   start it.
 
+## Settings
+
+Every variable `omni_config::Config` decodes can be kept by Omni
+(`crates/omni/src/settings.rs`, the `/settings` page, `/api/settings*`).
+Stored values win over the container environment, which is the fallback,
+then the built-in default; `DB_NAME`, `DOCKERIZED` and `FRONTEND_PORT` stay
+environment-only because Omni needs them before it can read the store, and
+`OMNI_RECIPES_WEB_DIST` because the image sets it.
+
+- Boot: before logging or anything else reads the configuration, the stored
+  values are laid over the environment. If the combination does not
+  validate, Omni starts with the environment alone and logs that at ERROR, so
+  a bad stored value never keeps it down.
+- Migration: the `importSettings` boot step copies each environment value
+  into the store once (`omni-setting-import` marks it), so `.env` and the
+  Compose `environment:` entries can then be removed. After that, editing
+  `.env` changes nothing for a stored key; the page flags "environment
+  differs".
+- Secrets (names `is_sensitive_key` matches, plus Pushover user, iCloud and
+  SMTP identities and `CLAUDE_NOTIFY_TARGETS`) are sealed with `settings.key`
+  (AES-256-GCM, bound to the key name, 0600 in the data directory beside
+  `gateway.key`), registered with the log scrubber, and never shown again;
+  other values are shown only to a trusted browser. No value is logged.
+- Changes need a trusted browser, validate the whole configuration first and
+  apply at the next start; "Restart Omni" on the page ends the process and the
+  container's restart policy starts it again (about a minute, no SSH).
+  Settings that are data, such as event targets and streamers, apply at once.
+
 ## Retention
 
 `Retention` (`crates/omni/src/retention.rs`, daily at 04:37) deletes Omni's

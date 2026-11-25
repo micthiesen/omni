@@ -220,6 +220,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     subsystems.push(wire!("mcp", mcp.subsystem(tools)));
     subsystems.push(wire!("snapshots", crate::snapshots::subsystem(ctx)));
     subsystems.push(wire!("retention", crate::retention::subsystem(ctx)));
+    subsystems.push(wire!("settings", crate::settings::subsystem(ctx)));
 
     Ok(Wired {
         subsystems,

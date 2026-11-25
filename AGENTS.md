@@ -69,6 +69,13 @@ unrelated changes, commit the scoped result, pull with rebase if the remote move
 and push. A push deploys production automatically. Do not ask for another
 confirmation already supplied by this rule or the current request.
 
+Configuration values live in Omni's store and are changed on the `/settings`
+page (`crates/omni/src/settings.rs`); the container environment is only the
+fallback (and the only source of `DB_NAME`, `DOCKERIZED`, `FRONTEND_PORT` and
+the image-set `OMNI_RECIPES_WEB_DIST`). A new
+`Config` key is editable there automatically; a secret is any key
+`is_sensitive_key` matches or `EXTRA_SECRET_KEYS` lists.
+
 Production runs as the `omni` container on `boris` (`10.10.1.100`) from
 `/home/michael/compose`. Persistent data is under
 `/home/michael/compose/volumes/omni`. The LAN UI is

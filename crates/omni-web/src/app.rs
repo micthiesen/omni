@@ -7,7 +7,7 @@ use omni_web_kit::router::{Link, provide_router};
 use omni_web_pages::{
     CalendarPage, ClaudePage, FailuresPage, FeedbackPage, GatewayPage, McpPage, MediaDetailPage,
     MediaPage, PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage, PodsPage, RemindersPage,
-    StreamerConfigPage, StylistPage,
+    SettingsPage, StreamerConfigPage, StylistPage,
 };
 use wasm_bindgen::JsCast as _;
 
@@ -83,6 +83,7 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::Costs => view! { <CostsPage/> }.into_any(),
         Route::Operations => view! { <OperationsPage/> }.into_any(),
         Route::Failures => view! { <FailuresPage/> }.into_any(),
+        Route::Settings => view! { <SettingsPage/> }.into_any(),
         Route::Reminders => view! { <RemindersPage/> }.into_any(),
         Route::Pets => view! { <PetsPage/> }.into_any(),
         Route::Calendar => view! { <CalendarPage/> }.into_any(),

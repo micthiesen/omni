@@ -18,6 +18,7 @@
 //! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
 //! | [`GatewayPage`] | `/gateway` (`?integration=` opens one) | none |
 //! | [`FailuresPage`] | `/failures` | none |
+//! | [`SettingsPage`] | `/settings` | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
 //! re-created when its id changes.
@@ -37,6 +38,7 @@ mod pods_detail;
 mod rec_ui;
 mod recommendation_runs;
 pub mod reminders;
+mod settings;
 pub mod streamer_config;
 pub mod stylist;
 mod taste_brain;
@@ -54,6 +56,7 @@ pub use pods::{PodsPage, format_audio_duration};
 pub use pods_detail::PodsDetailPage;
 pub use recommendation_runs::RecommendationRuns;
 pub use reminders::RemindersPage;
+pub use settings::SettingsPage;
 pub use streamer_config::StreamerConfigPage;
 pub use stylist::StylistPage;
 pub use taste_brain::{TasteBrain, TasteBrainProfile, TasteClaimView};

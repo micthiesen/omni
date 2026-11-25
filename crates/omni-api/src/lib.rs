@@ -61,6 +61,8 @@ pub mod mcp_activity;
 pub mod outbound;
 /// Trusted browsers for admin changes.
 pub mod owner;
+/// Settings and secrets kept by Omni.
+pub mod settings;
 
 /// Reminders public status.
 pub mod reminders;

@@ -179,6 +179,14 @@ async fn activity_feedback_and_retry_tools_round_trip() {
         .await
         .unwrap_err();
     assert_eq!(missing.message, "Unknown email activity: nope");
+    assert_eq!(missing.code, "not_found");
+    assert!(
+        missing
+            .hint
+            .as_deref()
+            .unwrap()
+            .contains("ParcelTracker#<emailId>")
+    );
 
     let set = call(
         &tools,

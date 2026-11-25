@@ -291,10 +291,20 @@ where
     F: FnOnce(AppContext, Arc<RwLock<Vec<Arc<dyn AlertGate>>>>, Arc<AtomicBool>) -> Fut,
     Fut: std::future::Future<Output = Result<u8, boot::AppError>>,
 {
-    let config = match load_config() {
-        Ok(config) => config,
-        Err(code) => return code,
+    // Settings stored in Omni win over the environment ("Settings" in
+    // docs/architecture.md).
+    let (env, stored) = crate::settings::effective_environment().await;
+    let config = match Config::from_env(&env) {
+        Ok(config) => {
+            omni_core::secrets::register(config.secret_values());
+            Arc::new(config)
+        }
+        Err(error) => {
+            stderr_line(&format!("Invalid configuration: {error}"));
+            return EXIT_FAILURE;
+        }
     };
+    crate::settings::set_booted(env);
     let clock: SharedClock = Arc::new(SystemClock);
     let foundation = match Foundation::new(config.clone(), clock.clone(), side_effects) {
         Ok(foundation) => foundation,
@@ -332,6 +342,12 @@ where
     );
     if side_effects == SideEffectMode::Record {
         tracing::warn!(target: LOG, "Side effects are recorded, not sent (shadow mode)");
+    }
+    if let Err(reason) = stored {
+        tracing::error!(
+            target: LOG,
+            "Stored settings do not validate ({reason}); started with the environment alone. Fix them on the settings page"
+        );
     }
 
     let paths = app_paths(&config, web_dist);

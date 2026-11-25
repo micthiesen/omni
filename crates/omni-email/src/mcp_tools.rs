@@ -241,7 +241,17 @@ async fn activity_or_error(
     activity::get(store, activity_id)
         .await
         .map_err(execute_error)?
-        .ok_or_else(|| ToolError::execute(format!("Unknown email activity: {activity_id}")))
+        .ok_or_else(|| unknown_activity(activity_id))
+}
+
+/// Callers pass a bare email or Message-ID hash; say what an id looks like.
+fn unknown_activity(activity_id: &str) -> ToolError {
+    ToolError::execute(format!("Unknown email activity: {activity_id}"))
+        .with_code("not_found")
+        .with_hint(
+            "Activity ids are `ParcelTracker#<emailId>` or `CalendarEvents#<emailId>`, as \
+             email_activity_list returns them; an email neither pipeline processed has none.",
+        )
 }
 
 /// Epoch milliseconds of an RFC 3339 date-time with an offset.
@@ -802,9 +812,7 @@ impl EmailTools {
             Ok(activity) => Ok(ActivityOutput {
                 activity: serialize_activity(&activity),
             }),
-            Err(ReprocessFailure::UnknownActivity(id)) => {
-                Err(ToolError::execute(format!("Unknown email activity: {id}")))
-            }
+            Err(ReprocessFailure::UnknownActivity(id)) => Err(unknown_activity(&id)),
             Err(ReprocessFailure::PipelinesInactive) => {
                 Err(ToolError::execute("Email monitoring is not active"))
             }

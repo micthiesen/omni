@@ -40,6 +40,7 @@ use omni_api::presspods::{
     PressPodsDeletedResponse, PressPodsEpisodeResponse, PressPodsJobResponse, PressPodsListResponse,
 };
 use omni_api::runs::{RunLogsResponse, RunsResponse};
+use omni_api::settings::{SettingUpdate, SettingView, SettingsView};
 use omni_api::streamer_config::{
     LiveSettings, StreamerConfigCreate, StreamerConfigOrder, StreamerConfigPatch,
     StreamerConfigResponse, StreamerConfigView,
@@ -848,6 +849,56 @@ pub async fn retry_outbound_delivery(id: &str) -> Result<DeliveryView, ApiClient
     .await
 }
 
+// ----- settings -----
+
+fn setting_path(key: &str) -> String {
+    format!("/api/settings/{}", enc(key))
+}
+
+/// Every setting Omni reads and where its value comes from. Values only for
+/// a trusted browser, and never for secrets.
+pub async fn fetch_settings() -> Result<SettingsView, ApiClientError> {
+    get("/api/settings").await
+}
+
+/// Stores `value` once the whole configuration validates with it (a 400
+/// says why not). It applies after a restart.
+pub async fn save_setting(key: &str, value: &str) -> Result<SettingView, ApiClientError> {
+    let body = SettingUpdate {
+        value: value.to_owned(),
+    };
+    put(&setting_path(key), Some(&body)).await
+}
+
+/// Removes the stored value: after a restart the environment value applies,
+/// or the default when the environment does not set it.
+pub async fn clear_setting(key: &str) -> Result<SettingView, ApiClientError> {
+    delete(&setting_path(key), NO_BODY).await
+}
+
+/// Asks Omni to restart (202); the container comes back with the saved values.
+pub async fn restart_omni() -> Result<(), ApiClientError> {
+    send_no_content(client::Method::Post, "/api/settings/restart").await
+}
+
+/// One `GET /api/health` without the GET retries, abandoned after `timeout`,
+/// so a restart wait can see Omni go away.
+pub async fn check_health(
+    timeout: std::time::Duration,
+) -> Result<omni_api::build::HealthResponse, ApiClientError> {
+    use futures::future::{Either, select};
+    let path = omni_api::common::paths::HEALTH;
+    let request = std::pin::pin!(client::send(client::Method::Get, path, None));
+    let timer = std::pin::pin!(crate::task::sleep(timeout));
+    match select(request, timer).await {
+        Either::Left((response, _)) => client::decode_response(path, &response?),
+        Either::Right(_) => Err(ApiClientError::Network {
+            path: path.to_owned(),
+            message: format!("Request timed out: {path}"),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -862,6 +913,12 @@ mod tests {
             gateway_integration_path("a/b", ""),
             "/api/gateway/integrations/a%2Fb"
         );
+    }
+
+    #[test]
+    fn setting_paths_encode_keys() {
+        assert_eq!(setting_path("PLEX_URL"), "/api/settings/PLEX_URL");
+        assert_eq!(setting_path("a/b"), "/api/settings/a%2Fb");
     }
 
     #[test]

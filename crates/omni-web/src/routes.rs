@@ -26,6 +26,8 @@ pub enum Route {
     Operations,
     /// What is failing across Omni.
     Failures,
+    /// Omni's configuration values.
+    Settings,
     Reminders,
     Pets,
     /// The read-only agenda (`?day=YYYY-MM-DD` selects a day).
@@ -129,6 +131,7 @@ pub fn match_route(path: &str) -> Route {
         "/costs" => Route::Costs,
         "/operations" => Route::Operations,
         "/failures" => Route::Failures,
+        "/settings" => Route::Settings,
         "/mcp-activity" => Route::Mcp,
         "/gateway" => Route::Gateway,
         "/claude" => Route::Claude,
@@ -156,6 +159,7 @@ pub fn page_title(path: &str) -> String {
         "/costs" => Some("Costs"),
         "/operations" => Some("Operations"),
         "/failures" => Some("Failures"),
+        "/settings" => Some("Settings"),
         "/mcp-activity" => Some("MCP Activity"),
         "/gateway" => Some("MCP Gateway"),
         "/claude" => Some("Claude Code"),
@@ -224,6 +228,9 @@ mod tests {
         assert_eq!(route("/failures"), Route::Failures);
         assert_eq!(route("/failures/"), Route::Failures);
         assert_eq!(route("/failures/x"), Route::NotFound);
+        assert_eq!(route("/settings"), Route::Settings);
+        assert_eq!(route("/settings/"), Route::Settings);
+        assert_eq!(route("/settings/PLEX_URL"), Route::NotFound);
         assert_eq!(route("/reminders"), Route::Reminders);
         assert_eq!(route("/pets"), Route::Pets);
         assert_eq!(route("/calendar"), Route::Calendar);
@@ -250,6 +257,7 @@ mod tests {
         assert_eq!(page_title("/stylist"), "Stylist · Omni");
         assert_eq!(page_title("/gateway"), "MCP Gateway · Omni");
         assert_eq!(page_title("/failures"), "Failures · Omni");
+        assert_eq!(page_title("/settings"), "Settings · Omni");
         assert_eq!(page_title("/workspaces/w/s"), "Omni");
         assert_eq!(page_title("/streamers/x"), "Omni");
         assert_eq!(page_title("/"), "Omni");

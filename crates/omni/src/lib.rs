@@ -20,6 +20,7 @@ pub mod preview_stylist;
 pub mod recipes_cli;
 pub mod retention;
 pub mod services;
+pub mod settings;
 pub mod snapshots;
 pub mod stylist_cli;
 pub mod task_health;

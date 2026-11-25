@@ -545,4 +545,28 @@ a.agenda-tile-head:hover { color: var(--signal); }
 @media (max-width: 899px) {
   .failures-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kind end" "main main"; row-gap: var(--sp-1); }
 }
+/* ---------- Settings (/settings) ---------- */
+.settings-page { display: flex; flex-direction: column; gap: var(--sp-4); }
+.settings-attention { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--pad); border: 1px solid var(--warn-line); border-radius: var(--r-lg); background: var(--warn-wash); }
+.settings-attention.running { border-color: var(--signal-line); background: var(--signal-wash); }
+.settings-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.settings-link:hover { color: var(--text); }
+.settings-toolbar { margin-bottom: 0; }
+.settings-groups { display: flex; flex-direction: column; gap: var(--sp-6); }
+.settings-row { align-items: flex-start; }
+.settings-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); min-width: 0; }
+/* Keys are long identifiers: wrap rather than clip. */
+.settings-key { white-space: normal; overflow-wrap: anywhere; }
+.settings-dim .tag { color: var(--text-3); border-style: dashed; }
+/* The value gives up width first; the saved time stays whole. */
+.settings-sub { display: flex; align-items: baseline; min-width: 0; }
+.settings-sub > * { flex: none; }
+.settings-sub > .settings-value { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
+.settings-why { white-space: normal; }
+.settings-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.rows > .settings-form { border-top: 1px solid var(--line); }
+.settings-clear { margin-left: auto; }
+@media (max-width: 899px) {
+  .settings-clear { margin-left: 0; }
+}
 }

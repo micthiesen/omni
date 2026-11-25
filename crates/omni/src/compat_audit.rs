@@ -31,6 +31,7 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_ios_controls::devices::IosWidgetPush>(),
     ];
     all.extend(omni_runtime::entities());
+    all.extend(crate::settings::entities());
     for group in [
         omni_live::entities(),
         omni_live_intel::entities(),
