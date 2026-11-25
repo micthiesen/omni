@@ -55,6 +55,8 @@ pub mod events;
 pub mod gateway;
 /// MCP activity.
 pub mod mcp_activity;
+/// Trusted browsers for admin changes.
+pub mod owner;
 
 /// Reminders public status.
 pub mod reminders;

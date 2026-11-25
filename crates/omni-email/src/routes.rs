@@ -52,10 +52,21 @@ pub fn router(state: EmailRoutesState) -> Router {
             "/api/email-activity/{activity_id}/feedback",
             post(set_feedback),
         )
-        .route("/api/email-rules", get(list_rules).post(add_rule))
-        .route("/api/email-rules/{rule_id}", delete(delete_rule))
         .route("/api/email-feedback", get(list_feedback))
         .route("/api/email-retries", get(list_retries))
+        .with_state(state)
+}
+
+/// Sender rules: an allow rule overrides the blacklist and triage, so
+/// changes need a trusted browser (`omni_runtime::owner`).
+pub fn rules_router(state: EmailRoutesState, owner: omni_runtime::owner::OwnerTrust) -> Router {
+    Router::new()
+        .route("/api/email-rules", get(list_rules).post(add_rule))
+        .route("/api/email-rules/{rule_id}", delete(delete_rule))
+        .route_layer(axum::middleware::from_fn_with_state(
+            owner,
+            omni_runtime::owner::require_trusted,
+        ))
         .with_state(state)
 }
 

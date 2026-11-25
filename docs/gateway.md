@@ -48,10 +48,46 @@ never accepted here. Two kinds of token exist
   the grant. Revoking a client token or grant on the page invalidates its
   tokens at once and deletes its event subscriptions.
 
-The management API under `/api/gateway` is LAN-only like the rest of `/api`,
-and its changes also need an `Origin` header and a home-network `Host` (an IP
-literal, `localhost`, `*.boris`, `*.local` or `omni.syas.ca`), which defeats
-DNS rebinding.
+The management API under `/api/gateway` is LAN-only like the rest of `/api`.
+Its changes (client tokens, integrations, credentials, OAuth approvals,
+revocations) also need an `Origin` header, a home-network `Host` (an IP
+literal, `localhost`, `*.boris`, `*.local` or `omni.syas.ca`) and a trusted
+browser (below). The first two are headers the client chooses, so on their
+own any device on the home network could mint a token that works at the
+public endpoint; until 2026-11-24 they were the only check.
+
+### Trusted browsers
+
+There is no login. Viewing the UI and everyday actions work from anywhere on
+the home network; admin changes (this page's changes, data manager deletes,
+streamer configuration, which holds Pushover tokens, email sender rules,
+settings) need a trusted browser: one holding the `omni_owner` cookie
+(HttpOnly, `SameSite=Strict`) whose SHA-256 is an `owner-trusted-browser`
+row (`omni_runtime::owner`). A browser unused for 90 days is forgotten. The
+cookie travels in clear text over `http://omni.boris`; prefer
+`https://omni.syas.ca`, where it is `Secure`. An untrusted browser gets
+403 `{"error": …, "code": "untrusted_browser"}`.
+
+A browser becomes trusted only through the owner:
+
+- **Trust this browser** on `/gateway` shows a code and sends a push to the
+  owner's phone (APNs, Pushover fallback) linking to `/trust/<secret>`.
+  Approving there means typing the code the browser shows; the push never
+  carries it, so a request someone else started cannot be approved by
+  tapping. Five wrong codes deny it; requests expire after ten minutes, at
+  most five wait at once (a sixth replaces the oldest, so nobody on the LAN
+can lock the owner out), and pushes go out at most once a minute. The browser
+  polls and receives its cookie once approved.
+- **`docker exec omni omni owner-link`** on Boris prints a one-time link
+  (15 minutes); the browser that opens it and confirms is trusted. Use it
+  when push delivery is down, and for scripts such as
+  `deploy/gateway/oauth-check.py --owner-link`.
+
+Trusted browsers are listed on `/gateway`, where a trusted browser can remove
+any of them. Every request must also name a host Omni answers to
+(`public_host::KnownHosts`: IP literals, single-label and `.boris`/`.local`
+names, `omni.syas.ca` and the configured public, recipes and home URLs); any
+other `Host` gets 421, which stops DNS rebinding for the whole app.
 
 A 401 carries `WWW-Authenticate: Bearer resource_metadata="…"` when OAuth is
 offered.
@@ -256,6 +292,8 @@ a client that misses one simply lists again.
 - Credentials are sealed, origin-bound, write-only, and never logged; error
   texts strip URLs from network errors and redact stdio stderr.
 - Downstream tokens are hashed (client) or signed and grant-checked (OAuth).
+- Minting a token or approving a sign-in needs a trusted browser, never only
+  LAN headers (Trusted browsers, above).
 
 ## Operations
 
@@ -286,7 +324,8 @@ Harnesses used to reach Omni through a separate tool gateway and the
    `deploy/gateway/route.mjs` (Operations), `OMNI_GATEWAY_PUBLIC_URL=https://gateway.syas.ca`
    was added to the omni service in `/home/michael/compose`, and
    `python3 deploy/gateway/oauth-check.py https://gateway.syas.ca http://omni.boris`
-   passed. Rerun that check after changing the route or the public-host guard;
+   passed (since 2026-11-24 it also needs `--owner-link <link>` from
+   `omni owner-link`). Rerun that check after changing the route or the public-host guard;
    it walks ChatGPT's OAuth flow, checks that only `/gateway/*` and the OAuth
    documents are public, and revokes its grant.
 1. The integrations were configured on `/gateway`: context7, deepwiki, grep,

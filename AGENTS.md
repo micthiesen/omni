@@ -167,7 +167,7 @@ change; reuse authorization already given in the conversation.
   its own, dispatched in front of Omni's router, with its mutation guard).
 - `omni-mcp-kit`: MCP tool interface, schema derivation and generated snapshots.
 - `omni-runtime`: `AppContext`, `Subsystem` (routes, tasks, tools, host apps),
-  boot steps, services, ports.
+  boot steps, services, ports, trusted browsers (`owner`).
 - `omni-api`: wire DTOs shared by backend and frontend (serde only).
 - `omni-image`: bounded decoding of untrusted images (magic-byte types, EXIF
   orientation, resize, JPEG variants, average colour, HEIC), one decode at a time.
@@ -885,6 +885,15 @@ those); `crates/omni-mcp/tests/read_only_tools.rs` lists them, and a read-named
 tool that writes must be listed there as an exception.
 
 ### MCP gateway
+
+Omni has no login, and LAN position or request headers never authorize an
+admin change: minting gateway tokens, approving OAuth sign-ins, changing
+integrations, streamer configuration or email sender rules, deleting data
+manager rows and changing settings need a
+trusted browser (`omni_runtime::owner::require_trusted`), paired by typing
+its code on the owner's phone or through `omni owner-link`. Put every new
+route that mints credentials, changes secrets or deletes data behind it.
+Every request must name a known host (`KnownHosts`, 421 otherwise).
 
 `/gateway/mcp` (`omni-mcp/src/gateway/`, `docs/gateway.md`) is Omni's only MCP
 endpoint and serves Omni's tools

@@ -3975,6 +3975,7 @@ dependencies = [
  "futures",
  "omni-ai",
  "omni-alerts",
+ "omni-api",
  "omni-config",
  "omni-core",
  "omni-http",
@@ -3987,6 +3988,8 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio-util",
+ "tracing",
+ "url",
 ]
 
 [[package]]

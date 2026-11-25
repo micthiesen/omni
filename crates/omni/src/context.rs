@@ -127,7 +127,15 @@ pub fn context_over(foundation: &Foundation, store: Store, paths: AppPaths) -> A
         tracker.clone(),
         foundation.run_logs.clone(),
     );
+    let owner = omni_runtime::owner::OwnerTrust::new(
+        store.clone(),
+        clock.clone(),
+        Some(foundation.pushover.clone()),
+        tracker.clone(),
+        &config.ios_control_home_url,
+    );
     AppContext {
+        owner,
         public_http: PublicHttpClient::new(&foundation.http),
         http: foundation.http.clone(),
         pushover: foundation.pushover.clone(),

@@ -2,7 +2,10 @@
 real client metadata document and redirect URI. The grant ends revoked: the
 check replays the authorization code, which revokes it.
 
-usage: oauth-check.py <public origin> <LAN origin> [--via <base URL>]
+usage: oauth-check.py <public origin> <LAN origin> --owner-link <URL> [--via <base URL>]
+
+--owner-link is a fresh one-time link from `docker exec omni omni owner-link`
+(approving a sign-in needs a trusted browser); the check trusts itself with it.
 
 --via sends every request for the public origin to <base URL> instead (a
 local server or proxy whose OMNI_GATEWAY_PUBLIC_URL is the public origin),
@@ -23,6 +26,11 @@ VIA = None
 if "--via" in args:
     i = args.index("--via")
     VIA = args[i + 1].rstrip("/")
+    del args[i : i + 2]
+OWNER_LINK = None
+if "--owner-link" in args:
+    i = args.index("--owner-link")
+    OWNER_LINK = args[i + 1]
     del args[i : i + 2]
 PUBLIC, LAN = args[0].rstrip("/"), args[1].rstrip("/")
 UA = "OpenAI File Downloader, XaiImageApiFetch/1.0"
@@ -74,7 +82,16 @@ def step(name, ok, detail=""):
         sys.exit(1)
 
 
-lan_write = {"Origin": LAN, "Content-Type": "application/json"}
+if not OWNER_LINK:
+    sys.exit("--owner-link is required: run `docker exec omni omni owner-link` on Boris")
+# The link names the UI's own origin; post to it on the LAN origin given here.
+link_path = urllib.parse.urlparse(OWNER_LINK).path
+status, link_headers, _ = fetch("POST", LAN + link_path, b"action=approve",
+                                {"Origin": LAN, "Content-Type": "application/x-www-form-urlencoded"})
+owner_cookie = (link_headers.get("set-cookie") or "").split(";", 1)[0]
+step("the one-time link trusts this check", status == 200 and owner_cookie.startswith("omni_owner="), str(status))
+untrusted_write = {"Origin": LAN, "Content-Type": "application/json"}
+lan_write = {**untrusted_write, "Cookie": owner_cookie}
 status, _, body = fetch("GET", PUBLIC + "/.well-known/oauth-protected-resource/gateway/mcp")
 prm = json.loads(body)
 step("protected resource metadata", status == 200 and prm["resource"] == RESOURCE, prm.get("resource", ""))
@@ -120,6 +137,9 @@ step("a wrong code is refused", status == 400, str(status))
 status, _, _ = fetch("POST", LAN + f"/api/gateway/authorizations/{request_id}/approve",
                      json.dumps({"userCode": user_code}).encode(), {"Content-Type": "application/json"})
 step("an approval without Origin is refused", status == 403, str(status))
+status, _, _ = fetch("POST", LAN + f"/api/gateway/authorizations/{request_id}/approve",
+                     json.dumps({"userCode": user_code}).encode(), untrusted_write)
+step("an approval from an untrusted browser is refused", status == 403, str(status))
 status, _, _ = fetch("POST", LAN + f"/api/gateway/authorizations/{request_id}/approve",
                      json.dumps({"userCode": user_code}).encode(), lan_write)
 step("owner approves with the code", status == 204, str(status))

@@ -68,6 +68,29 @@ impl Fixture {
 }
 
 #[tokio::test]
+async fn only_a_trusted_browser_changes_the_configuration() {
+    let f = fixture().await;
+    let body = json!({"displayName": "Destiny", "twitch": ["destiny"], "pushoverToken": "abc123"});
+    let (status, refused) = f
+        .app
+        .untrusted_json(
+            &f.router,
+            Method::POST,
+            "/api/streamer-config/streamers",
+            Some(&body),
+        )
+        .await;
+    assert_eq!(status.as_u16(), 403, "{refused}");
+    assert_eq!(refused["code"], "untrusted_browser");
+    assert!(f.roster_names().is_empty());
+    let (status, _) = f
+        .app
+        .untrusted_json(&f.router, Method::GET, "/api/streamer-config", None)
+        .await;
+    assert_eq!(status.as_u16(), 200, "reading needs no trust");
+}
+
+#[tokio::test]
 async fn the_ui_creates_edits_reorders_and_deletes_streamers() {
     let f = fixture().await;
     let (status, created) = f

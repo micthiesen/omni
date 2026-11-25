@@ -225,10 +225,78 @@ async fn admin(fixture: &Fixture, method: &str, uri: &str, headers: &[(&str, &st
 #[tokio::test]
 async fn management_changes_need_a_home_network_origin() {
     let fixture = Fixture::new().await;
+    let cookie = fixture.owner_cookie.clone();
+    let trusted = [
+        ("host", "omni.boris"),
+        ("origin", "http://omni.boris"),
+        ("cookie", cookie.as_str()),
+    ];
+    assert_eq!(
+        admin(&fixture, "POST", "/api/gateway/clients", &trusted).await,
+        StatusCode::CREATED
+    );
+    // Headers are the client's choice: a LAN device forging a home-network
+    // Origin and Host still cannot mint a token without a trusted browser.
     let lan = [("host", "omni.boris"), ("origin", "http://omni.boris")];
     assert_eq!(
         admin(&fixture, "POST", "/api/gateway/clients", &lan).await,
-        StatusCode::CREATED
+        StatusCode::FORBIDDEN,
+        "untrusted browser"
+    );
+    for forged in ["omni_owner=otb_forged", "omni_owner=forged"] {
+        assert_eq!(
+            admin(
+                &fixture,
+                "POST",
+                "/api/gateway/clients",
+                &[
+                    ("host", "omni.boris"),
+                    ("origin", "http://omni.boris"),
+                    ("cookie", forged)
+                ]
+            )
+            .await,
+            StatusCode::FORBIDDEN,
+            "{forged}"
+        );
+    }
+    let revoked = fixture
+        .owner
+        .trust_for_tests("Revoked browser")
+        .await
+        .unwrap();
+    let status = fixture
+        .owner
+        .status(&{
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert("cookie", format!("omni_owner={revoked}").parse().unwrap());
+            headers
+        })
+        .await
+        .unwrap();
+    let id = status
+        .browsers
+        .iter()
+        .find(|b| b.current)
+        .unwrap()
+        .id
+        .clone();
+    assert!(fixture.owner.revoke(&id).await.unwrap());
+    let revoked_cookie = format!("omni_owner={revoked}");
+    assert_eq!(
+        admin(
+            &fixture,
+            "POST",
+            "/api/gateway/clients",
+            &[
+                ("host", "omni.boris"),
+                ("origin", "http://omni.boris"),
+                ("cookie", revoked_cookie.as_str())
+            ]
+        )
+        .await,
+        StatusCode::FORBIDDEN,
+        "revoked browser"
     );
     assert_eq!(
         admin(
@@ -286,6 +354,7 @@ async fn revoking_a_client_ends_its_subscriptions() {
         .uri(format!("/api/gateway/clients/{}", row.id))
         .header("host", "omni.boris")
         .header("origin", "http://omni.boris")
+        .header("cookie", fixture.owner_cookie.as_str())
         .body(Body::empty())
         .unwrap();
     assert_eq!(

@@ -23,6 +23,7 @@ pub(super) fn AccessColumn(gw: Gateway) -> impl IntoView {
     });
     view! {
         <section class="stack gw-access" aria-label="Access">
+            <super::trust::TrustPanel gw/>
             {move || has_pending.get().then(|| view! { <PendingPanel gw/> })}
             <TokensPanel gw/>
             <GrantsPanel gw/>

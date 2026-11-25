@@ -226,9 +226,23 @@ async fn routes_answer_with_the_documented_bodies() {
     assert_eq!(body["summary"]["count"], 1);
     assert_eq!(body["rows"][0]["value"], 1);
 
+    // Deleting rows needs a trusted browser; reading does not.
+    let cookie = format!(
+        "{}={}",
+        omni_runtime::owner::COOKIE_NAME,
+        app.ctx.owner.trust_for_tests("Test browser").await.unwrap()
+    );
+    let untrusted = axum::http::Request::delete("/api/data/entities/data-manager-test")
+        .header("host", "localhost")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"key": {"group": "a"}}).to_string(),
+        ))
+        .unwrap();
     let delete = |body: Value| {
         axum::http::Request::delete("/api/data/entities/data-manager-test")
             .header("host", "localhost")
+            .header("cookie", cookie.as_str())
             .header("content-type", "application/json")
             .body(axum::body::Body::from(body.to_string()))
             .unwrap()
@@ -248,6 +262,9 @@ async fn routes_answer_with_the_documented_bodies() {
             )
         }
     };
+    let (status, body) = send(untrusted).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "untrusted_browser");
     assert_eq!(
         send(delete(json!({"nokey": true}))).await,
         (

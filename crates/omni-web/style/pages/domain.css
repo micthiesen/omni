@@ -469,6 +469,8 @@ a.agenda-tile-head:hover { color: var(--signal); }
 .gw-secret-title { font: var(--t-h3); }
 .gw-new-token { border-bottom: 1px solid var(--line); }
 .gw-tokens .panel-meta { overflow: visible; }
+.gw-trust .panel-body { padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
+.gw-trust-code { font-size: 1.6rem; letter-spacing: 0.12em; margin: 0; }
 /* The narrow Access column wraps meta lines instead of cutting them. */
 .gw-access .row-sub.parts { flex-wrap: wrap; row-gap: 0; white-space: normal; }
 .gw-feed-error { white-space: normal; overflow-wrap: anywhere; }

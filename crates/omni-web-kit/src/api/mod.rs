@@ -683,6 +683,40 @@ pub async fn create_gateway_client(
     post("/api/gateway/clients", Some(body)).await
 }
 
+// ----- trusted browsers -----
+
+/// Whether this browser may make admin changes (and, if so, every trusted browser).
+pub async fn fetch_owner_status() -> Result<omni_api::owner::OwnerStatus, ApiClientError> {
+    get("/api/owner").await
+}
+
+/// Asks the owner's phone to trust this browser.
+pub async fn start_owner_pairing() -> Result<omni_api::owner::PairingStarted, ApiClientError> {
+    post("/api/owner/pairings", NO_BODY).await
+}
+
+/// Picks up the cookie once the owner approved.
+pub async fn claim_owner_pairing(
+    id: &str,
+    claim: &str,
+) -> Result<omni_api::owner::PairingStatus, ApiClientError> {
+    post(
+        &format!("/api/owner/pairings/{}/claim", enc(id)),
+        Some(&omni_api::owner::PairingClaim {
+            claim: claim.to_owned(),
+        }),
+    )
+    .await
+}
+
+pub async fn revoke_trusted_browser(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Delete,
+        &format!("/api/owner/browsers/{}", enc(id)),
+    )
+    .await
+}
+
 pub async fn revoke_gateway_client(id: &str) -> Result<(), ApiClientError> {
     send_no_content(
         client::Method::Delete,

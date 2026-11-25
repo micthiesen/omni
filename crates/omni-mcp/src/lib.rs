@@ -380,6 +380,7 @@ impl McpPackage {
                     oauth: self.oauth.clone(),
                     authorization: self.authorization.clone(),
                     public_url: self.public_origin.clone(),
+                    owner: self.ctx.owner.clone(),
                 }));
         if let Some(server) = &self.authorization {
             router = router.merge(server.router());

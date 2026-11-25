@@ -473,6 +473,9 @@ pub struct Fixture {
     pub router: Router,
     /// The `/api/gateway` management routes and the OAuth callback.
     pub admin: Router,
+    /// `Cookie` header value of a trusted browser, for admin changes.
+    pub owner_cookie: String,
+    pub owner: omni_runtime::owner::OwnerTrust,
     pub shutdown: CancellationToken,
     pub tracker: TaskTracker,
     _store: Option<TestStore>,
@@ -557,6 +560,18 @@ impl Fixture {
             Some("https://gateway.example/.well-known/oauth-protected-resource/gateway/mcp".into()),
             shutdown.clone(),
         );
+        let owner = omni_runtime::owner::OwnerTrust::new(
+            store.clone(),
+            clock.clone(),
+            None,
+            tracker.clone(),
+            "http://omni.boris",
+        );
+        let owner_cookie = format!(
+            "{}={}",
+            omni_runtime::owner::COOKIE_NAME,
+            owner.trust_for_tests("Test browser").await.unwrap()
+        );
         let admin = omni_mcp::gateway::routes::router(omni_mcp::gateway::routes::AdminState {
             gateway: gateway.clone(),
             access: access.clone(),
@@ -564,6 +579,7 @@ impl Fixture {
             oauth,
             authorization: None,
             public_url: None,
+            owner: owner.clone(),
         });
         gateway.load().await.unwrap();
         Self {
@@ -575,6 +591,8 @@ impl Fixture {
             webhook,
             router,
             admin,
+            owner_cookie,
+            owner,
             shutdown,
             tracker,
             _store: None,

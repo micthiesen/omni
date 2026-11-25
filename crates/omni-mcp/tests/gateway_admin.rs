@@ -23,6 +23,7 @@ async fn api(
         .uri(uri)
         .header("host", "omni.boris")
         .header("origin", "http://omni.boris")
+        .header("cookie", fixture.owner_cookie.as_str())
         .header("content-type", "application/json");
     let request = builder
         .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())))

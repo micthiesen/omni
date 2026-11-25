@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 pub mod chat_record;
+pub mod owner;
 pub mod ports;
 
 pub use ports::Ports;
@@ -52,6 +53,8 @@ pub struct AppContext {
     pub ports: Ports,
     pub side_effects: SideEffectMode,
     pub paths: AppPaths,
+    /// Trusted browsers for admin changes ([`owner`]).
+    pub owner: owner::OwnerTrust,
 }
 
 impl AppContext {

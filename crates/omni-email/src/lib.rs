@@ -153,10 +153,12 @@ pub fn managed_entities() -> Vec<ManagedEntity> {
 /// start (epoch ms), the watchdog's stand-in for a first dispatch.
 pub fn subsystem(ctx: &AppContext, booted_at: i64) -> Result<Subsystem, EmailSubsystemError> {
     let tz = jiff::tz::TimeZone::get(&ctx.config.tz).unwrap_or(jiff::tz::TimeZone::UTC);
-    let router = routes::router(routes::EmailRoutesState {
+    let state = routes::EmailRoutesState {
         store: ctx.store.clone(),
         ports: ctx.ports.clone(),
-    });
+    };
+    let router =
+        routes::router(state.clone()).merge(routes::rules_router(state, ctx.owner.clone()));
     let tools = mcp_tools::tools(&mcp_tools::EmailTools {
         store: ctx.store.clone(),
         ports: ctx.ports.clone(),

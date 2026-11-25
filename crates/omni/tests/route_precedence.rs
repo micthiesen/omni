@@ -451,10 +451,16 @@ async fn no_other_host_reaches_the_recipe_app() {
         }
     }
 
+    // A name Omni does not answer to (DNS rebinding) reaches nothing.
+    for path in ["/", "/api/sync", "/api/gateway"] {
+        let response = send(&router, get_from("rebound.example.net", path)).await;
+        assert_eq!(response.status(), StatusCode::MISDIRECTED_REQUEST, "{path}");
+    }
+
     // The home network gets Omni's own answers: its JSON 404 and its SPA.
     for host in [
         "omni.boris",
-        "omni.example.com",
+        "omni.syas.ca",
         "10.10.1.100:8080",
         "localhost",
     ] {

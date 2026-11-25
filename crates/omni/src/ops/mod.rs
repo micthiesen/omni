@@ -63,7 +63,12 @@ pub fn router(state: OpsState) -> Router {
         .route("/api/data/entities", get(data_entities))
         .route(
             "/api/data/entities/{slug}",
-            get(data_entity).delete(delete_data_row),
+            get(data_entity).delete(delete_data_row).route_layer(
+                axum::middleware::from_fn_with_state(
+                    state.ctx.owner.clone(),
+                    omni_runtime::owner::require_trusted,
+                ),
+            ),
         )
         .with_state(state)
 }

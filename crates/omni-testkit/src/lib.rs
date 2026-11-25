@@ -300,6 +300,9 @@ pub fn test_app_env() -> BTreeMap<String, String> {
 
 pub struct TestApp {
     pub ctx: AppContext,
+    /// `Cookie` value of a trusted browser; `post_json` and `request_json`
+    /// send it, as the owner's UI would.
+    pub owner_cookie: String,
     pub pushes: RecordedPushes,
     pub mails: RecordedMails,
     pub ai: FakeModels,
@@ -342,7 +345,15 @@ impl TestApp {
             logs,
         );
         let root: PathBuf = dir.path().to_path_buf();
+        let owner = omni_runtime::owner::OwnerTrust::new(
+            store.clone(),
+            clock.clone(),
+            Some(pushover.clone()),
+            tracker.clone(),
+            &config.ios_control_home_url,
+        );
         let ctx = AppContext {
+            owner,
             config,
             store,
             clock,
@@ -369,8 +380,14 @@ impl TestApp {
                 recipes_web_dist: root.join("recipes-web"),
             },
         };
+        let token = setup(
+            "TestApp::new trusted browser",
+            ctx.owner.trust_for_tests("Test browser").await,
+        );
+        let owner_cookie = format!("{}={token}", omni_runtime::owner::COOKIE_NAME);
         Self {
             ctx,
+            owner_cookie,
             pushes: RecordedPushes(pushover),
             mails: RecordedMails(mailer),
             ai: fakes,
@@ -405,6 +422,7 @@ impl TestApp {
             .uri(path)
             .header(header::HOST, "localhost")
             .header(header::ORIGIN, "http://localhost")
+            .header(header::COOKIE, self.owner_cookie.as_str())
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(body.to_string()));
         send_json(router, setup("TestApp::post_json request", request)).await
@@ -423,9 +441,28 @@ impl TestApp {
             .uri(path)
             .header(header::HOST, "localhost")
             .header(header::ORIGIN, "http://localhost")
+            .header(header::COOKIE, self.owner_cookie.as_str())
             .header(header::CONTENT_TYPE, "application/json")
             .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())));
         send_json(router, setup("TestApp::request_json request", request)).await
+    }
+
+    /// [`Self::request_json`] from a browser that is not trusted.
+    pub async fn untrusted_json(
+        &self,
+        router: &Router,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::HOST, "localhost")
+            .header(header::ORIGIN, "http://localhost")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())));
+        send_json(router, setup("TestApp::untrusted_json request", request)).await
     }
 }
 

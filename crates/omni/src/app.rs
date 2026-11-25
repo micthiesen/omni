@@ -41,6 +41,18 @@ pub async fn main(command: Command) -> u8 {
             0
         }
         Command::Healthcheck => healthcheck().await,
+        Command::OwnerLink => match owner_link().await {
+            Ok(url) => {
+                stdout_text(&format!(
+                    "Open this link in the browser to trust (works once, for 15 minutes):\n{url}\n"
+                ));
+                0
+            }
+            Err(error) => {
+                stderr_line(&format!("owner-link failed: {error}"));
+                EXIT_FAILURE
+            }
+        },
         Command::Doctor { image } => doctor(image).await,
         Command::CompatAudit(args) => compat_audit(&args),
         Command::Stylist(args) => match crate::stylist_cli::run(&args).await {
@@ -117,6 +129,30 @@ pub async fn main(command: Command) -> u8 {
         }
         Command::Preview { port, web_dist } => crate::preview::main(port, web_dist).await,
     }
+}
+
+/// `omni owner-link`: a trusted-browser link, written straight to the
+/// store (run inside the container, beside the server).
+async fn owner_link() -> Result<String, String> {
+    let config = Config::from_process_env().map_err(|e| e.to_string())?;
+    let clock: SharedClock = Arc::new(SystemClock);
+    let store = omni_store::Store::open(
+        &config.db_path(),
+        omni_store::StoreOptions::new(clock.clone()),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let owner = omni_runtime::owner::OwnerTrust::new(
+        store,
+        clock,
+        None,
+        tokio_util::task::TaskTracker::new(),
+        &config.ios_control_home_url,
+    );
+    owner
+        .create_link("Browser trusted with omni owner-link")
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// `FRONTEND_PORT` as a TCP port.

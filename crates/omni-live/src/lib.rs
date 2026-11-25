@@ -350,7 +350,13 @@ impl LiveModule {
             roster: self.roster.clone(),
             relays,
         })
-        .merge(config_routes::router(self.service.clone()));
+        // Settings can hold Pushover tokens: changes need a trusted browser.
+        .merge(config_routes::router(self.service.clone()).route_layer(
+            axum::middleware::from_fn_with_state(
+                self.ctx.owner.clone(),
+                omni_runtime::owner::require_trusted,
+            ),
+        ));
         subsystem.mcp_tools = mcp::tools(&self.service)?;
         subsystem.entities = entities();
         subsystem.managed_entities = managed_entities();

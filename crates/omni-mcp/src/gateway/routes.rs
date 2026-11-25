@@ -4,9 +4,10 @@
 //! `/api/*` is LAN-only (the public proxy forwards only `/gateway/*` and
 //! the OAuth well-known documents) and same-origin for mutations. Because
 //! these routes mint internet-valid tokens and approve sign-ins, their
-//! mutations also need an `Origin` and a LAN `Host` ([`lan_only`]), which
-//! defeats DNS rebinding. Views carry header and variable names but never
-//! their values.
+//! mutations also need an `Origin`, a LAN `Host` and a trusted browser
+//! ([`lan_only`], `omni_runtime::owner`): headers alone are chosen by the
+//! client, so any LAN device could forge the first two. Views carry header
+//! and variable names but never their values.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -52,6 +53,8 @@ pub struct AdminState {
     pub authorization: Option<AuthorizationServer>,
     /// The public origin (`https://host`) when `OMNI_GATEWAY_PUBLIC_URL` is set.
     pub public_url: Option<String>,
+    /// Changes need a trusted browser.
+    pub owner: omni_runtime::owner::OwnerTrust,
 }
 
 fn admin_error(error: AdminError) -> ApiError {
@@ -126,7 +129,8 @@ fn lan_host(host: &str, public_url: Option<&str>) -> bool {
             .any(|suffix| name.ends_with(suffix))
 }
 
-/// Mutations of the management API need an `Origin` and a LAN `Host`.
+/// Mutations of the management API need an `Origin`, a LAN `Host` and a
+/// trusted browser.
 async fn lan_only(
     State(state): State<AdminState>,
     request: axum::extract::Request,
@@ -148,6 +152,9 @@ async fn lan_only(
                 "Change the MCP gateway from Omni's page on the home network.",
             )
             .into_response();
+        }
+        if !state.owner.is_trusted(headers).await {
+            return omni_runtime::owner::untrusted_response();
         }
     }
     next.run(request).await

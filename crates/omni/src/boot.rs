@@ -75,6 +75,7 @@ pub fn all_entities(subsystems: &[Subsystem]) -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_ai::costs::CostEventData>(),
         EntityDescriptor::of::<omni_ai::costs::CostMigrationData>(),
     ];
+    entities.extend(omni_runtime::owner::entities());
     let mut seen: std::collections::HashSet<&'static str> =
         entities.iter().map(|e| e.name).collect();
     for descriptor in subsystems.iter().flat_map(|s| &s.entities) {
@@ -179,6 +180,10 @@ pub struct ServeOptions {
     pub web_dist: PathBuf,
 }
 
+/// The LAN-only proxy host of the UI (NPM host 47), known even when
+/// `IOS_CONTROL_HOME_URL` names the legacy `omni.boris`.
+const LAN_UI_HOST: &str = "omni.syas.ca";
+
 /// The fully assembled router (ops routes, every subsystem, SPA fallback),
 /// with every subsystem's host apps dispatched in front of it.
 pub fn app_router(
@@ -192,7 +197,10 @@ pub fn app_router(
     }
     let data = DataManager::new(ctx.store.clone(), order_managed(managed));
     let ops = OpsState::new(ctx.clone(), data);
-    let mut parts = vec![ops_router(ops.clone())];
+    let mut parts = vec![
+        ops_router(ops.clone()),
+        omni_runtime::owner::router(ctx.owner.clone()),
+    ];
     let mut host_apps = Vec::new();
     for subsystem in subsystems.iter_mut() {
         parts.push(std::mem::take(&mut subsystem.router));
@@ -229,6 +237,24 @@ pub fn app_router(
     // Outermost: a host app's host reaches that app's own router and nothing
     // of Omni, and no other host reaches the app.
     let router = omni_server_kit::host_app::dispatch(router, host_apps);
+    // Before all of it: only names Omni answers to (no DNS rebinding).
+    let config = &ctx.config;
+    let known = omni_server_kit::public_host::KnownHosts::new(
+        [
+            config.omni_gateway_public_url.as_deref(),
+            config.presspods_public_url.as_deref(),
+            config.recipes_app_url.as_deref(),
+            Some(config.recs_public_url.as_str()),
+            Some(config.ios_control_home_url.as_str()),
+            Some(LAN_UI_HOST),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    let router = router.layer(axum::middleware::from_fn_with_state(
+        known,
+        omni_server_kit::public_host::only_known_hosts,
+    ));
     (router, ops)
 }
 

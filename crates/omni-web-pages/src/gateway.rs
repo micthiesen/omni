@@ -15,6 +15,7 @@ mod endpoint;
 mod events;
 mod integrations;
 mod logic;
+mod trust;
 
 use std::time::Duration;
 

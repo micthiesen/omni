@@ -162,6 +162,26 @@ async fn reprocess_needs_active_pipelines_and_clears_the_retry() {
 }
 
 #[tokio::test]
+async fn only_a_trusted_browser_changes_sender_rules() {
+    let (app, router) = app().await;
+    let (status, body) = app
+        .untrusted_json(
+            &router,
+            Method::POST,
+            paths::EMAIL_RULES,
+            Some(
+                &json!({"pattern": "attacker@evil.example", "scope": "parcel", "verdict": "allow"}),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "untrusted_browser");
+    let (status, body) = send(&router, Method::GET, paths::EMAIL_RULES).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.to_string().contains("evil.example"), "{body}");
+}
+
+#[tokio::test]
 async fn manages_rules_with_builtin_and_merge_statuses() {
     let (app, router) = app().await;
     let (status, body) = app
@@ -216,20 +236,24 @@ async fn manages_rules_with_builtin_and_merge_statuses() {
     assert_eq!(body["builtin"]["parcel"]["blocked"][0], "@amazon.");
     assert_eq!(body["builtin"]["calendar"]["autoPass"][0], "@united.com");
 
-    let (status, body) = send(
-        &router,
-        Method::DELETE,
-        &paths::email_rule("both:orders@shop.com"),
-    )
-    .await;
+    let (status, body) = app
+        .request_json(
+            &router,
+            Method::DELETE,
+            &paths::email_rule("both:orders@shop.com"),
+            None,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"deleted": true}));
-    let (status, body) = send(
-        &router,
-        Method::DELETE,
-        &paths::email_rule("both:orders@shop.com"),
-    )
-    .await;
+    let (status, body) = app
+        .request_json(
+            &router,
+            Method::DELETE,
+            &paths::email_rule("both:orders@shop.com"),
+            None,
+        )
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body, json!({"error": "Unknown rule"}));
 }

@@ -5,6 +5,7 @@
 //! omni --run-task <Name>
 //! omni --preview [--port N]
 //! omni healthcheck
+//! omni owner-link
 //! omni doctor [--image]
 //! omni compat-audit --db COPY
 //! omni stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
@@ -36,6 +37,8 @@ pub enum Command {
         web_dist: PathBuf,
     },
     Healthcheck,
+    /// Prints a one-time link that trusts the browser opening it.
+    OwnerLink,
     Doctor {
         image: bool,
     },
@@ -69,6 +72,7 @@ pub const USAGE: &str = "usage:
   omni --run-task <TaskName> [--side-effects=live|record]
   omni --preview [--port N] [--web-dist DIR]
   omni healthcheck
+  omni owner-link
   omni doctor [--image]
   omni compat-audit --db COPY
   omni stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
@@ -112,6 +116,7 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
         .map_or_else(|| PathBuf::from(DEFAULT_WEB_DIST), PathBuf::from);
     match args.first().map(String::as_str) {
         Some("healthcheck") => return Ok(Command::Healthcheck),
+        Some("owner-link") if args.len() == 1 => return Ok(Command::OwnerLink),
         Some("doctor") => {
             return match args.get(1).map(String::as_str) {
                 None => Ok(Command::Doctor { image: false }),
