@@ -43,6 +43,9 @@ fn call(id: &str, overrides: impl FnOnce(&mut McpCallData)) -> McpCallData {
         error: None,
         input: JsValue::Object(Default::default()),
         output: JsValue::Null,
+        caller: None,
+        integration: None,
+        log: Vec::new(),
         extra: Extra::default(),
     };
     overrides(&mut call);
@@ -303,10 +306,10 @@ async fn a_dropped_call_is_recorded_as_interrupted() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn keeps_the_newest_two_thousand_calls() {
+async fn keeps_the_newest_ten_thousand_calls_for_thirty_days() {
     let clock = clock();
     let db = test_store(&clock).await;
-    let rows: Vec<McpCallData> = (0..2_100)
+    let rows: Vec<McpCallData> = (0..10_100)
         .map(|i| call(&format!("c{i}"), |c| c.started_at = i))
         .collect();
     db.store
@@ -319,15 +322,27 @@ async fn keeps_the_newest_two_thousand_calls() {
         .await
         .unwrap();
     assert_eq!(prune_calls(&db.store).await.unwrap(), 0);
-    let extra = call("c2100", |c| c.started_at = 2_100);
+    let extra = call("c10100", |c| c.started_at = 10_100);
     db.store
         .write(move |tx| tx.upsert(&extra, UpsertOpts::default()))
         .await
         .unwrap();
     assert_eq!(prune_calls(&db.store).await.unwrap(), 101);
     let calls = all_calls(&db.store).await;
-    assert_eq!(calls.len(), 2_000);
+    assert_eq!(calls.len(), 10_000);
     assert!(calls.iter().all(|c| c.started_at >= 101));
+    // The Retention task removes finished calls older than 30 days.
+    let month = 30 * 24 * 60 * 60 * 1000;
+    let removed = omni_mcp::activity::prune_old_calls(&db.store, month + 5_000)
+        .await
+        .unwrap();
+    assert_eq!(removed, 4_899);
+    assert!(
+        all_calls(&db.store)
+            .await
+            .iter()
+            .all(|c| c.started_at >= 5_000)
+    );
 }
 
 mod summary {
@@ -495,7 +510,7 @@ async fn activity_routes_serve_mcp_and_claude_views() {
     assert_eq!(activity.status, StatusCode::OK);
     let body: Value = serde_json::from_str(&activity.text).unwrap();
     assert_eq!(body["calls"].as_array().unwrap().len(), 2);
-    assert_eq!(body["retention"], json!({"maxCalls": 2000}));
+    assert_eq!(body["retention"], json!({"maxCalls": 10000}));
 
     let claude: Value =
         serde_json::from_str(&send(&router, get("/api/claude/activity")).await.text).unwrap();

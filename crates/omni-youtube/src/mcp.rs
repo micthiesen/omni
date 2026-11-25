@@ -23,10 +23,11 @@ use crate::transcripts::{RETENTION_MS, TranscriptError, Transcripts};
 /// `[code] message`, so clients can tell quota, connection and input failures apart.
 fn tool_error(error: &YoutubeError) -> ToolError {
     let message = format!("[{}] {error}", error.code());
-    match error {
+    let tool = match error {
         YoutubeError::Invalid(_) => ToolError::input(message),
         _ => ToolError::execute(message),
-    }
+    };
+    tool.retryable(error.is_transient())
 }
 
 fn input(message: impl Into<String>) -> ToolError {

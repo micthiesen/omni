@@ -193,7 +193,7 @@ async fn lists_tasks_with_runs_in_the_task_run_shape() {
     assert_eq!(structured(&got)["run"]["runId"], "A:1");
     assert_eq!(structured(&got)["logs"], json!([]));
     let missing = call_tool(&router, "task_run_get", json!({"runId": "Z:1"})).await;
-    assert_eq!(error_text(&missing), "Unknown task run \"Z:1\"");
+    assert_eq!(error_text(&missing), "[failed] Unknown task run \"Z:1\"");
 }
 
 #[tokio::test]
@@ -250,5 +250,5 @@ async fn gets_one_livestream_with_bounded_metrics_and_sessions() {
     let plain = call_tool(&router, "livestream_get", json!({"streamerId": "bob"})).await;
     assert_eq!(structured(&plain)["metrics"], Value::Null);
     let unknown = call_tool(&router, "livestream_get", json!({"streamerId": "nope"})).await;
-    assert_eq!(error_text(&unknown), "Unknown livestream \"nope\"");
+    assert_eq!(error_text(&unknown), "[failed] Unknown livestream \"nope\"");
 }

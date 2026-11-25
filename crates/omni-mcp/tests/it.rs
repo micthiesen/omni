@@ -8,6 +8,7 @@ mod event_journal;
 mod events_protocol;
 mod events_publisher;
 mod events_service;
+mod failures;
 mod gateway;
 mod gateway_admin;
 mod gateway_events;

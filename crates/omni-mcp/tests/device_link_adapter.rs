@@ -87,7 +87,7 @@ async fn claude_tools_reach_the_host_only_through_the_long_poll_and_never_name_i
     assert!(is_error(&failed));
     assert_eq!(
         error_text(&failed),
-        "the host session ~/x is mid-turn (busy)"
+        "[busy] the host session ~/x is mid-turn"
     );
     let text = format!("{status}{listed}{failed}");
     assert!(!text.contains("MaxBook"));

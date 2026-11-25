@@ -63,7 +63,10 @@ async fn turns_thrown_defects_into_a_safe_tagged_tool_failure() {
     let router = mcp_router(&store.store, &clock, vec![tool], None);
     let message = call_tool(&router, "system_status", json!({})).await;
     assert!(is_error(&message));
-    assert_eq!(error_text(&message), "private implementation failure");
+    assert_eq!(
+        error_text(&message),
+        "[failed] private implementation failure"
+    );
 }
 
 #[tokio::test]

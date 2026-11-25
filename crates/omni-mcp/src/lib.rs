@@ -29,6 +29,7 @@
 pub mod activity;
 pub mod activity_routes;
 pub mod events;
+pub mod failures;
 pub mod gateway;
 pub mod host;
 pub mod json;
@@ -299,6 +300,8 @@ impl McpPackage {
         let oauth = OAuthClient::new(ctx.public_http.clone());
         let recorder =
             ActivityRecorder::new(ctx.store.clone(), ctx.clock.clone(), ctx.tracker.clone());
+        // Each call's log lines are kept on its activity row.
+        recorder.capture_logs(ctx.run_logs());
         let gateway = Gateway::new(GatewayParts {
             store: ctx.store.clone(),
             clock: ctx.clock.clone(),
@@ -430,26 +433,35 @@ impl McpPackage {
             Some(self.events.clone()),
             self.gateway.clone(),
         )?;
-        let mut router =
-            activity_routes::router(ctx.store.clone(), ctx.clock.clone(), self.host.clone())
-                .merge(gateway::endpoint::router(
-                    protocol,
-                    self.access.clone(),
-                    self.gateway.clone(),
-                    self.authorization
-                        .as_ref()
-                        .map(AuthorizationServer::resource_metadata_url),
-                    ctx.shutdown.clone(),
-                ))
-                .merge(gateway::routes::router(AdminState {
-                    gateway: self.gateway.clone(),
-                    access: self.access.clone(),
-                    events: Some(self.events.clone()),
-                    oauth: self.oauth.clone(),
-                    authorization: self.authorization.clone(),
-                    public_url: self.public_origin.clone(),
-                    owner: self.ctx.owner.clone(),
-                }));
+        let mut router = activity_routes::router_for(
+            ctx.store.clone(),
+            ctx.clock.clone(),
+            self.host.clone(),
+            Some(ctx.owner.clone()),
+        )
+        .merge(gateway::endpoint::router(
+            protocol,
+            self.access.clone(),
+            self.gateway.clone(),
+            self.authorization
+                .as_ref()
+                .map(AuthorizationServer::resource_metadata_url),
+            ctx.shutdown.clone(),
+        ))
+        .merge(gateway::routes::router(AdminState {
+            gateway: self.gateway.clone(),
+            access: self.access.clone(),
+            events: Some(self.events.clone()),
+            oauth: self.oauth.clone(),
+            authorization: self.authorization.clone(),
+            public_url: self.public_origin.clone(),
+            owner: self.ctx.owner.clone(),
+        }))
+        .merge(failures::router(
+            ctx.clone(),
+            self.events.clone(),
+            self.gateway.clone(),
+        ));
         if let Some(server) = &self.authorization {
             router = router.merge(server.router());
         }

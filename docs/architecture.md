@@ -182,6 +182,23 @@ skips), checked, fsynced and renamed.
   `volumes/omni/docstore.db`, delete `docstore.db-wal` and `docstore.db-shm`,
   start it.
 
+## Retention
+
+`Retention` (`crates/omni/src/retention.rs`, daily at 04:37) deletes Omni's
+own operational records that nothing else bounds: MCP call traces after 30
+days, email archive and compose receipts after 180, parcel submission dedup
+rows after 365, rows of retired features (`shell-run`), per-run Markdown logs
+under `LOGS_PATH/<feature>/` after 90 days, daily `omni-*.log` files after 14
+(previously swept only at process start), and orphaned `pp_*`/`omni-*` scratch
+files in the temp directory after a day. It never touches recipes, reminders,
+mail, media, contacts or the stylist ledger. Bounded elsewhere: task runs
+(newest 50 per task), the event journal (7 days, failed 30), email activity,
+YouTube transcripts, archives and DB snapshots. Kept on purpose: AI cost
+events (all-time totals), recommendation attempts and taste evidence (dedup),
+and the calendar's tracked events (their tombstones keep deleted events
+deleted). Deleting rows does not shrink `docstore.db`; snapshots are compact
+(`VACUUM INTO`).
+
 ## Golden fixtures
 
 External contracts are frozen by committed fixtures: HTTP JSON responses

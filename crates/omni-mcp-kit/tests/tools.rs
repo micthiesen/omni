@@ -240,7 +240,16 @@ async fn registry_lists_in_serving_order_and_rejects_mismatches() {
         .unwrap();
     assert_eq!(
         serde_json::to_value(call_tool_result(failed)).unwrap(),
-        json!({"content": [{"type": "text", "text": "innermost cause"}], "isError": true})
+        json!({
+            "content": [{"type": "text", "text": "[failed] innermost cause"}],
+            "isError": true,
+            "_meta": {"io.omni/error": {
+                "code": "failed",
+                "message": "innermost cause",
+                "retryable": false,
+                "hint": null
+            }}
+        })
     );
     assert!(registry.call("nope", None, cx()).await.is_none());
 }

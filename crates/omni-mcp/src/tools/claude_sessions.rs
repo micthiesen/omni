@@ -261,7 +261,9 @@ impl ClaudeDeps {
                     error.code,
                     started.elapsed().as_millis()
                 );
-                Err(ToolError::execute(error.to_string()))
+                Err(ToolError::execute(error.detail.clone())
+                    .with_code(error.code.clone())
+                    .retryable(error.retryable))
             }
         }
     }

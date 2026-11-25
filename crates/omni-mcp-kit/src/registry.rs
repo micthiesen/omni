@@ -144,16 +144,17 @@ pub fn call_tool_result(result: Result<ToolOutput, ToolError>) -> CallToolResult
             "content": content,
             "structuredContent": structured,
         }),
-        Err(error) => failed(&error.message),
+        Err(error) => failed(&error),
     };
     serde_json::from_value(value)
         .unwrap_or_else(|e| fallback_failure(&format!("invalid tool result content: {e}")))
 }
 
-fn failed(message: &str) -> Value {
+fn failed(error: &crate::ToolError) -> Value {
     serde_json::json!({
         "isError": true,
-        "content": [{"type": "text", "text": message}],
+        "content": [{"type": "text", "text": error.text()}],
+        "_meta": {crate::ERROR_META: error.meta()},
     })
 }
 

@@ -17,6 +17,7 @@
 //! | [`StylistPage`] | `/stylist` (`?ns=` picks a namespace) | none |
 //! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
 //! | [`GatewayPage`] | `/gateway` (`?integration=` opens one) | none |
+//! | [`FailuresPage`] | `/failures` | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
 //! re-created when its id changes.
@@ -24,6 +25,7 @@
 pub mod calendar;
 mod claude;
 mod common;
+mod failures;
 mod feedback;
 mod gateway;
 mod mcp;
@@ -41,6 +43,7 @@ mod taste_brain;
 
 pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_status};
 pub use claude::ClaudePage;
+pub use failures::FailuresPage;
 pub use feedback::{FeedbackKind, FeedbackPage};
 pub use gateway::GatewayPage;
 pub use mcp::McpPage;

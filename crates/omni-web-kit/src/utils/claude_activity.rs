@@ -567,6 +567,9 @@ mod tests {
             error: None,
             input: json!({}),
             output: Value::Null,
+            caller: None,
+            integration: None,
+            log: Vec::new(),
         }
     }
 

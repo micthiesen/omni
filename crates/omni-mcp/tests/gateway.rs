@@ -967,14 +967,18 @@ async fn hidden_and_disabled_tools_are_neither_listed_nor_callable() {
 }
 
 #[tokio::test]
-async fn calls_are_recorded_without_their_arguments() {
+async fn calls_are_recorded_with_bounded_redacted_arguments_and_their_caller() {
     let fixture = Fixture::new().await;
     let upstream = FakeUpstream::start().await;
     fixture.add("rec", &upstream.url, AuthKind::None).await;
     fixture.refresh("rec").await;
     let token = fixture.client_token().await;
     fixture
-        .call(&token, "rec__echo", json!({"text": "private words"}))
+        .call(
+            &token,
+            "rec__echo",
+            json!({"text": "words", "apiKey": "sk-secret-value", "long": "x".repeat(500)}),
+        )
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let calls = fixture
@@ -986,7 +990,12 @@ async fn calls_are_recorded_without_their_arguments() {
         .iter()
         .find(|c| c.tool == "rec__echo")
         .expect("recorded");
-    assert!(!format!("{call:?}").contains("private words"));
+    let input = omni_mcp::events::persistence::js_to_json(&call.input);
+    assert_eq!(input["text"], "words");
+    assert!(!format!("{call:?}").contains("sk-secret-value"));
+    assert!(input["long"].as_str().unwrap().contains("[truncated"));
+    assert_eq!(call.integration.as_deref(), Some("rec"));
+    assert!(call.caller.is_some());
     fixture.stop().await;
 }
 

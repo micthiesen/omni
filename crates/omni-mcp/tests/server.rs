@@ -541,7 +541,7 @@ async fn reports_printer_tools_as_unavailable_when_printing_is_not_configured() 
     assert!(is_error(&message));
     assert_eq!(
         result(&message)["content"],
-        json!([{"type": "text", "text": "Printer is not configured"}])
+        json!([{"type": "text", "text": "[failed] Printer is not configured"}])
     );
 }
 
@@ -589,7 +589,15 @@ async fn a_panicking_tool_becomes_a_failed_result() {
     let router = mcp_router(&store.store, &clock, vec![status], None);
     let message = call_tool(&router, "get_printer_status", json!({})).await;
     assert!(is_error(&message));
-    assert_eq!(error_text(&message), "private implementation failure");
+    assert_eq!(
+        error_text(&message),
+        "[failed] private implementation failure"
+    );
+    // The same fields as structured data for clients that read them.
+    assert_eq!(
+        result(&message)["_meta"]["io.omni/error"],
+        json!({"code": "failed", "message": "private implementation failure", "retryable": false, "hint": null})
+    );
 }
 
 #[tokio::test]

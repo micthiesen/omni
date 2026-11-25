@@ -54,7 +54,20 @@ pub struct SystemDeps {
 }
 
 fn port_error(error: PortError) -> ToolError {
-    ToolError::execute(error.to_string())
+    let retryable = matches!(
+        error,
+        PortError::Failed {
+            transient: true,
+            ..
+        }
+    );
+    let unavailable = matches!(error, PortError::Unavailable(_));
+    let tool = ToolError::execute(error.to_string()).retryable(retryable);
+    if unavailable {
+        tool.with_code("unavailable")
+    } else {
+        tool
+    }
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ToolError> {

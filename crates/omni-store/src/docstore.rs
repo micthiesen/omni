@@ -356,6 +356,13 @@ pub trait DocWrite: DocOps {
     fn touch_doc(&mut self, pk: &str, expires_at: Option<i64>) -> Result<bool, StoreError>;
     fn delete_docs_by_prefix(&mut self, prefix: &str) -> Result<u64, StoreError>;
     fn delete_docs_by_entity(&mut self, entity: &str) -> Result<u64, StoreError>;
+    /// Deletes rows of `entity` last written before `cutoff_ms` (rows with
+    /// no `updated_at` count as old).
+    fn delete_docs_by_entity_before(
+        &mut self,
+        entity: &str,
+        cutoff_ms: i64,
+    ) -> Result<u64, StoreError>;
     /// Physically deletes up to `limit` expired rows.
     fn cleanup_expired(&mut self, limit: u32) -> Result<u64, StoreError>;
     /// Deletes every `blobs` row.
@@ -687,6 +694,18 @@ impl DocWrite for Tx<'_> {
         self.conn
             .prepare_cached("DELETE FROM blobs WHERE entity = ?1")
             .and_then(|mut stmt| stmt.execute(params![entity]))
+            .map(changes)
+            .map_err(sqlite_err)
+    }
+
+    fn delete_docs_by_entity_before(
+        &mut self,
+        entity: &str,
+        cutoff_ms: i64,
+    ) -> Result<u64, StoreError> {
+        self.conn
+            .prepare_cached("DELETE FROM blobs WHERE entity = ?1 AND COALESCE(updated_at, 0) < ?2")
+            .and_then(|mut stmt| stmt.execute(params![entity, cutoff_ms]))
             .map(changes)
             .map_err(sqlite_err)
     }

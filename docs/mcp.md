@@ -121,6 +121,14 @@ Mailbox events invalidate cached searches, and cached messages have bounded
 lifetimes and memory use. Cold searches fetch selected messages in a batch.
 Timing logs contain counts and durations, without search terms or message bodies.
 
+`email_thread_get` returns the whole conversation of one email, oldest first,
+in one call: the messages its `References` and `In-Reply-To` name (each looked
+up by Message-ID across Inbox, Archive and Sent) and the replies whose
+`References` name the thread's root or the email (IMAP `HEADER References`
+searches of Inbox, Archive and Sent, checked against the parsed list). At most
+50 messages (`limit`, default 25; the newest are kept and the asked-for email
+always is), each with `bodyChars` of text (default 2,000).
+
 Read results include recipient, Reply-To, Message-ID, and References fields so a
 reply can preserve the original thread. Use the actual `messageId` for
 `inReplyTo`; a transport fallback `id` is not an RFC Message-ID.
@@ -882,15 +890,46 @@ for the link protocol, project allowlist, and failure semantics.
 
 ## Activity
 
-Omni records every MCP tool call: tool, timing, status, error, and a bounded
-copy of the input. Strings are capped at 300 characters (4,000 for `claude_*`
-tools), arrays at 20 items, and keys that look like secrets are redacted. Only
-`claude_*` calls also keep a bounded copy of their output. The newest 2,000 calls
-are kept; calls left running by a restart are marked `interrupted` at boot.
+Omni records a trace of every MCP tool call, its own and the integrations'
+(`<id>__tool`): tool, caller (the gateway client's label or the OAuth grant's
+client name; all Rakazo bots share one client), integration, timing and
+duration, status (`ok`, `error`, `interrupted`, or `invalid` for arguments the
+tool's schema refused, with the reason), error, a bounded copy of the input and
+the log lines Omni wrote while the call ran (newest 40, through the run-log
+capture; the handler's `call_id` is the trace's id). Strings are capped at 300
+characters (4,000 for `claude_*` tools), arrays at 20 items, and keys that look
+like secrets are redacted. Only `claude_*` calls also keep a bounded copy of
+their output. Traces are kept 30 days (the daily `Retention` task), at most the
+newest 10,000; calls left running by a restart are marked `interrupted` at boot.
 
 The LAN UI shows this history at `/mcp-activity`, and `/claude` organizes Claude session
 actions by session alongside the Mac's live sessions and link state. Their data
 comes from `GET /api/mcp/activity` and `GET /api/claude/*`, which are read-only.
+Inputs, outputs, log lines and session transcripts are shown only to a trusted
+browser (`detailHidden: true` otherwise). `/failures` (`GET /api/failures`)
+lists failed and invalid calls with failed task runs, dead event deliveries and
+integrations in error.
+
+## Tool results
+
+Every native tool answers in one shape. A success is `structuredContent` (valid
+against the tool's output schema) plus the same JSON as text. A failure is
+`isError: true` with:
+
+- text `[code] message`, then `Hint: …` when the next step is not obvious and
+  `Retryable: the same call may work if tried again later.` when it may;
+- `_meta["io.omni/error"]`: `{code, message, retryable, hint}`.
+
+`code` is `snake_case` and stable (`not_found`, `invalid_input`, `busy`,
+`unavailable`, a crate's own codes such as `diet_conflict`; `failed` when the
+handler names none). Arguments that fail the input schema keep the SDKs' text
+(`Input validation error: Invalid arguments for tool <name>: …`) with code
+`invalid_input` in `_meta`. Integration tools pass the upstream result
+through; a failure inside the gateway also carries `io.omni/error` (its error
+kind as the code, retryable for network, timeout and process failures whose
+call certainly did not run). Handlers build failures with `ToolError`
+(`with_code`, `retryable`, `with_hint`); a leading `[code]` in the message
+sets the code.
 
 ## Approval policy
 

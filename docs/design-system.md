@@ -280,7 +280,7 @@ and no sub-tab strip (`SectionNav` is removed).
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
 | **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
-| **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
+| **System** | Operations (`/operations`), Failures (`/failures`), Costs (`/costs`), MCP (`/mcp-activity`), MCP gateway (`/gateway`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
   `routes.rs` with tests; every existing route, alias and normalization rule is
@@ -876,6 +876,22 @@ per 8.4.
    sideways scroll, inspector as sheet.
    The HISTORY accordions and `task-history-<name>` ids become inspector
    sections (keep the id on the inspector history list).
+
+### `/failures`
+
+What is failing across Omni in one list (`GET /api/failures`), so Operations,
+MCP activity and the gateway need not be checked one by one. h1 "Failures"
+with a lede of the count and what is covered: task runs and integrations as
+they stand now, tool calls and event deliveries from the last 7 days. Readout
+band: tasks, tool calls · 7d, deliveries · 7d, integrations (a nonzero count
+in fault). One Panel: Segmented All / Tasks / Tool calls / Deliveries /
+Integrations with counts, then link rows newest first to where the full story
+is: kind Tag, the title (tool and event names in mono), the error wrapping to
+two lines, relative time with the absolute time on hover. Phone rows put the
+kind and time on the first line. ShowMore pages by 50; the server sends at
+most 200, and the foot says so when counts exceed it. Nothing failing is a
+titled EmptyState "Nothing is failing". Polls every 30 s while the tab is
+visible. No rail badge: the shell would need its own fetch.
 
 ### `/pets`
 

@@ -1,9 +1,13 @@
-//! MCP call recording.
+//! MCP call recording: one trace per tool call, Omni's and the integrations'.
 //!
-//! Every tool call that passes input validation is recorded as `running`, then
-//! finished as `ok`, `error` or `interrupted` (the request went away). Inputs
-//! are bounded and secret-looking keys redacted; outputs are kept only for
-//! `claude_*` tools, whose results are the activity. Recording failures are
+//! A call is recorded as `running` with its caller (the gateway client or
+//! grant) and bounded input, then finished as `ok`, `error` or `interrupted`
+//! (the request went away) with its duration and the log lines written while
+//! it ran (newest 40). A call whose arguments fail the tool's schema is
+//! recorded as `invalid` with the reason: that is how a bot misusing a tool
+//! shows. Inputs are bounded and secret-looking keys redacted; outputs are
+//! kept only for `claude_*` tools, whose results are the activity. Calls are
+//! kept 30 days, at most [`MCP_ACTIVITY_MAX_CALLS`]. Recording failures are
 //! logged and never change the tool's own result.
 
 use std::collections::HashMap;
@@ -27,7 +31,12 @@ use tokio_util::task::TaskTracker;
 use crate::events::persistence::{js_to_json, json_to_js};
 
 const LOG: &str = "MCP:Activity";
-pub const MCP_ACTIVITY_MAX_CALLS: usize = 2_000;
+pub const MCP_ACTIVITY_MAX_CALLS: usize = 10_000;
+/// Calls older than this are deleted by the `Retention` task.
+pub const MCP_ACTIVITY_RETENTION_MS: i64 = 30 * DAY_MS;
+/// Log lines kept per call, and their length.
+const LOG_LINES: usize = 40;
+const LOG_LINE_CHARS: usize = 400;
 const PRUNE_SLACK: usize = 100;
 const DEFAULT_STRING_LIMIT: usize = 300;
 const CLAUDE_STRING_LIMIT: usize = 4_000;
@@ -55,8 +64,24 @@ pub struct McpCallData {
     /// Recorded only for Claude session tools.
     #[serde(default = "undefined")]
     pub output: JsValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub log: Vec<CallLogLine>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// One log line written while a call ran.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallLogLine {
+    pub at: i64,
+    pub level: String,
+    pub target: String,
+    pub message: String,
 }
 
 fn undefined() -> JsValue {
@@ -86,6 +111,18 @@ impl McpCallData {
             error: self.error.clone(),
             input: js_to_json(&self.input),
             output: js_to_json(&self.output),
+            caller: self.caller.clone(),
+            integration: self.integration.clone(),
+            log: self
+                .log
+                .iter()
+                .map(|line| omni_api::mcp_activity::McpCallLogLine {
+                    at: line.at,
+                    level: line.level.clone(),
+                    target: line.target.clone(),
+                    message: line.message.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -273,6 +310,17 @@ struct RecorderInner {
     clock: SharedClock,
     tracker: TaskTracker,
     since_prune: AtomicUsize,
+    /// Log capture per call (set in production; tests may leave it out).
+    run_logs: std::sync::OnceLock<omni_tasks::RunLogs>,
+}
+
+/// Who made a call and through what.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CallSource {
+    /// The gateway client's label or the OAuth grant's client name.
+    pub caller: Option<String>,
+    /// The integration of an `<id>__tool` call.
+    pub integration: Option<String>,
 }
 
 /// Records MCP calls; cheap to clone.
@@ -289,6 +337,28 @@ pub struct RecordedCall {
     tool: String,
     started_at: i64,
     finished: bool,
+    /// Work `.instrument`ed with this span has its log lines kept on the call.
+    span: tracing::Span,
+    capture: Option<omni_tasks::log_capture::CaptureHandle>,
+}
+
+/// The newest [`LOG_LINES`] captured lines, bounded.
+fn call_log(capture: Option<omni_tasks::log_capture::CaptureHandle>) -> Vec<CallLogLine> {
+    let Some(capture) = capture else {
+        return Vec::new();
+    };
+    let (lines, _) = capture.finish();
+    let skip = lines.len().saturating_sub(LOG_LINES);
+    lines
+        .into_iter()
+        .skip(skip)
+        .map(|line| CallLogLine {
+            at: line.t,
+            level: line.level.as_str().to_owned(),
+            target: line.logger,
+            message: truncate_text(&line.msg, LOG_LINE_CHARS),
+        })
+        .collect()
 }
 
 impl ActivityRecorder {
@@ -299,20 +369,48 @@ impl ActivityRecorder {
                 clock,
                 tracker,
                 since_prune: AtomicUsize::new(0),
+                run_logs: std::sync::OnceLock::new(),
             }),
         }
     }
 
-    pub async fn start(&self, meta: &ToolMeta, input: &Value) -> RecordedCall {
-        let call_id = omni_core::ids::uuid_v4();
-        let started_at = self.inner.clock.now_ms();
-        let row = McpCallData {
-            call_id: call_id.clone(),
+    /// Captures each call's log lines through the app's run-log buffers.
+    pub fn capture_logs(&self, logs: omni_tasks::RunLogs) {
+        let _ = self.inner.run_logs.set(logs);
+    }
+
+    /// A call refused before it ran (its arguments failed the schema).
+    pub async fn record_invalid(
+        &self,
+        meta: &ToolMeta,
+        input: &Value,
+        source: &CallSource,
+        reason: &str,
+    ) {
+        let now = self.inner.clock.now_ms();
+        let mut row = self.row(meta, input, source, now);
+        row.status = McpCallStatus::Invalid;
+        row.finished_at = Some(now);
+        row.duration_ms = Some(0);
+        row.error = Some(truncate_text(reason, ERROR_LIMIT));
+        if let Err(error) = self
+            .inner
+            .store
+            .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+            .await
+        {
+            tracing::warn!(target: LOG, "MCP activity of an invalid call failed for {}: {error}", meta.name);
+        }
+    }
+
+    fn row(&self, meta: &ToolMeta, input: &Value, source: &CallSource, now: i64) -> McpCallData {
+        McpCallData {
+            call_id: omni_core::ids::uuid_v4(),
             tool: meta.name.clone(),
             title: meta.title.clone(),
             recommended_policy: policy_of(meta),
             read_only: meta.annotations.read_only_hint,
-            started_at,
+            started_at: now,
             finished_at: None,
             duration_ms: None,
             status: McpCallStatus::Running,
@@ -322,8 +420,33 @@ impl ActivityRecorder {
                 string_limit_for(&meta.name),
             )),
             output: JsValue::Null,
+            caller: source.caller.clone(),
+            integration: source.integration.clone(),
+            log: Vec::new(),
             extra: Extra::default(),
-        };
+        }
+    }
+
+    pub async fn start(&self, meta: &ToolMeta, input: &Value) -> RecordedCall {
+        self.start_from(meta, input, &CallSource::default()).await
+    }
+
+    pub async fn start_from(
+        &self,
+        meta: &ToolMeta,
+        input: &Value,
+        source: &CallSource,
+    ) -> RecordedCall {
+        let started_at = self.inner.clock.now_ms();
+        let row = self.row(meta, input, source, started_at);
+        let call_id = row.call_id.clone();
+        let capture = self.inner.run_logs.get().map(|logs| {
+            omni_tasks::log_capture::capture_scope(
+                logs,
+                &format!("mcp:{call_id}"),
+                &format!("MCP {}", meta.name),
+            )
+        });
         if let Err(error) = self
             .inner
             .store
@@ -332,16 +455,29 @@ impl ActivityRecorder {
         {
             tracing::warn!(target: LOG, "MCP activity start failed for {}: {error}", meta.name);
         }
+        let (span, capture) = match capture {
+            Some((span, handle)) => (span, Some(handle)),
+            None => (tracing::Span::none(), None),
+        };
         RecordedCall {
             recorder: self.clone(),
             call_id,
             tool: meta.name.clone(),
             started_at,
             finished: false,
+            span,
+            capture,
         }
     }
 
-    async fn finish(&self, call_id: String, tool: String, started_at: i64, outcome: CallOutcome) {
+    async fn finish(
+        &self,
+        call_id: String,
+        tool: String,
+        started_at: i64,
+        outcome: CallOutcome,
+        log: Vec<CallLogLine>,
+    ) {
         let finished_at = self.inner.clock.now_ms();
         let (status, error, output) = match outcome {
             CallOutcome::Ok(output) => (McpCallStatus::Ok, None, output),
@@ -374,6 +510,12 @@ impl ActivityRecorder {
             }),
         );
         patch.insert("output".into(), output);
+        if !log.is_empty() {
+            patch.insert(
+                "log".into(),
+                json_to_js(&serde_json::to_value(&log).unwrap_or(Value::Null)),
+            );
+        }
         let key = call_id;
         if let Err(error) = self
             .inner
@@ -402,18 +544,30 @@ fn status_js(status: McpCallStatus) -> JsValue {
             McpCallStatus::Ok => "ok",
             McpCallStatus::Error => "error",
             McpCallStatus::Interrupted => "interrupted",
+            McpCallStatus::Invalid => "invalid",
         }
         .to_owned(),
     )
 }
 
 impl RecordedCall {
+    /// The recorded call's id (also the handler's `call_id`).
+    pub fn id(&self) -> &str {
+        &self.call_id
+    }
+
+    /// The span the handler runs in, so its log lines land on the call.
+    pub fn span(&self) -> tracing::Span {
+        self.span.clone()
+    }
+
     pub async fn finish(mut self, outcome: CallOutcome) {
         self.finished = true;
         let call_id = std::mem::take(&mut self.call_id);
         let tool = std::mem::take(&mut self.tool);
+        let log = call_log(self.capture.take());
         self.recorder
-            .finish(call_id, tool, self.started_at, outcome)
+            .finish(call_id, tool, self.started_at, outcome, log)
             .await;
     }
 }
@@ -422,6 +576,7 @@ impl RecordedCall {
     /// Forgets a call that never ran (its arguments failed validation).
     pub async fn discard(mut self) {
         self.finished = true;
+        drop(call_log(self.capture.take()));
         let key = std::mem::take(&mut self.call_id);
         let tool = std::mem::take(&mut self.tool);
         if let Err(error) = self
@@ -445,13 +600,33 @@ impl Drop for RecordedCall {
         let call_id = std::mem::take(&mut self.call_id);
         let tool = std::mem::take(&mut self.tool);
         let started_at = self.started_at;
+        let log = call_log(self.capture.take());
         let tracker = recorder.inner.tracker.clone();
         omni_core::spawn::spawn_tracked(&tracker, "mcp-call-interrupted", async move {
             recorder
-                .finish(call_id, tool, started_at, CallOutcome::Interrupted)
+                .finish(call_id, tool, started_at, CallOutcome::Interrupted, log)
                 .await;
         });
     }
+}
+
+/// Deletes finished calls older than [`MCP_ACTIVITY_RETENTION_MS`]; how many.
+pub async fn prune_old_calls(store: &Store, now: i64) -> Result<usize, StoreError> {
+    let cutoff = now - MCP_ACTIVITY_RETENTION_MS;
+    store
+        .write(move |tx| {
+            let old: Vec<String> = tx
+                .get_all::<McpCallData>()?
+                .into_iter()
+                .filter(|call| call.status != McpCallStatus::Running && call.started_at < cutoff)
+                .map(|call| call.call_id)
+                .collect();
+            for id in &old {
+                tx.delete::<McpCallData>(id)?;
+            }
+            Ok::<_, StoreError>(old.len())
+        })
+        .await
 }
 
 /// Keeps the newest [`MCP_ACTIVITY_MAX_CALLS`] once the count exceeds it by the slack.
@@ -617,6 +792,7 @@ pub fn summarize_calls(
         retention: McpRetention {
             max_calls: MCP_ACTIVITY_MAX_CALLS as u64,
         },
+        detail_hidden: false,
     }
 }
 

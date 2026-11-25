@@ -51,7 +51,7 @@ fn tool_set(app: &TestApp) -> Vec<McpTool> {
 }
 
 #[tokio::test]
-async fn registers_the_thirteen_tools_in_serving_order() {
+async fn registers_the_fourteen_tools_in_serving_order() {
     let app = TestApp::new().await;
     let names: Vec<String> = tool_set(&app).iter().map(|t| t.meta.name.clone()).collect();
     assert_eq!(
@@ -59,6 +59,7 @@ async fn registers_the_thirteen_tools_in_serving_order() {
         [
             "email_search",
             "email_get",
+            "email_thread_get",
             "email_health",
             "email_activity_list",
             "email_activity_get",
@@ -389,4 +390,75 @@ async fn browses_recent_inbox_mail_without_invented_criteria_and_forwards_freshn
         (search.unread, search.since_ms, search.before_ms),
         (None, None, None)
     );
+}
+
+#[tokio::test]
+async fn thread_get_returns_the_whole_conversation_oldest_first() {
+    let app = TestApp::new().await;
+    let message = |id: &str, at: &str, in_reply_to: Option<&str>, refs: &[&str]| {
+        let mut e = email(id);
+        e.message_id = Some(id.to_owned());
+        e.received_at = at.to_owned();
+        e.in_reply_to = in_reply_to.map(str::to_owned);
+        e.references = (!refs.is_empty()).then(|| refs.iter().map(|r| (*r).to_owned()).collect());
+        e
+    };
+    let root = message("<root@x>", "2026-11-01T10:00:00.000Z", None, &[]);
+    let middle = message(
+        "<middle@x>",
+        "2026-11-02T10:00:00.000Z",
+        Some("<root@x>"),
+        &["<root@x>"],
+    );
+    let reply = message(
+        "<reply@x>",
+        "2026-11-03T10:00:00.000Z",
+        Some("<middle@x>"),
+        &["<root@x>", "<middle@x>"],
+    );
+    // The server's References search is a substring match; this one only
+    // looks related.
+    let unrelated = message(
+        "<other@x>",
+        "2026-11-04T10:00:00.000Z",
+        None,
+        &["<root@x.other>"],
+    );
+    let (r, m) = (root.clone(), middle.clone());
+    let mut reader = FakeReader::new(move |id| {
+        Ok(match id {
+            "<root@x>" => Some(r.clone()),
+            "<middle@x>" => Some(m.clone()),
+            _ => None,
+        })
+    });
+    std::sync::Arc::get_mut(&mut reader).unwrap().search_results = vec![reply.clone(), unrelated];
+    app.ctx.ports.set_email_reader(reader.clone()).ok().unwrap();
+    let tools = tool_set(&app);
+
+    let thread = call(&tools, "email_thread_get", json!({"emailId": "<middle@x>"}))
+        .await
+        .unwrap();
+    let ids: Vec<&str> = thread["emails"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["messageId"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["<root@x>", "<middle@x>", "<reply@x>"]);
+    assert_eq!(thread["rootMessageId"], "<root@x>");
+    assert_eq!(thread["count"], 3);
+    // Replies were searched by References in the usual folders and in Sent.
+    let searches = reader.searches.lock().unwrap().clone();
+    assert!(
+        searches
+            .iter()
+            .any(|s| s.references.as_deref() == Some("<root@x>")
+                && s.folder == Some(EmailFolderScope::Sent))
+    );
+
+    let missing = call(&tools, "email_thread_get", json!({"emailId": "<gone@x>"}))
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code, "not_found");
 }

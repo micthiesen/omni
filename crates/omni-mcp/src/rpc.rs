@@ -37,13 +37,14 @@ use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolOutput, ToolPhase};
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::activity::{ActivityRecorder, CallOutcome};
+use crate::activity::{ActivityRecorder, CallOutcome, CallSource};
 use crate::events::rpc::EVENT_METHODS;
 use crate::events::service::McpEventService;
 use crate::gateway::Gateway;
 use crate::gateway::access::Principal;
 use crate::json::{apply_defaults, order_by_schema, received_type};
 use crate::tools::TOOL_ORDER;
+use tracing::Instrument as _;
 
 const LOG: &str = "MCP";
 pub const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
@@ -502,10 +503,16 @@ impl McpProtocol {
 
     fn modern_result(&self, mut result: Map<String, Value>) -> Value {
         result.insert("resultType".into(), json!("complete"));
-        result.insert(
-            "_meta".into(),
-            json!({ SERVER_INFO_META_KEY: self.inner.handshake.server_info }),
+        // Keeps a result's own `_meta` (a failure's `io.omni/error`).
+        let mut meta = match result.remove("_meta") {
+            Some(Value::Object(meta)) => meta,
+            _ => Map::new(),
+        };
+        meta.insert(
+            SERVER_INFO_META_KEY.into(),
+            self.inner.handshake.server_info.clone(),
         );
+        result.insert("_meta".into(), Value::Object(meta));
         Value::Object(result)
     }
 
@@ -606,8 +613,9 @@ impl McpProtocol {
     }
 
     /// `tools/call`: input validated against the tool's schema (invalid input
-    /// is an `isError` result and is not recorded), defaults applied, the
-    /// call recorded, and the output projected onto the output schema.
+    /// is an `isError` result, recorded as `invalid`), defaults applied, the
+    /// call recorded with its caller and the log lines it wrote, and the
+    /// output projected onto the output schema.
     async fn call_tool(
         &self,
         caller: &Principal,
@@ -627,7 +635,12 @@ impl McpProtocol {
             let tracked = gateway.track_call(&caller.owner(), id, cancel);
             let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
             if let Some(outcome) = gateway
-                .call_tool(name, arguments, tracked.cancel.clone())
+                .call_tool_as(
+                    name,
+                    arguments,
+                    tracked.cancel.clone(),
+                    Some(caller.label()),
+                )
                 .await
             {
                 return outcome.map_err(|failure| RpcError {
@@ -642,31 +655,47 @@ impl McpProtocol {
             None | Some(Value::Null) => Value::Object(Map::new()),
             Some(other) => other.clone(),
         };
+        let source = CallSource {
+            caller: Some(caller.label().to_owned()),
+            integration: None,
+        };
         let issues = argument_issues(&entry.validator, &entry.input_schema, &arguments);
         if !issues.is_empty() {
-            return Ok(failed_result(&format!(
+            let message = format!(
                 "Input validation error: Invalid arguments for tool {name}: {}",
                 issues.join(", ")
-            )));
+            );
+            self.inner
+                .recorder
+                .record_invalid(entry.tool.meta, &arguments, &source, &message)
+                .await;
+            return Ok(invalid_input_result(&message));
         }
         let input = apply_defaults(arguments, &entry.input_schema);
-        let call = self.inner.recorder.start(entry.tool.meta, &input).await;
+        let call = self
+            .inner
+            .recorder
+            .start_from(entry.tool.meta, &input, &source)
+            .await;
         let cancel = CancellationToken::new();
         let _cancel_on_drop = cancel.clone().drop_guard();
         let context = ToolContext {
-            call_id: omni_core::ids::uuid_v4(),
+            call_id: call.id().to_owned(),
             cancel,
         };
         let handler = entry.tool.handler.clone();
-        let outcome =
-            std::panic::AssertUnwindSafe(async move { handler.call(input, context).await })
-                .catch_unwind()
-                .await
-                .unwrap_or_else(|panic| {
-                    let message = panic_message(panic.as_ref());
-                    tracing::error!(target: LOG, "MCP tool {name} panicked: {message}");
-                    Err(ToolError::execute(message))
-                });
+        let span = call.span();
+        let invalid_input = input.clone();
+        let outcome = std::panic::AssertUnwindSafe(
+            async move { handler.call(input, context).await }.instrument(span),
+        )
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|panic| {
+            let message = panic_message(panic.as_ref());
+            tracing::error!(target: LOG, "MCP tool {name} panicked: {message}");
+            Err(ToolError::execute(message))
+        });
         match outcome {
             Ok(ToolOutput::Structured(structured)) => {
                 let structured = self.project(entry, structured);
@@ -689,18 +718,23 @@ impl McpProtocol {
                 Ok(result)
             }
             // An input-phase failure is a schema refinement checked before
-            // the tool runs: not recorded, reported like any other argument
-            // validation failure.
+            // the tool runs: recorded as `invalid` and reported like any
+            // other argument validation failure.
             Err(error) if error.phase == ToolPhase::Input => {
                 call.discard().await;
-                Ok(failed_result(&format!(
+                let message = format!(
                     "Input validation error: Invalid arguments for tool {name}: {}",
                     error.message
-                )))
+                );
+                self.inner
+                    .recorder
+                    .record_invalid(entry.tool.meta, &invalid_input, &source, &message)
+                    .await;
+                Ok(invalid_input_result(&message))
             }
             Err(error) => {
                 call.finish(CallOutcome::Error(error.message.clone())).await;
-                Ok(failed_result(&error.message))
+                Ok(failed_result(&error))
             }
         }
     }
@@ -821,13 +855,33 @@ fn union_issues(schema: &Value, arguments: &Value, pointer: &str) -> Option<Vec<
     (!detailed.is_empty()).then_some(detailed)
 }
 
-fn failed_result(message: &str) -> Map<String, Value> {
+/// A failed call: `[code] message` (plus hint and retry lines) as text and
+/// the fields in `_meta["io.omni/error"]` ("Tool results" in `docs/mcp.md`).
+fn failed_result(error: &ToolError) -> Map<String, Value> {
     let mut result = Map::new();
+    result.insert(
+        "content".into(),
+        json!([{ "type": "text", "text": error.text() }]),
+    );
+    result.insert("isError".into(), Value::Bool(true));
+    result.insert(
+        "_meta".into(),
+        json!({ omni_mcp_kit::ERROR_META: error.meta() }),
+    );
+    result
+}
+
+/// Arguments that failed the tool's schema: the text keeps the MCP SDKs'
+/// `Input validation error: …` form; `_meta` has the same fields as any
+/// other failure.
+fn invalid_input_result(message: &str) -> Map<String, Value> {
+    let error = ToolError::input(message)
+        .with_hint("Fix the arguments to match the tool's input schema, then call again.");
+    let mut result = failed_result(&error);
     result.insert(
         "content".into(),
         json!([{ "type": "text", "text": message }]),
     );
-    result.insert("isError".into(), Value::Bool(true));
     result
 }
 

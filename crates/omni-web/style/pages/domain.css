@@ -530,4 +530,19 @@ a.agenda-tile-head:hover { color: var(--signal); }
   .gw-cred { grid-template-columns: minmax(0, 1fr) auto; }
   .gw-cred-name { grid-column: 1 / -1; }
 }
+/* ---------- Failures (/failures) ---------- */
+.failures-toolbar { padding: var(--sp-3) var(--pad) 0; }
+.failures-row { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; grid-template-areas: "kind main end"; align-items: start; }
+.failures-kind { grid-area: kind; padding-top: 1px; }
+.failures-row .row-main { grid-area: main; }
+.failures-row .row-end { grid-area: end; }
+/* The error is the row's key information: it wraps to two lines. */
+.failures-detail { white-space: normal; overflow-wrap: anywhere; }
+.failures-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); padding: var(--sp-2) var(--pad); }
+.failures-foot .show-more { margin: 0; }
+/* Phone: kind and time share the first line so the title and error get the
+   full width. */
+@media (max-width: 899px) {
+  .failures-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kind end" "main main"; row-gap: var(--sp-1); }
+}
 }

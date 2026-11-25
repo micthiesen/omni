@@ -78,6 +78,7 @@ fn cell_kind(status: McpCallStatus) -> CellKind {
         McpCallStatus::Error => CellKind::Fault,
         McpCallStatus::Running => CellKind::Running,
         McpCallStatus::Interrupted => CellKind::Warn,
+        McpCallStatus::Invalid => CellKind::Warn,
     }
 }
 
@@ -235,6 +236,8 @@ fn CallInspector(
                         <dl class="kv">
                             <dt>"Tool"</dt>
                             <dd class="mono">{c.tool.clone()}</dd>
+                            {c.caller.clone().map(|caller| view! { <dt>"Caller"</dt><dd>{caller}</dd> })}
+                            {c.integration.clone().map(|id| view! { <dt>"Integration"</dt><dd class="mono">{id}</dd> })}
                             <dt>"Started"</dt>
                             <dd class="num">{format_absolute(started)}</dd>
                             {c.finished_at.map(|f| view! { <dt>"Finished"</dt><dd class="num">{format_absolute(f as f64)}</dd> })}
@@ -264,6 +267,20 @@ fn CallInspector(
                             <h3>"Output"</h3>
                             <pre class="json-block">{format_json(&c.output)}</pre>
                         </section>
+                    })}
+                    {(!c.log.is_empty()).then(|| {
+                        let lines: String = c
+                            .log
+                            .iter()
+                            .map(|line| format!("{} {:5} {}: {}", format_absolute(line.at as f64), line.level, line.target, line.message))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        view! {
+                            <section class="inspector-section">
+                                <h3>"Log"</h3>
+                                <pre class="json-block">{lines}</pre>
+                            </section>
+                        }
                     })}
                 }
             }}
@@ -735,6 +752,9 @@ fn blank_call() -> McpCall {
         error: None,
         input: serde_json::Value::Null,
         output: serde_json::Value::Null,
+        caller: None,
+        integration: None,
+        log: Vec::new(),
     }
 }
 
@@ -760,6 +780,9 @@ mod tests {
             error: None,
             input: Value::Null,
             output: Value::Null,
+            caller: None,
+            integration: None,
+            log: Vec::new(),
         }
     }
 

@@ -35,7 +35,7 @@ use super::model::{
 };
 use super::names::integration_id_problem;
 use super::runtime::{Deps, Runtime};
-use crate::activity::{ActivityRecorder, CallOutcome};
+use crate::activity::{ActivityRecorder, CallOutcome, CallSource};
 
 const LOG: &str = "MCP:Gateway";
 pub const DEFAULT_TIMEOUT_MS: i64 = 120_000;
@@ -611,6 +611,17 @@ impl Gateway {
         arguments: Value,
         cancel: CancellationToken,
     ) -> Option<Result<Map<String, Value>, CallFailure>> {
+        self.call_tool_as(name, arguments, cancel, None).await
+    }
+
+    /// [`Self::call_tool`] made by `caller` (recorded on the call).
+    pub async fn call_tool_as(
+        &self,
+        name: &str,
+        arguments: Value,
+        cancel: CancellationToken,
+        caller: Option<&str>,
+    ) -> Option<Result<Map<String, Value>, CallFailure>> {
         let served = self.served();
         let (integration, upstream) = served.routes.get(name)?.clone();
         let runtime = self.runtime(&integration)?;
@@ -654,8 +665,16 @@ impl Gateway {
                 ),
             )));
         }
-        // Upstream arguments may hold anything; activity keeps only the call.
-        let call = self.inner.recorder.start(&meta, &json!({})).await;
+        // Bounded and with secret-looking keys redacted, like Omni's own calls.
+        let source = CallSource {
+            caller: caller.map(str::to_owned),
+            integration: Some(integration.clone()),
+        };
+        let call = self
+            .inner
+            .recorder
+            .start_from(&meta, &arguments, &source)
+            .await;
         let mut params = Map::new();
         params.insert("name".into(), json!(upstream));
         params.insert(
@@ -1130,9 +1149,21 @@ pub fn gateway_failure(integration_name: &str, error: &GatewayError) -> Map<Stri
         json!([{"type": "text", "text": format!("{integration_name}: {}", error.describe())}]),
     );
     result.insert("isError".into(), json!(true));
+    let retryable = matches!(
+        error.kind,
+        GatewayErrorKind::Network | GatewayErrorKind::Timeout | GatewayErrorKind::Process
+    ) && !error.outcome_unknown;
     result.insert(
         "_meta".into(),
-        json!({ORIGIN_META_KEY: {"error": kind_name(error.kind)}}),
+        json!({
+            ORIGIN_META_KEY: {"error": kind_name(error.kind)},
+            omni_mcp_kit::ERROR_META: {
+                "code": kind_name(error.kind),
+                "message": error.message,
+                "retryable": retryable,
+                "hint": error.hint,
+            },
+        }),
     );
     result
 }

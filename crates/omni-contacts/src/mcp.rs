@@ -13,11 +13,12 @@ use crate::service::{Action, Contacts, SearchQuery, WriteRequest};
 use defs::*;
 
 fn tool_error(error: &ContactsError) -> ToolError {
-    if error.code() == "invalid_input" {
+    let tool = if error.code() == "invalid_input" {
         ToolError::input(error.to_string())
     } else {
         ToolError::execute(error.to_string())
-    }
+    };
+    tool.with_code(error.code()).retryable(error.is_transient())
 }
 
 fn invalid(message: impl Into<String>) -> ToolError {

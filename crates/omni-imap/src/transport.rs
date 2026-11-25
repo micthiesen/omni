@@ -1179,7 +1179,11 @@ impl ImapTransport {
                 seen: options.unread.map(|unread| !unread),
                 since_ms: options.since_ms,
                 before_ms: options.before_ms,
-                header: None,
+                header: options
+                    .references
+                    .clone()
+                    .filter(|id| !id.trim().is_empty())
+                    .map(|id| ("References".to_owned(), id)),
             };
             let mut merged: Vec<FetchedEmail> = Vec::new();
             for folder in &folders {

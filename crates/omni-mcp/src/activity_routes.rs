@@ -1,6 +1,8 @@
 //! Read-only observability routes for MCP calls and the Claude Code host's
 //! sessions. Omni's own UI may show the host
-//! name, so these responses are not scrubbed.
+//! name, so these responses are not scrubbed. Call inputs, outputs and log
+//! lines, and session transcripts, go only to a trusted browser
+//! (`omni_runtime::owner`): they can hold mail, prompts and replies.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +35,24 @@ struct RoutesState {
     store: Store,
     clock: SharedClock,
     host: Option<Arc<dyn ClaudeHost>>,
+    /// `None` only in tests: every reader sees details.
+    owner: Option<omni_runtime::owner::OwnerTrust>,
+}
+
+impl RoutesState {
+    async fn trusted(&self, headers: &axum::http::HeaderMap) -> bool {
+        match &self.owner {
+            Some(owner) => owner.is_trusted(headers).await,
+            None => true,
+        }
+    }
+}
+
+/// Drops what a call carried, keeping what happened.
+fn hide_detail(call: &mut omni_api::mcp_activity::McpCall) {
+    call.input = Value::Null;
+    call.output = Value::Null;
+    call.log.clear();
 }
 
 type Params = Query<HashMap<String, String>>;
@@ -93,6 +113,16 @@ impl RoutesState {
 }
 
 pub fn router(store: Store, clock: SharedClock, host: Option<Arc<dyn ClaudeHost>>) -> Router {
+    router_for(store, clock, host, None)
+}
+
+/// [`router`] showing details only to browsers `owner` trusts.
+pub fn router_for(
+    store: Store,
+    clock: SharedClock,
+    host: Option<Arc<dyn ClaudeHost>>,
+    owner: Option<omni_runtime::owner::OwnerTrust>,
+) -> Router {
     Router::new()
         .route("/api/mcp/activity", get(mcp_activity))
         .route("/api/claude/activity", get(claude_activity))
@@ -102,12 +132,18 @@ pub fn router(store: Store, clock: SharedClock, host: Option<Arc<dyn ClaudeHost>
             get(claude_transcript),
         )
         .route("/api/claude/projects", get(claude_projects))
-        .with_state(RoutesState { store, clock, host })
+        .with_state(RoutesState {
+            store,
+            clock,
+            host,
+            owner,
+        })
 }
 
 async fn mcp_activity(
     State(state): State<RoutesState>,
     Query(params): Params,
+    headers: axum::http::HeaderMap,
 ) -> Result<Response, ApiError> {
     let before = params
         .get("before")
@@ -120,24 +156,32 @@ async fn mcp_activity(
         before: (before.is_finite() && before > 0.0).then_some(before as i64),
         tool_prefix: None,
     };
-    let activity = get_mcp_activity(&state.store, &query, state.clock.now_ms())
+    let mut activity = get_mcp_activity(&state.store, &query, state.clock.now_ms())
         .await
         .map_err(ApiError::internal)?;
+    if !state.trusted(&headers).await {
+        activity.calls.iter_mut().for_each(hide_detail);
+        activity.detail_hidden = true;
+    }
     Ok(ok(&activity))
 }
 
 async fn claude_activity(
     State(state): State<RoutesState>,
     Query(params): Params,
+    headers: axum::http::HeaderMap,
 ) -> Result<Response, ApiError> {
     let query = ActivityQuery {
         limit: bounded_int(params.get("limit"), 200, 500),
         tool_prefix: Some("claude_".to_owned()),
         ..ActivityQuery::default()
     };
-    let activity = get_mcp_activity(&state.store, &query, state.clock.now_ms())
+    let mut activity = get_mcp_activity(&state.store, &query, state.clock.now_ms())
         .await
         .map_err(ApiError::internal)?;
+    if !state.trusted(&headers).await {
+        activity.calls.iter_mut().for_each(hide_detail);
+    }
     let link = match &state.host {
         Some(host) => {
             let status = host.status();
@@ -191,7 +235,11 @@ async fn claude_transcript(
     State(state): State<RoutesState>,
     Path(session): Path<String>,
     Query(params): Params,
+    headers: axum::http::HeaderMap,
 ) -> Response {
+    if !state.trusted(&headers).await {
+        return omni_runtime::owner::untrusted_response();
+    }
     if !valid_session(&session) {
         return json_response(
             StatusCode::BAD_REQUEST,

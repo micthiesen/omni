@@ -11,7 +11,7 @@ use crate::common;
 use std::collections::BTreeSet;
 
 /// Every tool served with `readOnlyHint: true`, in serving order.
-const READ_ONLY: [&str; 103] = [
+const READ_ONLY: [&str; 104] = [
     "list_reminder_lists",
     "get_reminder_list",
     "get_reminder_recurrence",
@@ -26,6 +26,7 @@ const READ_ONLY: [&str; 103] = [
     "streamer_configs_list",
     "email_search",
     "email_get",
+    "email_thread_get",
     "email_health",
     "email_activity_list",
     "email_activity_get",

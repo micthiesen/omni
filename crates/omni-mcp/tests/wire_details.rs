@@ -197,7 +197,7 @@ async fn recorded(store: &Store) -> Vec<McpCallData> {
 }
 
 #[tokio::test(start_paused = true)]
-async fn schema_refinements_fail_like_argument_validation_and_are_not_recorded() {
+async fn schema_refinements_fail_like_argument_validation_and_are_recorded_as_invalid() {
     let clock = clock();
     let db = test_store(&clock).await;
     let refined = raw_tool(
@@ -222,12 +222,26 @@ async fn schema_refinements_fail_like_argument_validation_and_are_not_recorded()
         error_text(&message),
         "Input validation error: Invalid arguments for tool email_search: before must be later than since"
     );
-    assert!(recorded(&db.store).await.is_empty());
-
-    let message = call_tool(&router, "tasks_list", json!({})).await;
-    assert_eq!(error_text(&message), "registry unavailable");
+    // Recorded as `invalid` with the reason: how a misused tool shows.
     let calls = recorded(&db.store).await;
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].tool, "tasks_list");
-    assert_eq!(calls[0].error.as_deref(), Some("registry unavailable"));
+    assert_eq!(
+        calls[0].status,
+        omni_api::mcp_activity::McpCallStatus::Invalid
+    );
+    assert!(
+        calls[0]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("before must be later than since")
+    );
+    assert!(calls[0].caller.is_some());
+
+    let message = call_tool(&router, "tasks_list", json!({})).await;
+    assert_eq!(error_text(&message), "[failed] registry unavailable");
+    let calls = recorded(&db.store).await;
+    assert_eq!(calls.len(), 2);
+    let failed = calls.iter().find(|c| c.tool == "tasks_list").unwrap();
+    assert_eq!(failed.error.as_deref(), Some("registry unavailable"));
 }

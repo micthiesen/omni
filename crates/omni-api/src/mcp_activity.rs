@@ -16,6 +16,9 @@ pub enum McpCallStatus {
     Error,
     #[serde(rename = "interrupted")]
     Interrupted,
+    /// Refused before it ran: the arguments did not match the tool's schema.
+    #[serde(rename = "invalid")]
+    Invalid,
 }
 
 impl McpCallStatus {
@@ -25,13 +28,14 @@ impl McpCallStatus {
             "ok" => Some(Self::Ok),
             "error" => Some(Self::Error),
             "interrupted" => Some(Self::Interrupted),
+            "invalid" => Some(Self::Invalid),
             _ => None,
         }
     }
 
-    /// Error and interrupted calls count as failures in summaries.
+    /// Error, interrupted and invalid calls count as failures in summaries.
     pub fn is_failure(self) -> bool {
-        matches!(self, Self::Error | Self::Interrupted)
+        matches!(self, Self::Error | Self::Interrupted | Self::Invalid)
     }
 }
 
@@ -63,6 +67,24 @@ pub struct McpCall {
     pub error: Option<String>,
     pub input: Value,
     pub output: Value,
+    /// The gateway client or OAuth grant that made the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller: Option<String>,
+    /// The integration an `<id>__tool` call went to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration: Option<String>,
+    /// Log lines Omni wrote while the call ran (newest 40).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub log: Vec<McpCallLogLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCallLogLine {
+    pub at: Ms,
+    pub level: String,
+    pub target: String,
+    pub message: String,
 }
 
 /// Per-tool statistics, most recently used first.
@@ -105,6 +127,9 @@ pub struct McpActivityResponse {
     pub summary: McpActivitySummary,
     pub tools: Vec<McpToolSummary>,
     pub retention: McpRetention,
+    /// Inputs, outputs and log lines were left out: the browser is not trusted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub detail_hidden: bool,
 }
 
 pub mod paths {

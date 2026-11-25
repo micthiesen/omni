@@ -43,14 +43,32 @@ fn execute_error(error: impl std::fmt::Display) -> ToolError {
     ToolError::execute(error.to_string())
 }
 
+/// A port failure keeps whether trying again may help.
+fn port_error(error: &omni_runtime::ports::PortError) -> ToolError {
+    let retryable = matches!(
+        error,
+        omni_runtime::ports::PortError::Failed {
+            transient: true,
+            ..
+        }
+    );
+    ToolError::execute(error.to_string()).retryable(retryable)
+}
+
 fn truncated(value: &str, max: usize) -> String {
     truncate_utf16(value, max).0
 }
 
+fn truncated_id(id: &str) -> String {
+    truncated(id, 1_000)
+}
+
 fn active_reader(ports: &Ports) -> Result<Arc<dyn EmailReader>, ToolError> {
-    ports
-        .email_reader()
-        .ok_or_else(|| ToolError::execute("Email monitoring is not active"))
+    ports.email_reader().ok_or_else(|| {
+        ToolError::execute("Email monitoring is not active")
+            .with_code("unavailable")
+            .retryable(true)
+    })
 }
 
 #[derive(Serialize)]
@@ -318,6 +336,61 @@ struct GetOutput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ThreadInput {
+    email_id: String,
+    #[serde(default = "default_thread_body_chars")]
+    body_chars: usize,
+    #[serde(default = "default_thread_limit")]
+    limit: usize,
+    #[serde(default)]
+    fresh: bool,
+}
+
+fn default_thread_body_chars() -> usize {
+    2_000
+}
+
+fn default_thread_limit() -> usize {
+    25
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadOutput {
+    root_message_id: Option<String>,
+    emails: Vec<EmailSummary>,
+    count: usize,
+    truncated: bool,
+}
+
+/// Ancestors named in a message's headers that are looked up one by one.
+const THREAD_ANCESTORS: usize = 20;
+
+/// The conversation's first Message-ID by the seed's own headers.
+fn thread_root(seed: &FetchedEmail) -> Option<String> {
+    seed.references
+        .as_ref()
+        .and_then(|refs| refs.first().cloned())
+        .or_else(|| seed.in_reply_to.clone())
+        .or_else(|| seed.message_id.clone())
+        .filter(|id| !id.trim().is_empty())
+}
+
+/// Messages are one thread when one names the other, or both name the root.
+fn in_thread(email: &FetchedEmail, root: &str, seed_id: Option<&str>) -> bool {
+    let named = |id: &str| {
+        email.message_id.as_deref() == Some(id)
+            || email.in_reply_to.as_deref() == Some(id)
+            || email
+                .references
+                .as_ref()
+                .is_some_and(|refs| refs.iter().any(|r| r == id))
+    };
+    named(root) || seed_id.is_some_and(named)
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EmptyInput {}
 
@@ -519,6 +592,7 @@ impl EmailTools {
             folder: Some(input.folder),
             limit: input.limit,
             fresh: input.fresh,
+            references: None,
         };
         let reader = active_reader(&self.ports)?;
         if !reader.health().search_available {
@@ -526,7 +600,7 @@ impl EmailTools {
                 "The active email transport does not support mailbox search",
             ));
         }
-        let emails = reader.search(&query).await.map_err(execute_error)?;
+        let emails = reader.search(&query).await.map_err(|e| port_error(&e))?;
         Ok(SearchOutput {
             count: emails.len(),
             items: emails
@@ -541,13 +615,102 @@ impl EmailTools {
         let email = reader
             .fetch_by_id(&input.email_id, input.fresh)
             .await
-            .map_err(execute_error)?
-            .ok_or_else(|| ToolError::execute("Email no longer exists in the monitored mailbox"))?;
+            .map_err(|e| port_error(&e))?
+            .ok_or_else(|| {
+                ToolError::execute("Email no longer exists in the monitored mailbox")
+                    .with_code("not_found")
+            })?;
         Ok(GetOutput {
             email: EmailWithMetadata {
                 summary: serialize_email(&email, input.body_chars),
                 link_metadata: email.link_metadata.clone(),
             },
+        })
+    }
+
+    async fn thread(&self, input: ThreadInput) -> Result<ThreadOutput, ToolError> {
+        let reader = active_reader(&self.ports)?;
+        let limit = input.limit.clamp(1, 50);
+        let body_chars = input.body_chars.min(8_000);
+        let seed = reader
+            .fetch_by_id(&input.email_id, input.fresh)
+            .await
+            .map_err(|e| port_error(&e))?
+            .ok_or_else(|| {
+                ToolError::execute("Email no longer exists in the monitored mailbox")
+                    .with_code("not_found")
+            })?;
+        let root = thread_root(&seed);
+        let seed_id = seed.message_id.clone();
+        let mut found: Vec<FetchedEmail> = vec![seed.clone()];
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        seen.insert(seed.id.clone());
+        // Ancestors: what the seed's headers name, looked up by Message-ID.
+        let mut named: Vec<String> = seed.references.clone().unwrap_or_default();
+        named.extend(seed.in_reply_to.clone());
+        named.retain(|id| Some(id) != seed_id.as_ref());
+        named.dedup();
+        let skip = named.len().saturating_sub(THREAD_ANCESTORS);
+        for id in named.into_iter().skip(skip) {
+            if let Ok(Some(email)) = reader.fetch_by_id(&id, input.fresh).await
+                && seen.insert(email.id.clone())
+            {
+                found.push(email);
+            }
+        }
+        // Replies: messages whose References name the root or the seed.
+        let mut anchors: Vec<String> = root.iter().cloned().collect();
+        if let Some(id) = &seed_id
+            && Some(id) != root.as_ref()
+        {
+            anchors.push(id.clone());
+        }
+        let mut truncated = false;
+        for anchor in &anchors {
+            for folder in [EmailFolderScope::All, EmailFolderScope::Sent] {
+                let search = EmailSearch {
+                    references: Some(anchor.clone()),
+                    folder: Some(folder),
+                    limit: u32::try_from(limit).unwrap_or(50),
+                    fresh: input.fresh,
+                    ..EmailSearch::default()
+                };
+                let Ok(emails) = reader.search(&search).await else {
+                    continue;
+                };
+                truncated |= emails.len() >= limit;
+                for email in emails {
+                    if in_thread(
+                        &email,
+                        root.as_deref().unwrap_or_default(),
+                        seed_id.as_deref(),
+                    ) && seen.insert(email.id.clone())
+                    {
+                        found.push(email);
+                    }
+                }
+            }
+        }
+        found.sort_by(|a, b| a.received_at.cmp(&b.received_at));
+        if found.len() > limit {
+            truncated = true;
+            let seed_index = found.iter().position(|e| e.id == seed.id);
+            let excess = found.len() - limit;
+            found.drain(..excess);
+            if seed_index.is_some_and(|i| i < excess) {
+                found[0] = seed.clone();
+                found.sort_by(|a, b| a.received_at.cmp(&b.received_at));
+            }
+        }
+        let emails: Vec<EmailSummary> = found
+            .iter()
+            .map(|email| serialize_email(email, body_chars))
+            .collect();
+        Ok(ThreadOutput {
+            root_message_id: root.map(|id| truncated_id(&id)),
+            count: emails.len(),
+            emails,
+            truncated,
         })
     }
 
@@ -794,6 +957,11 @@ pub fn tools(state: &EmailTools) -> Result<Vec<McpTool>, ToolMetaError> {
         tool!(state, &defs::EMAIL_GET, |this, input: GetInput| this
             .get(input)
             .await),
+        tool!(
+            state,
+            &defs::EMAIL_THREAD_GET,
+            |this, input: ThreadInput| this.thread(input).await
+        ),
         tool!(state, &defs::EMAIL_HEALTH, |this, _input: EmptyInput| Ok::<
             _,
             ToolError,

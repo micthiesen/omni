@@ -15,6 +15,7 @@ use omni_api::email::{
     EmailFeedbackListResponse, EmailFeedbackResponse, EmailFeedbackVerdict, EmailPipelineName,
     EmailRuleInput, EmailRuleUpsertResponse, EmailRulesResponse,
 };
+use omni_api::failures::FailuresResponse;
 use omni_api::gateway::{
     AuthorizationApproval, ClientTokenCreate, ClientTokenCreated, CredentialsUpdate,
     GatewayOverview, IntegrationCreate, IntegrationDetail, IntegrationPatch, OAuthStartResponse,
@@ -488,6 +489,14 @@ pub async fn forget_parcel_delivery(
     .await
 }
 
+// ----- failures -----
+
+/// Failing tasks and integrations now, failed tool calls and deliveries from
+/// the last 7 days; newest first, at most 200.
+pub async fn fetch_failures() -> Result<FailuresResponse, ApiClientError> {
+    get(omni_api::failures::PATH).await
+}
+
 // ----- MCP and Claude Code activity -----
 
 pub async fn fetch_mcp_activity(
@@ -501,6 +510,7 @@ pub async fn fetch_mcp_activity(
         McpCallStatus::Ok => "ok",
         McpCallStatus::Error => "error",
         McpCallStatus::Interrupted => "interrupted",
+        McpCallStatus::Invalid => "invalid",
     });
     let q = query(&[
         ("limit", limit.map(|l| l.to_string())),

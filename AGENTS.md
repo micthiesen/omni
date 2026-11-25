@@ -880,6 +880,14 @@ The outbox key lives in `mcp-events.key` (data directory, 0600), migrated once
 from the old `OMNI_MCP_TOKEN` derivation so existing subscriptions keep their
 ids; never change it. See `docs/mcp-events.md`.
 
+Every native tool failure is a `ToolError` with a stable `snake_case` code
+(`with_code`, or a leading `[code]` in the message), `retryable` when the same
+call may succeed later unchanged, and a hint when the next step is not
+obvious; the protocol layer renders it as `[code] message` text plus
+`_meta["io.omni/error"]` ("Tool results" in `docs/mcp.md`). Never format error
+text by hand in a handler beyond the message, and never put an error object in
+`structuredContent` (clients validate it against the output schema).
+
 Each MCP tool's contract (name, title, description, annotations, policy, and
 input/output schemas derived from `schemars::JsonSchema` types) is a `ToolDef`
 in its package's `defs` module next to the handler; `omni-mcp`'s `TOOL_ORDER`

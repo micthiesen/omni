@@ -274,26 +274,58 @@ pub enum ToolPhase {
 }
 
 /// A failed tool call; `message` is the innermost cause (`toolErrorMessage`).
+///
+/// Every failure has the same contract ("Tool results" in `docs/mcp.md`): a
+/// stable `code`, whether the same call may succeed later unchanged
+/// (`retryable`), and an optional `hint` naming the next step. The result's
+/// text is [`ToolError::text`] and `_meta["io.omni/error"]` carries the
+/// fields ([`ToolError::meta`]).
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 #[error("{message}")]
 pub struct ToolError {
     pub phase: ToolPhase,
     pub message: String,
+    /// `snake_case`; from a leading `[code]` in the message, else the
+    /// phase's default (`invalid_input`, `failed`, `invalid_output`).
+    pub code: String,
+    pub retryable: bool,
+    pub hint: Option<String>,
+}
+
+/// The `_meta` key of a failed result's error fields.
+pub const ERROR_META: &str = "io.omni/error";
+
+/// The `code` of a message that starts with `[code] ` (`snake_case`).
+fn leading_code(message: &str) -> Option<&str> {
+    let rest = message.strip_prefix('[')?;
+    let (code, _) = rest.split_once("] ")?;
+    (!code.is_empty()
+        && code.len() <= 64
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'))
+    .then_some(code)
 }
 
 impl ToolError {
-    pub fn input(message: impl Into<String>) -> Self {
+    fn new(phase: ToolPhase, message: String, default_code: &str) -> Self {
+        let message = omni_core::secrets::scrub_owned(message);
+        let code = leading_code(&message).unwrap_or(default_code).to_owned();
         Self {
-            phase: ToolPhase::Input,
-            message: omni_core::secrets::scrub_owned(message.into()),
+            phase,
+            message,
+            code,
+            retryable: false,
+            hint: None,
         }
     }
 
+    pub fn input(message: impl Into<String>) -> Self {
+        Self::new(ToolPhase::Input, message.into(), "invalid_input")
+    }
+
     pub fn execute(message: impl Into<String>) -> Self {
-        Self {
-            phase: ToolPhase::Execute,
-            message: omni_core::secrets::scrub_owned(message.into()),
-        }
+        Self::new(ToolPhase::Execute, message.into(), "failed")
     }
 
     /// An execute-phase error from the innermost cause of `error`.
@@ -302,10 +334,59 @@ impl ToolError {
     }
 
     pub fn output(message: impl Into<String>) -> Self {
-        Self {
-            phase: ToolPhase::Output,
-            message: omni_core::secrets::scrub_owned(message.into()),
+        Self::new(ToolPhase::Output, message.into(), "invalid_output")
+    }
+
+    #[must_use]
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = code.into();
+        self
+    }
+
+    /// Marks the failure as one a later identical call may not hit
+    /// (timeouts, an unreachable upstream, a busy host).
+    #[must_use]
+    pub fn retryable(mut self, retryable: bool) -> Self {
+        self.retryable = retryable;
+        self
+    }
+
+    #[must_use]
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(omni_core::secrets::scrub_owned(hint.into()));
+        self
+    }
+
+    /// The message without a leading `[code] `.
+    pub fn detail(&self) -> &str {
+        match leading_code(&self.message) {
+            Some(code) => &self.message[code.len() + 3..],
+            None => &self.message,
         }
+    }
+
+    /// The result text: `[code] message`, then `Hint: …` and a retry line
+    /// when they apply.
+    pub fn text(&self) -> String {
+        let mut text = format!("[{}] {}", self.code, self.detail());
+        if let Some(hint) = &self.hint {
+            text.push_str("\nHint: ");
+            text.push_str(hint);
+        }
+        if self.retryable {
+            text.push_str("\nRetryable: the same call may work if tried again later.");
+        }
+        text
+    }
+
+    /// `{code, message, retryable, hint}` for `_meta["io.omni/error"]`.
+    pub fn meta(&self) -> Value {
+        serde_json::json!({
+            "code": self.code,
+            "message": self.detail(),
+            "retryable": self.retryable,
+            "hint": self.hint,
+        })
     }
 }
 

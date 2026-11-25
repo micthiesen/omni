@@ -668,7 +668,7 @@ fn marker_class(status: McpCallStatus) -> &'static str {
         McpCallStatus::Running => "tl-item running",
         McpCallStatus::Ok => "tl-item",
         McpCallStatus::Error => "tl-item fault",
-        McpCallStatus::Interrupted => "tl-item warn",
+        McpCallStatus::Interrupted | McpCallStatus::Invalid => "tl-item warn",
     }
 }
 

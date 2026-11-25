@@ -43,6 +43,10 @@ pub struct EmailSearch {
     pub limit: u32,
     /// Bypass the search and parsed-message caches.
     pub fresh: bool,
+    /// Messages whose `References` header names this Message-ID (a substring
+    /// match on the server: callers check the parsed list).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

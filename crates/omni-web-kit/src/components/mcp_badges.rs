@@ -20,6 +20,7 @@ pub fn call_status_str(status: McpCallStatus) -> &'static str {
         McpCallStatus::Ok => "ok",
         McpCallStatus::Error => "error",
         McpCallStatus::Interrupted => "interrupted",
+        McpCallStatus::Invalid => "invalid",
     }
 }
 
@@ -52,7 +53,7 @@ pub fn call_status_kind(status: McpCallStatus) -> StatusKind {
         McpCallStatus::Running => StatusKind::Running,
         McpCallStatus::Ok => StatusKind::Ok,
         McpCallStatus::Error => StatusKind::Fault,
-        McpCallStatus::Interrupted => StatusKind::Warn,
+        McpCallStatus::Interrupted | McpCallStatus::Invalid => StatusKind::Warn,
     }
 }
 
@@ -63,6 +64,7 @@ pub fn CallStatusPill(status: McpCallStatus) -> impl IntoView {
         McpCallStatus::Ok => "OK",
         McpCallStatus::Error => "Error",
         McpCallStatus::Interrupted => "Interrupted",
+        McpCallStatus::Invalid => "Invalid input",
     };
     view! { <Status kind=call_status_kind(status) label=label/> }
 }
