@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use futures::future::BoxFuture;
-use omni_runtime::ports::{EventPublication, EventPublisher, PortError};
+use omni_runtime::ports::{EventPublication, EventPublisher, NoticeState, PortError, TargetNotice};
 use serde_json::Value;
 
 use super::catalog::{EVENT_DEFINITIONS, event_definition};
@@ -145,5 +145,60 @@ impl EventPublisher for McpEventPublisher {
         name: &'a str,
     ) -> BoxFuture<'a, Result<Vec<BTreeMap<String, String>>, PortError>> {
         Box::pin(McpEventPublisher::active_arguments(self, name))
+    }
+
+    fn notify_target<'a>(&'a self, notice: TargetNotice) -> BoxFuture<'a, Result<(), PortError>> {
+        Box::pin(async move {
+            if notice.key.is_empty() || notice.key.len() > MAX_NOTICE_KEY_BYTES {
+                return Err(rejected(format!(
+                    "{} notice key is empty or too long",
+                    notice.name
+                )));
+            }
+            let size = serde_json::to_vec(&notice.body).map_or(usize::MAX, |b| b.len());
+            if size > MAX_NOTICE_BYTES {
+                return Err(rejected(format!(
+                    "{} notice is {size} bytes (limit {MAX_NOTICE_BYTES})",
+                    notice.name
+                )));
+            }
+            self.events
+                .notify_target(notice)
+                .await
+                .map(|_| ())
+                .map_err(journal_unavailable)
+        })
+    }
+
+    fn notice_states<'a>(
+        &'a self,
+        keys: Vec<String>,
+    ) -> BoxFuture<'a, Result<BTreeMap<String, NoticeState>, PortError>> {
+        Box::pin(async move {
+            self.events
+                .notice_states(&keys)
+                .await
+                .map_err(journal_unavailable)
+        })
+    }
+
+    fn cancel_notice<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<bool, PortError>> {
+        Box::pin(async move {
+            self.events
+                .cancel_notice(key)
+                .await
+                .map_err(journal_unavailable)
+        })
+    }
+}
+
+/// A notice body is a short record (Rakazo accepts 64 KiB).
+pub const MAX_NOTICE_BYTES: usize = 16 * 1024;
+const MAX_NOTICE_KEY_BYTES: usize = 200;
+
+fn journal_unavailable(error: omni_store::StoreError) -> PortError {
+    PortError::Failed {
+        message: format!("event journal: {error}"),
+        transient: true,
     }
 }

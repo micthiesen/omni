@@ -91,15 +91,17 @@ not sent input; reach those through Remote Control.
 
 A caller that starts sessions can have Omni tell it when each turn ends,
 without polling and without hearing about sessions it did not start.
-`claude_session_start` takes an optional `notify`: the name of a target the
-server defines in `CLAUDE_NOTIFY_TARGETS`, a JSON object from name to
-`{"url": "https://...", "token": "..."}`. Omni stores the target with the
-session (`mcp-claude-session-notify`), so every later turn notifies too.
+`claude_session_start` takes an optional `notify`: the id of a stored event
+target (`chief`, `business`; see "Event journal" in
+[MCP Events](mcp-events.md), managed on `/gateway`; the old
+`CLAUDE_NOTIFY_TARGETS` entries are imported at boot). Omni stores the target
+with the session (`mcp-claude-session-notify`), so every later turn notifies
+too.
 `claude_session_send` takes `notify` to change the target, `null` to clear it,
 and keeps it when the field is left out. Both results report the session's
-target and whether the server defines it. A name the server does not define is
-stored with a warning in the log and never fails the call; its turns are
-recorded as `unconfigured` and not posted.
+target and whether it is stored. A name with no stored target is kept with a
+warning in the log and never fails the call; its turns wait as
+`unconfigured` and are sent if the target is created within seven days.
 
 A send to a `waiting` session is refused unless `interrupt` is true. The host
 continues a background session by stopping its process and resuming it with
@@ -108,8 +110,10 @@ command it was running (this happened to two sessions on 2026-11-23 before
 the check). The host itself refuses only `busy` sessions.
 
 Each finished turn, found by the same rule as `claude.session.turn_finished`
-(see [MCP Events](mcp-events.md#claudesessionturn_finished)), is recorded once
-per session and revision (`mcp-claude-turn-notification`) and posted as JSON:
+(see [MCP Events](mcp-events.md#claudesessionturn_finished)), is queued once
+per session and revision as a notice in the event journal and posted as JSON
+(`mcp-claude-turn-notification` rows are the old outbox; a boot step moved
+their pending rows into the journal):
 
 ```json
 {"event": "claude.session.turn_finished", "sessionId": "...", "shortId": "80f00d5b",
@@ -124,21 +128,16 @@ summary is the last text so far, not a final report. Its later end is posted
 as usual.
 
 Targets are Rakazo bot webhooks (`https://<rakazo>/api/v1/bots/<botId>/webhook`):
-the request carries `Authorization: Bearer <token>` and
+the request carries `Authorization: Bearer <key>` and
 `Idempotency-Key: omni-claude-turn:<sessionId>:<revision>`, which Rakazo uses to
-collapse repeated deliveries into one run. The URL may resolve to the LAN, since
-targets come from configuration rather than callers; it must be HTTPS. An
-optional `"connect": "<host>"` makes Omni connect to that host (resolved per
-request) while TLS and `Host` keep the URL's host. Production uses
-`"connect": "npm.compose_default"`: Nginx Proxy Manager admits Rakazo only from
+collapse repeated deliveries into one run. Production targets use
+`connect: npm.compose_default`: Nginx Proxy Manager admits Rakazo only from
 the LAN and the `compose_default` network, and Omni's default route to the LAN
-address leaves through `compose_agent-integrations`, which NPM refuses with 403. A 2xx is
-delivered (or `ignored` when Rakazo answers that no webhook routine is active);
-a timeout, network failure, 408, 425, 429 or 5xx is retried after 30 seconds,
-doubling to 30 minutes, at most 8 attempts; any other answer fails at once.
-Retries run even while the host is offline. The body is dropped once a
-notification settles, and settled rows are kept 7 days. `events_status` reports
-the target names (never URLs or tokens), counts and the latest outcomes under
+address leaves through `compose_agent-integrations`, which NPM refuses with 403.
+Delivery, retries (a day of them, 30 seconds doubling to 30 minutes), dead
+letters and retention are the journal's ([MCP Events](mcp-events.md)), and
+run even while the host is offline. `events_status` reports the target names
+(never URLs or keys), counts and the latest outcomes under
 `claudeNotifications`. The summary passes the same host scrub as tool results.
 
 Omni logs each forwarded command with its session or project, duration, and

@@ -303,8 +303,8 @@ impl ClaudeDeps {
         };
         match recorded.await {
             Ok(Some(target)) => json!({
+                "configured": notify.is_configured(&target).await,
                 "target": target,
-                "configured": notify.is_configured(&target),
             }),
             Ok(None) => Value::Null,
             Err(error) => {

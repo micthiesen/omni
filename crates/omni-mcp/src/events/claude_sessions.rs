@@ -304,10 +304,6 @@ impl ClaudeSessionWatcher {
     }
 
     pub async fn poll(&self) -> Result<(), WatcherError> {
-        if let Some(notify) = &self.notify {
-            // Retries do not need the host.
-            notify.deliver_due().await?;
-        }
         let subscribed = self
             .events
             .has_active_subscription(CLAUDE_TURN_FINISHED)

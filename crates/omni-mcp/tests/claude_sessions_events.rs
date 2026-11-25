@@ -1,28 +1,28 @@
-//! The `claude.session.turn_finished` watcher and session `notify` delivery.
+//! The `claude.session.turn_finished` watcher and session `notify` notices,
+//! which the event journal delivers to stored targets.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::common;
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
 use common::{clock, test_store};
 use futures::future::BoxFuture;
-use omni_config::{ClaudeNotifyTarget, ClaudeNotifyTargets};
+use omni_api::outbound::EventTargetUpsert;
 use omni_core::clock::TestClock;
-use omni_mcp::events::claude_notify::{
-    ClaudeNotify, ClaudeTurnNotification, FinishedTurn, NotificationStatus, NotifyResponse,
-    NotifyTransport, NotifyTransportError,
-};
+use omni_mcp::events::claude_notify::{ClaudeNotify, FinishedTurn};
 use omni_mcp::events::claude_sessions::{
     ClaudeSessionWatch, ClaudeSessionWatcher, StartedTurn, TurnBaseline, finished_turn, is_waiting,
     settled_by_tail, settled_from_status,
 };
+use omni_mcp::events::persistence::DeliveryStatus;
 use omni_mcp::events::persistence::EventDelivery;
 use omni_mcp::events::service::{McpEventService, SubscribeInput};
+use omni_mcp::events::targets::{OpenTarget, TargetError, TargetResponse, TargetTransport};
 use omni_mcp::events::webhook::{WebhookDestination, WebhookError, WebhookEvent, WebhookPort};
 use omni_mcp::host::{ClaudeHost, HostCommand, HostError, HostLinkStatus};
 use omni_mcp::tools::claude_sessions::{ClaudeDeps, claude_session_tools};
@@ -165,19 +165,19 @@ fn subscription(arguments: Value) -> SubscribeInput {
     }
 }
 
-/// Records each notification and answers from a script (then 200).
+/// Records each notice the journal sends and answers from a script (then 200).
 #[derive(Clone, Default)]
 struct Transport {
     sent: Arc<Mutex<Vec<(String, String, Value)>>>,
-    answers: Arc<Mutex<VecDeque<Result<NotifyResponse, NotifyTransportError>>>>,
+    answers: Arc<Mutex<VecDeque<Result<TargetResponse, TargetError>>>>,
 }
 
 impl Transport {
-    fn answer(&self, answer: Result<u16, NotifyTransportError>) {
+    fn answer(&self, answer: Result<u16, TargetError>) {
         self.answers
             .lock()
             .unwrap()
-            .push_back(answer.map(|status| NotifyResponse {
+            .push_back(answer.map(|status| TargetResponse {
                 status,
                 ignored: false,
             }));
@@ -188,13 +188,14 @@ impl Transport {
     }
 }
 
-impl NotifyTransport for Transport {
+impl TargetTransport for Transport {
     fn post<'a>(
         &'a self,
-        target: &'a ClaudeNotifyTarget,
+        target: &'a OpenTarget,
+        _event: &'a str,
         idempotency_key: &'a str,
         body: &'a str,
-    ) -> BoxFuture<'a, Result<NotifyResponse, NotifyTransportError>> {
+    ) -> BoxFuture<'a, Result<TargetResponse, TargetError>> {
         self.sent.lock().unwrap().push((
             target.url.to_string(),
             idempotency_key.to_owned(),
@@ -205,7 +206,7 @@ impl NotifyTransport for Transport {
             .lock()
             .unwrap()
             .pop_front()
-            .unwrap_or(Ok(NotifyResponse {
+            .unwrap_or(Ok(TargetResponse {
                 status: 200,
                 ignored: false,
             }));
@@ -214,17 +215,6 @@ impl NotifyTransport for Transport {
 }
 
 const CHIEF_URL: &str = "https://rakazo.example/api/v1/bots/chief-bot/webhook";
-
-fn targets() -> ClaudeNotifyTargets {
-    ClaudeNotifyTargets(BTreeMap::from([(
-        "chief".to_owned(),
-        ClaudeNotifyTarget {
-            url: url::Url::parse(CHIEF_URL).unwrap(),
-            token: "chief-webhook-key-0123456789".to_owned(),
-            connect: None,
-        },
-    )]))
-}
 
 struct Setup {
     store: Store,
@@ -253,12 +243,20 @@ impl Setup {
         let host = FakeHost::default();
         host.0.lock().unwrap().online = true;
         let transport = Transport::default();
-        let notify = ClaudeNotify::new(
-            db.store.clone(),
-            clock.clone(),
-            Some(targets()),
-            Arc::new(transport.clone()),
-        );
+        events.set_target_transport(Arc::new(transport.clone()));
+        events
+            .upsert_target(
+                "chief",
+                &EventTargetUpsert {
+                    label: "Chief".to_owned(),
+                    url: CHIEF_URL.to_owned(),
+                    key: Some("chief-webhook-key-0123456789".to_owned()),
+                    connect: None,
+                },
+            )
+            .await
+            .unwrap();
+        let notify = ClaudeNotify::new(db.store.clone(), clock.clone(), events.clone());
         let watcher = ClaudeSessionWatcher::new(
             events.clone(),
             Arc::new(host.clone()),
@@ -301,11 +299,21 @@ impl Setup {
         }
     }
 
-    async fn notifications(&self) -> Vec<ClaudeTurnNotification> {
+    /// The journal's notice rows for Claude turns.
+    async fn notifications(&self) -> Vec<EventDelivery> {
         self.store
-            .read(|docs| docs.get_all::<ClaudeTurnNotification>())
+            .read(|docs| docs.get_all::<EventDelivery>())
             .await
             .unwrap()
+            .into_iter()
+            .filter(EventDelivery::is_notice)
+            .collect()
+    }
+
+    /// A watcher pass, then a journal pass (the worker in production).
+    async fn poll(&self) {
+        self.watcher.poll().await.unwrap();
+        self.events.drain().await.unwrap();
     }
 
     fn advance(&self, ms: i64) {
@@ -328,11 +336,15 @@ impl Setup {
         self.host.0.lock().unwrap().sessions = sessions;
     }
 
+    /// Subscription deliveries (not the journal's notices).
     async fn deliveries(&self) -> Vec<EventDelivery> {
         self.store
             .read(|docs| docs.get_all::<EventDelivery>())
             .await
             .unwrap()
+            .into_iter()
+            .filter(|row| row.target.is_none())
+            .collect()
     }
 }
 
@@ -625,7 +637,11 @@ async fn start(setup: &Setup, notify: Option<&str>) -> Value {
 /// One poll after the host reports `overrides` for the session.
 async fn poll_with(setup: &Setup, overrides: Value) {
     setup.set_sessions(vec![launched(overrides)]);
-    setup.watcher.poll().await.unwrap();
+    setup.poll().await;
+}
+
+fn revision_of(row: &EventDelivery) -> Value {
+    serde_json::from_str::<Value>(row.body.as_deref().unwrap()).unwrap()["revision"].clone()
 }
 
 #[tokio::test(start_paused = true)]
@@ -740,7 +756,7 @@ async fn notifies_each_finished_turn_once_across_sends() {
             .notifications()
             .await
             .iter()
-            .all(|row| row.status == NotificationStatus::Delivered && row.body.is_none())
+            .all(|row| row.status == DeliveryStatus::Delivered)
     );
 }
 
@@ -816,6 +832,7 @@ async fn records_each_session_revision_once() {
     };
     assert!(setup.notify.turn_finished(&turn).await.unwrap());
     assert!(!setup.notify.turn_finished(&turn).await.unwrap());
+    setup.events.drain().await.unwrap();
     assert_eq!(setup.transport.sent().len(), 1);
     assert_eq!(setup.notifications().await.len(), 1);
 }
@@ -834,8 +851,29 @@ async fn an_unconfigured_target_never_fails_the_session() {
     assert!(setup.transport.sent().is_empty());
     let rows = setup.notifications().await;
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].status, NotificationStatus::Unconfigured);
-    assert_eq!(rows[0].body, None);
+    assert_eq!(rows[0].status, DeliveryStatus::Unconfigured);
+    assert_eq!(rows[0].target.as_deref(), Some("nobody"));
+
+    // Creating the target later sends the notice that waited for it.
+    setup
+        .events
+        .upsert_target(
+            "nobody",
+            &EventTargetUpsert {
+                label: "Nobody".to_owned(),
+                url: "https://rakazo.example/api/v1/bots/nobody/webhook".to_owned(),
+                key: Some("nobody-key-0123456789".to_owned()),
+                connect: None,
+            },
+        )
+        .await
+        .unwrap();
+    setup.events.drain().await.unwrap();
+    assert_eq!(setup.transport.sent().len(), 1);
+    assert_eq!(
+        setup.notifications().await[0].status,
+        DeliveryStatus::Delivered
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -843,35 +881,38 @@ async fn retries_failed_deliveries_with_backoff_and_reports_them() {
     let setup = Setup::new(json!({})).await;
     start(&setup, Some("chief")).await;
     setup.transport.answer(Ok(503));
-    setup.transport.answer(Err(NotifyTransportError::Timeout));
+    setup.transport.answer(Err(TargetError::Timeout));
     poll_with(&setup, json!({"status": "busy", "revision": 3})).await;
     poll_with(&setup, json!({"status": "idle", "revision": 6})).await;
     assert_eq!(setup.transport.sent().len(), 1);
     let row = &setup.notifications().await[0];
-    assert_eq!(row.status, NotificationStatus::Pending);
+    assert_eq!(row.status, DeliveryStatus::Pending);
     assert_eq!(row.last_status, Some(503));
 
     // Not due before the 30 s backoff, even with the host offline.
     setup.host.0.lock().unwrap().online = false;
     setup.advance(10_000);
-    setup.watcher.poll().await.unwrap();
+    setup.poll().await;
     assert_eq!(setup.transport.sent().len(), 1);
     setup.advance(20_000);
-    setup.watcher.poll().await.unwrap();
+    setup.poll().await;
     assert_eq!(setup.transport.sent().len(), 2);
     assert_eq!(
         setup.notifications().await[0].last_error.as_deref(),
         Some("timeout")
     );
     setup.advance(60_000);
-    setup.watcher.poll().await.unwrap();
+    setup.poll().await;
     let sent = setup.transport.sent();
     assert_eq!(sent.len(), 3);
     // Every attempt carries the same idempotency key.
     assert!(sent.iter().all(|(_, key, _)| key == &sent[0].1));
     let row = &setup.notifications().await[0];
-    assert_eq!(row.status, NotificationStatus::Delivered);
+    assert_eq!(row.status, DeliveryStatus::Delivered);
     assert_eq!(row.attempts, 3);
+    // Every attempt is on the row.
+    let history: Vec<Option<i64>> = row.history.iter().map(|a| a.status).collect();
+    assert_eq!(history, [Some(503), None, Some(200)]);
 
     let status = omni_mcp::tools::events::events_status(Some(&setup.events), Some(&setup.notify))
         .await
@@ -893,25 +934,36 @@ async fn gives_up_on_a_rejection_or_after_the_last_attempt() {
     poll_with(&setup, json!({"status": "busy", "revision": 3})).await;
     poll_with(&setup, json!({"status": "idle", "revision": 6})).await;
     let row = &setup.notifications().await[0];
-    assert_eq!(row.status, NotificationStatus::Failed);
-    assert_eq!(row.last_error.as_deref(), Some("http_401"));
-    assert_eq!(row.body, None);
+    assert_eq!(row.status, DeliveryStatus::Failed);
+    assert_eq!(row.last_status, Some(401));
+    assert_eq!(row.history[0].error.as_deref(), Some("http_401"));
 
-    for _ in 0..8 {
+    for _ in 0..80 {
         setup.transport.answer(Ok(500));
     }
     poll_with(&setup, json!({"status": "busy", "revision": 7})).await;
     poll_with(&setup, json!({"status": "idle", "revision": 9})).await;
-    for _ in 0..10 {
+    // A day of retries, then it fails for good.
+    for _ in 0..50 {
         setup.advance(31 * 60_000);
-        setup.watcher.poll().await.unwrap();
+        setup.poll().await;
     }
     let rows = setup.notifications().await;
-    let last = rows.iter().find(|row| row.revision == 9.0).unwrap();
-    assert_eq!(last.status, NotificationStatus::Failed);
-    assert_eq!(last.attempts, 8);
-    assert_eq!(last.last_error.as_deref(), Some("http_500"));
-    assert_eq!(setup.transport.sent().len(), 9);
+    let last = rows
+        .iter()
+        .find(|row| revision_of(row) == json!(9))
+        .unwrap();
+    assert_eq!(last.status, DeliveryStatus::Failed);
+    assert!(last.attempts > 8, "{}", last.attempts);
+    assert_eq!(last.last_status, Some(500));
+    let sent = setup.transport.sent().len();
+    setup.advance(60 * 60_000);
+    setup.poll().await;
+    assert_eq!(
+        setup.transport.sent().len(),
+        sent,
+        "nothing after it failed"
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -15,5 +15,6 @@ pub mod persistence;
 pub mod publisher;
 pub mod rpc;
 pub mod service;
+pub mod targets;
 pub mod task_runs;
 pub mod webhook;

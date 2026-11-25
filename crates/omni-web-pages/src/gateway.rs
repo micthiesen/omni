@@ -15,6 +15,7 @@ mod endpoint;
 mod events;
 mod integrations;
 mod logic;
+mod outbound;
 mod trust;
 
 use std::time::Duration;
@@ -547,6 +548,7 @@ pub fn GatewayPage() -> impl IntoView {
                     <access::AccessColumn gw/>
                 </div>
                 <events::FeedsPanel gw/>
+                <outbound::OutboundSection gw/>
             </div>
         })}
         {move || gw.editor_open.get().then(|| view! {

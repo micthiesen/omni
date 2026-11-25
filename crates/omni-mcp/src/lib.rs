@@ -47,9 +47,7 @@ use omni_store::entity::EntityDescriptor;
 use omni_tasks::CronSchedule;
 
 use crate::activity::{ActivityRecorder, McpCallData};
-use crate::events::claude_notify::{
-    ClaudeNotify, ClaudeSessionNotify, ClaudeTurnNotification, LiveNotifyTransport,
-};
+use crate::events::claude_notify::{ClaudeNotify, ClaudeSessionNotify, ClaudeTurnNotification};
 use crate::events::claude_sessions::{ClaudeSessionWatch, ClaudeSessionWatcher};
 use crate::events::persistence::{EventDelivery, EventReceipt, EventRequest, EventSubscription};
 use crate::events::publisher::McpEventPublisher;
@@ -87,6 +85,9 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<ClaudeSessionWatch>(),
         EntityDescriptor::of::<ClaudeSessionNotify>(),
         EntityDescriptor::of::<ClaudeTurnNotification>(),
+        EntityDescriptor::of::<crate::events::targets::EventTarget>(),
+        EntityDescriptor::of::<crate::events::targets::EventRoute>(),
+        EntityDescriptor::of::<crate::events::persistence::TargetImport>(),
     ];
     entities.extend(gateway::model::entities());
     entities
@@ -174,6 +175,73 @@ fn approval_notifier(ctx: &AppContext) -> crate::gateway::oauth::server::Authori
     })
 }
 
+/// The target id the recipe app's requests go to (`RECIPES_REQUEST_WEBHOOK_*`
+/// before stored targets).
+pub const KITCHEN_TARGET: &str = "kitchen";
+
+/// Boot migration to stored event targets: registers stored keys with the
+/// log scrubber, copies each `CLAUDE_NOTIFY_TARGETS` entry and the recipe
+/// request webhook into a stored target unless one with that id exists (the
+/// stored target wins; the environment is only the fallback for a target
+/// not stored yet), and moves pending turn notices of the old outbox into
+/// the journal. Never logs a URL or key.
+async fn import_event_targets(
+    ctx: &AppContext,
+    journal: &McpEventService,
+    notify: Option<&ClaudeNotify>,
+) -> Result<(), String> {
+    journal
+        .register_target_secrets()
+        .await
+        .map_err(|e| e.to_string())?;
+    let config = &ctx.config;
+    let mut candidates: Vec<(String, String, omni_config::ClaudeNotifyTarget)> = Vec::new();
+    if let Some(targets) = &config.claude_notify_targets {
+        for (name, target) in &targets.0 {
+            candidates.push((
+                name.clone(),
+                format!("{name} (from CLAUDE_NOTIFY_TARGETS)"),
+                target.clone(),
+            ));
+        }
+    }
+    if let Some(target) = config.recipes_request_webhook() {
+        candidates.push((
+            KITCHEN_TARGET.to_owned(),
+            "Kitchen (from RECIPES_REQUEST_WEBHOOK_URL)".to_owned(),
+            target,
+        ));
+    }
+    for (id, label, target) in candidates {
+        match journal
+            .import_target(
+                &id,
+                &label,
+                target.url.as_str(),
+                &target.token,
+                target.connect.as_deref(),
+            )
+            .await
+        {
+            Ok(true) => {
+                tracing::info!(target: LOG, destination = %id, "Stored event target imported from the environment")
+            }
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(target: LOG, destination = %id, %error, "Event target from the environment not imported")
+            }
+        }
+    }
+    if let Some(notify) = notify {
+        let moved = notify.migrate_pending().await.map_err(|e| e.to_string())?;
+        if moved > 0 {
+            tracing::info!(target: LOG, "Moved {moved} pending Claude turn notice(s) into the event journal");
+        }
+        notify.prune_legacy().await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// The MCP package for one process.
 pub struct McpPackage {
     ctx: AppContext,
@@ -223,6 +291,11 @@ impl McpPackage {
             Arc::new(WebhookClient::new(Arc::new(transport), ctx.clock.clone())),
             ctx.ports.clone(),
         );
+        // Stored targets are the owner's configuration and may be on the LAN.
+        events.set_target_transport(Arc::new(crate::events::targets::LiveTargetTransport::new(
+            ctx.http.clone(),
+            ctx.side_effects,
+        )));
         let oauth = OAuthClient::new(ctx.public_http.clone());
         let recorder =
             ActivityRecorder::new(ctx.store.clone(), ctx.clock.clone(), ctx.tracker.clone());
@@ -264,12 +337,7 @@ impl McpPackage {
             None => None,
         };
         let watcher = host.as_ref().map(|host| {
-            let notify = ClaudeNotify::new(
-                ctx.store.clone(),
-                ctx.clock.clone(),
-                config.claude_notify_targets.clone(),
-                Arc::new(LiveNotifyTransport::new(ctx.http.clone(), ctx.side_effects)),
-            );
+            let notify = ClaudeNotify::new(ctx.store.clone(), ctx.clock.clone(), events.clone());
             ClaudeSessionWatcher::new(
                 events.clone(),
                 host.clone(),
@@ -406,6 +474,20 @@ impl McpPackage {
                         tracing::warn!(target: "Main", "Marked {marked} interrupted MCP call(s)");
                     }
                     Ok(())
+                }
+                .boxed()
+            }),
+        });
+        let journal = self.events.clone();
+        let notify = self.watcher.as_ref().and_then(|w| w.notify().cloned());
+        subsystem.boot_steps.push(BootStep {
+            phase: BootPhase::Migrate,
+            name: "importEventTargets",
+            run: Box::new(move |ctx: AppContext| {
+                async move {
+                    import_event_targets(&ctx, &journal, notify.as_ref())
+                        .await
+                        .map_err(|e| BootError::new("importEventTargets", e))
                 }
                 .boxed()
             }),

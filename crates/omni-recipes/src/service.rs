@@ -17,7 +17,7 @@ use omni_store::Store;
 use crate::error::{R, io};
 use crate::files::ImageFiles;
 use crate::hub::Hub;
-use crate::requests::{LiveTransport, RequestDelivery};
+use crate::requests::RequestDelivery;
 use crate::schema;
 
 /// What only the running app has; absent in the operator commands.
@@ -87,10 +87,7 @@ impl Recipes {
                 public_http: ctx.public_http.clone(),
             }),
             app_url: ctx.config.recipes_app_url.clone(),
-            requests: RequestDelivery::new(
-                ctx.config.recipes_request_webhook(),
-                Arc::new(LiveTransport::new(ctx.http.clone(), ctx.side_effects)),
-            ),
+            requests: RequestDelivery::none(),
             ..Self::new(
                 ctx.store.clone(),
                 ctx.clock.clone(),

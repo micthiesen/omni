@@ -1,23 +1,17 @@
 //! Requests written in the app for the kitchen agent: stored before anything
-//! is announced, announced once with retries, and answered by an agent with
-//! ordinary revisions.
+//! is announced, handed to the event journal once (which sends and retries
+//! the notice), and answered by an agent with ordinary revisions.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use crate::common;
 
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::{COOKIES, Harness, ORIGIN, PICCATA, get, post_json};
-use futures::future::BoxFuture;
-use omni_config::ClaudeNotifyTarget;
 use omni_recipes::hub::HubEvent;
-use omni_recipes::requests::{
-    GIVE_UP_AFTER_MS, LiveTransport, MAX_OPEN, RequestDelivery, RequestTransport, WebhookError,
-    WebhookResponse,
-};
+use omni_recipes::requests::{KITCHEN_TARGET, MAX_OPEN, RequestDelivery};
+use omni_runtime::ports::NoticeStatus;
 use serde_json::{Value, json};
 
 fn request(op: &str, id: &str, text: &str, context: Value) -> Value {
@@ -30,80 +24,6 @@ fn request(op: &str, id: &str, text: &str, context: Value) -> Value {
 
 fn library(op: &str, id: &str, text: &str) -> Value {
     request(op, id, text, json!({ "origin": "library" }))
-}
-
-/// A webhook that answers from a script and remembers what it was sent.
-#[derive(Default)]
-struct FakeWebhook {
-    answers: Mutex<VecDeque<Result<WebhookResponse, WebhookError>>>,
-    /// The answer once the script runs out.
-    fallback: Mutex<Option<Result<WebhookResponse, WebhookError>>>,
-    posts: Mutex<Vec<(String, Value)>>,
-}
-
-impl FakeWebhook {
-    fn scripted(answers: Vec<Result<WebhookResponse, WebhookError>>) -> Arc<Self> {
-        Arc::new(Self {
-            answers: Mutex::new(answers.into()),
-            ..Self::default()
-        })
-    }
-
-    fn always(answer: Result<WebhookResponse, WebhookError>) -> Arc<Self> {
-        Arc::new(Self {
-            fallback: Mutex::new(Some(answer)),
-            ..Self::default()
-        })
-    }
-
-    fn posts(&self) -> Vec<(String, Value)> {
-        self.posts.lock().unwrap().clone()
-    }
-}
-
-impl RequestTransport for FakeWebhook {
-    fn post<'a>(
-        &'a self,
-        _target: &'a ClaudeNotifyTarget,
-        idempotency_key: &'a str,
-        body: &'a str,
-    ) -> BoxFuture<'a, Result<WebhookResponse, WebhookError>> {
-        self.posts.lock().unwrap().push((
-            idempotency_key.to_owned(),
-            serde_json::from_str(body).unwrap(),
-        ));
-        let answer = self
-            .answers
-            .lock()
-            .unwrap()
-            .pop_front()
-            .or_else(|| self.fallback.lock().unwrap().clone())
-            .unwrap_or(Ok(status(200)));
-        Box::pin(async move { answer })
-    }
-}
-
-fn status(status: u16) -> WebhookResponse {
-    WebhookResponse {
-        status,
-        ignored: false,
-    }
-}
-
-fn target(url: &str) -> ClaudeNotifyTarget {
-    ClaudeNotifyTarget {
-        url: url.parse().unwrap(),
-        token: "kitchen-key-0123456789".to_owned(),
-        connect: None,
-    }
-}
-
-async fn with_webhook(webhook: &Arc<FakeWebhook>) -> Harness {
-    Harness::with_delivery(RequestDelivery::new(
-        Some(target("https://bots.example/hooks/kitchen")),
-        webhook.clone(),
-    ))
-    .await
 }
 
 async fn queued(h: &Harness) -> Vec<Value> {
@@ -182,7 +102,7 @@ async fn a_request_is_stored_once_with_what_the_cook_was_looking_at() {
     assert_eq!(requests[0]["revision"], 1);
     assert_eq!(requests[0]["headRevision"], 1);
     assert_eq!(requests[0]["scale"], 2);
-    assert_eq!(requests[0]["delivery"], "unconfigured");
+    assert_eq!(requests[0]["delivery"], "pending");
     assert_eq!(requests[1]["origin"], "cook");
     assert_eq!(requests[1]["step"], "sear");
     assert!(
@@ -430,13 +350,8 @@ async fn an_agent_takes_a_request_and_closes_it_with_the_revision() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_failing_webhook_is_retried_with_one_key_and_the_request_stays_queued() {
-    let webhook = FakeWebhook::scripted(vec![
-        Err(WebhookError::Network),
-        Ok(status(503)),
-        Ok(status(200)),
-    ]);
-    let h = with_webhook(&webhook).await;
+async fn a_request_is_handed_to_the_journal_once_keyed_by_its_id() {
+    let h = Harness::with_delivery(RequestDelivery::none()).await;
     let router = h.router();
     let id = h.create(PICCATA).await;
     let body = request(
@@ -446,56 +361,19 @@ async fn a_failing_webhook_is_retried_with_one_key_and_the_request_stays_queued(
         json!({ "origin": "cook", "recipeId": id, "revision": 1, "scale": 1.5, "step": "sear" }),
     );
     post_json(&router, "/api/ops", &body).await;
-    // Stored before anything is sent.
+    // Stored before anything is announced.
     assert_eq!(queued(&h).await[0]["delivery"], "pending");
-    assert!(webhook.posts().is_empty());
+    assert!(h.events.notices().is_empty());
 
-    // The first attempt fails: the request is still queued, visible and listed.
     assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
-    let waiting = queued(&h).await;
-    assert_eq!(waiting[0]["status"], "queued");
-    assert_eq!(
-        (
-            waiting[0]["delivery"].clone(),
-            waiting[0]["deliveryAttempts"].clone()
-        ),
-        (json!("pending"), json!(1))
-    );
-    assert_eq!(
-        get(&router, "/api/requests").await.json()["items"][0]["status"],
-        "queued"
-    );
-    // Not again before the backoff has passed.
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    h.advance(Duration::from_secs(29)).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    h.advance(Duration::from_secs(1)).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
-    assert_eq!(queued(&h).await[0]["delivery"], "pending");
-    // The wait doubles.
-    h.advance(Duration::from_secs(59)).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    h.advance(Duration::from_secs(1)).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
-    let delivered = queued(&h).await;
-    assert_eq!(
-        (
-            delivered[0]["delivery"].clone(),
-            delivered[0]["deliveryAttempts"].clone()
-        ),
-        (json!("delivered"), json!(3))
-    );
-    // Delivered is final.
-    h.advance_days(2).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-
-    // Every attempt carried the same key and the same event, so the receiver
-    // can collapse a resend whose first answer was lost.
-    let posts = webhook.posts();
-    assert_eq!(posts.len(), 3);
-    assert!(posts.iter().all(|(key, _)| key == "req_aaaaaaaa"));
-    assert!(posts.iter().all(|(_, body)| body == &posts[0].1));
-    let event = &posts[0].1;
+    let notices = h.events.notices();
+    assert_eq!(notices.len(), 1);
+    let notice = &notices[0];
+    assert_eq!(notice.target, KITCHEN_TARGET);
+    // The key is the request id: the journal sends it as Idempotency-Key.
+    assert_eq!(notice.key, "req_aaaaaaaa");
+    assert_eq!(notice.name, "recipe.request");
+    let event = &notice.body;
     assert_eq!(event["event"], "recipe.request");
     assert_eq!(event["requestId"], "req_aaaaaaaa");
     assert_eq!(event["text"], "Halve the butter.");
@@ -511,10 +389,27 @@ async fn a_failing_webhook_is_retried_with_one_key_and_the_request_stays_queued(
             .is_some_and(|at| at.ends_with('Z'))
     );
 
-    // The app sending the request again does not announce it again.
+    // The tool reports the journal's state of the notice.
+    assert_eq!(queued(&h).await[0]["delivery"], "pending");
+    h.events
+        .settle_notice("req_aaaaaaaa", NoticeStatus::Delivered, 3);
+    let delivered = queued(&h).await;
+    assert_eq!(
+        (
+            delivered[0]["delivery"].clone(),
+            delivered[0]["deliveryAttempts"].clone()
+        ),
+        (json!("delivered"), json!(3))
+    );
+    assert_eq!(delivered[0]["status"], "queued");
+
+    // Handed over once: neither a later pass nor the app resending it hands
+    // it over again.
+    h.advance_days(2).await;
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
     post_json(&router, "/api/ops", &body).await;
     assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    assert_eq!(webhook.posts().len(), 3);
+    assert_eq!(h.events.notices().len(), 1);
 
     // A library request links to the Requests page.
     post_json(
@@ -524,39 +419,35 @@ async fn a_failing_webhook_is_retried_with_one_key_and_the_request_stays_queued(
     )
     .await;
     assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
-    let event = webhook.posts()[3].1.clone();
+    let event = h.events.notices()[1].body.clone();
     assert_eq!(event["link"], format!("{ORIGIN}/requests"));
     assert_eq!(event["recipeTitle"], Value::Null);
     assert_eq!(event["context"]["origin"], "library");
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_webhook_that_stays_down_is_given_up_after_a_day_and_nothing_is_lost() {
-    let webhook = FakeWebhook::always(Err(WebhookError::Timeout));
-    let h = with_webhook(&webhook).await;
+async fn a_journal_that_cannot_take_the_notice_is_asked_again_and_nothing_is_lost() {
+    let h = Harness::with_delivery(RequestDelivery::none()).await;
     let router = h.router();
+    h.events.fail();
     post_json(
         &router,
         "/api/ops",
         &library("op_request00001", "req_aaaaaaaa", "Add a flatbread recipe."),
     )
     .await;
-    let mut passed = 0;
-    // The attempt that gives up is the first one a day after the request.
-    while passed <= GIVE_UP_AFTER_MS + 31 * 60_000 {
-        h.recipes.deliver_requests().await.unwrap();
-        h.advance(Duration::from_secs(60)).await;
-        passed += 60_000;
-    }
-    let attempts = webhook.posts().len();
-    // 30 s, 1, 2, 4, 8 and 16 minutes, then every half hour.
-    assert!((45..=60).contains(&attempts), "{attempts}");
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
     let left = queued(&h).await;
     assert_eq!(left[0]["status"], "queued");
-    assert_eq!(left[0]["delivery"], "failed");
-    h.advance_days(1).await;
+    assert_eq!(left[0]["delivery"], "pending");
+    // Not again before the wait has passed, then again.
     assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    assert_eq!(webhook.posts().len(), attempts);
+    h.events.recover();
+    h.advance(Duration::from_secs(29)).await;
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
+    h.advance(Duration::from_secs(1)).await;
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
+    assert_eq!(h.events.notices().len(), 1);
     assert_eq!(
         get(&router, "/api/requests").await.json()["items"][0]["status"],
         "queued"
@@ -564,19 +455,17 @@ async fn a_webhook_that_stays_down_is_given_up_after_a_day_and_nothing_is_lost()
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_refused_an_ignored_and_an_already_taken_notice_settle_without_a_retry() {
-    let webhook = FakeWebhook::scripted(vec![
-        Ok(status(401)),
-        Ok(WebhookResponse {
-            status: 200,
-            ignored: true,
-        }),
-    ]);
-    let h = with_webhook(&webhook).await;
+async fn an_ignored_a_failed_and_an_already_taken_notice_are_reported_as_they_stand() {
+    let h = Harness::with_delivery(RequestDelivery::none()).await;
     let router = h.router();
-    for (n, id) in ["req_aaaaaaaa", "req_bbbbbbbb", "req_cccccccc"]
-        .iter()
-        .enumerate()
+    for (n, id) in [
+        "req_aaaaaaaa",
+        "req_bbbbbbbb",
+        "req_cccccccc",
+        "req_dddddddd",
+    ]
+    .iter()
+    .enumerate()
     {
         post_json(
             &router,
@@ -586,13 +475,25 @@ async fn a_refused_an_ignored_and_an_already_taken_notice_settle_without_a_retry
         .await;
         h.advance(Duration::from_secs(1)).await;
     }
-    // An agent sweeping the queue took the third before its notice went out.
+    // An agent sweeping the queue took the third before its notice was
+    // handed over: it never is.
     h.ok(
         "recipes_request_update",
         json!({ "requestId": "req_cccccccc", "status": "working" }),
     )
     .await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 2);
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 3);
+    h.events
+        .settle_notice("req_aaaaaaaa", NoticeStatus::Failed, 1);
+    h.events
+        .settle_notice("req_bbbbbbbb", NoticeStatus::Ignored, 1);
+    // The fourth is taken while its notice still waits: the notice is
+    // cancelled.
+    h.ok(
+        "recipes_request_update",
+        json!({ "requestId": "req_dddddddd", "status": "working" }),
+    )
+    .await;
     let all = h
         .ok("recipes_requests_list", json!({ "status": "all" }))
         .await;
@@ -602,11 +503,9 @@ async fn a_refused_an_ignored_and_an_already_taken_notice_settle_without_a_retry
         .iter()
         .map(|request| request["delivery"].as_str().unwrap())
         .collect();
-    assert_eq!(states, ["failed", "ignored", "skipped"]);
-    h.advance_days(1).await;
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-    assert_eq!(webhook.posts().len(), 2);
-    // All three are still there to be handled.
+    assert_eq!(states, ["failed", "ignored", "skipped", "skipped"]);
+    assert_eq!(h.events.notices().len(), 3);
+    // All four are still there to be handled.
     assert_eq!(all["requests"][0]["status"], "queued");
     assert_eq!(all["requests"][1]["status"], "queued");
 }
@@ -614,16 +513,15 @@ async fn a_refused_an_ignored_and_an_already_taken_notice_settle_without_a_retry
 // Real time: the service waits on the store's own thread, which a paused
 // clock would run ahead of.
 #[tokio::test]
-async fn the_delivery_service_sends_as_soon_as_a_request_is_stored() {
-    let webhook = FakeWebhook::always(Ok(status(200)));
-    let h = with_webhook(&webhook).await;
+async fn the_hand_over_service_runs_as_soon_as_a_request_is_stored() {
+    let h = Harness::with_delivery(RequestDelivery::none()).await;
     let router = h.router();
     let shutdown = tokio_util::sync::CancellationToken::new();
     let (service, token) = (h.recipes.clone(), shutdown.clone());
     let running = tokio::spawn(async move { service.run_requests(token).await });
     // Its first pass finds nothing.
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(webhook.posts().is_empty());
+    assert!(h.events.notices().is_empty());
     post_json(
         &router,
         "/api/ops",
@@ -631,22 +529,21 @@ async fn the_delivery_service_sends_as_soon_as_a_request_is_stored() {
     )
     .await;
     // Well inside the service's own fifteen-second tick: the request woke it.
-    let delivered = async {
-        while queued(&h).await[0]["delivery"] != "delivered" {
+    let handed = async {
+        while h.events.notices().is_empty() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     };
-    tokio::time::timeout(Duration::from_secs(5), delivered)
+    tokio::time::timeout(Duration::from_secs(5), handed)
         .await
-        .expect("the notice goes out at once");
-    assert_eq!(webhook.posts().len(), 1);
+        .expect("the notice is handed over at once");
+    assert_eq!(h.events.notices().len(), 1);
     shutdown.cancel();
     running.await.unwrap();
 }
 
 #[tokio::test(start_paused = true)]
-async fn requests_written_before_the_webhook_was_set_up_are_announced_once_it_is() {
-    // Written with no webhook configured.
+async fn requests_written_before_the_journal_are_announced_once_it_is_there() {
     let h = Harness::new().await;
     let router = h.router();
     for (n, id) in ["req_aaaaaaaa", "req_bbbbbbbb"].iter().enumerate() {
@@ -657,78 +554,27 @@ async fn requests_written_before_the_webhook_was_set_up_are_announced_once_it_is
         )
         .await;
     }
+    // As the webhook-era service stored them when no webhook was configured.
+    h.recipes
+        .store()
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE recipes_request SET delivery = 'unconfigured'", [])
+                .map_err(|e| omni_store::StoreError::Sqlite(e.to_string()))
+        })
+        .await
+        .unwrap();
     h.ok(
         "recipes_request_update",
         json!({ "requestId": "req_bbbbbbbb", "status": "working" }),
     )
     .await;
-    assert_eq!(h.recipes.announce_unannounced().await.unwrap(), 0);
-    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 0);
-
-    // The same library after a restart with the webhook configured.
-    let webhook = FakeWebhook::always(Ok(status(200)));
-    let configured = h
-        .recipes
-        .clone()
-        .with_request_delivery(RequestDelivery::new(
-            Some(target("https://bots.example/hooks/kitchen")),
-            webhook.clone(),
-        ));
     // Only the request nobody has taken yet.
-    assert_eq!(configured.announce_unannounced().await.unwrap(), 1);
-    assert_eq!(configured.deliver_requests().await.unwrap(), 1);
-    assert_eq!(webhook.posts().len(), 1);
-    assert_eq!(webhook.posts()[0].0, "req_aaaaaaaa");
-    assert_eq!(configured.announce_unannounced().await.unwrap(), 0);
-}
-
-#[tokio::test]
-async fn the_live_transport_posts_json_with_the_key_and_the_bearer() {
-    use wiremock::matchers::{body_partial_json, header, method, path};
-    use wiremock::{Mock, ResponseTemplate};
-
-    let server = omni_testkit::mock_server().await;
-    Mock::given(method("POST"))
-        .and(path("/hooks/kitchen"))
-        .and(header("authorization", "Bearer kitchen-key-0123456789"))
-        .and(header("idempotency-key", "req_aaaaaaaa"))
-        .and(header("x-fond-event", "recipe.request"))
-        .and(header("content-type", "application/json"))
-        .and(body_partial_json(json!({ "event": "recipe.request" })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let client = omni_testkit::mock_http(&server, &["https://bots.example"]);
-    let live = LiveTransport::new(client.clone(), omni_http::SideEffectMode::Live);
-    let kitchen = target("https://bots.example/hooks/kitchen");
-    let body = r#"{"event":"recipe.request"}"#;
-    let sent = live.post(&kitchen, "req_aaaaaaaa", body).await.unwrap();
-    assert_eq!(sent, status(200));
-
-    // A page that is not a webhook's answer (a proxy's error page) is not
-    // worth sending to again.
-    Mock::given(method("POST"))
-        .and(path("/hooks/proxy"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("x".repeat(100_000)))
-        .mount(&server)
-        .await;
-    let page = live
-        .post(
-            &target("https://bots.example/hooks/proxy"),
-            "req_aaaaaaaa",
-            body,
-        )
-        .await;
-    assert_eq!(page, Err(WebhookError::Unusable));
-
-    // A preview or a shadow run records and sends nothing.
-    let recorded = LiveTransport::new(client, omni_http::SideEffectMode::Record);
-    assert_eq!(
-        recorded.post(&kitchen, "req_aaaaaaaa", body).await.unwrap(),
-        status(200)
-    );
-    server.verify().await;
+    assert_eq!(h.recipes.announce_unannounced().await.unwrap(), 1);
+    assert_eq!(h.recipes.deliver_requests().await.unwrap(), 1);
+    assert_eq!(h.events.notices().len(), 1);
+    assert_eq!(h.events.notices()[0].key, "req_aaaaaaaa");
+    assert_eq!(h.recipes.announce_unannounced().await.unwrap(), 0);
 }
 
 #[tokio::test(start_paused = true)]

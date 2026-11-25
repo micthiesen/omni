@@ -1,38 +1,29 @@
 //! Turn notifications for Claude Code sessions started with `notify`.
 //!
-//! A caller names a server-side target (`CLAUDE_NOTIFY_TARGETS`) when it
-//! starts or continues a session. The session watcher then posts each finished
-//! turn of that session to the target, once per session and revision, so the
-//! caller learns about it without polling and without hearing about sessions
-//! it did not ask for. Targets are Rakazo bot webhooks: a JSON body,
-//! `Authorization: Bearer <key>` and an `Idempotency-Key` that Rakazo uses to
-//! collapse repeated deliveries, which is why an uncertain attempt (timeout,
-//! dropped connection) may be retried.
+//! A caller names a stored event target (`chief`, `business`; see
+//! [`super::targets`]) when it starts or continues a session. The session
+//! watcher then queues each finished turn of that session as a notice in the
+//! event journal, once per session and revision, so the caller learns about
+//! it without polling and without hearing about sessions it did not ask for.
+//! The journal sends it with its retries; the `Idempotency-Key` stays
+//! `omni-claude-turn:<session>:<revision>` so Rakazo collapses repeats.
+//! Rows of `mcp-claude-turn-notification` were the old outbox; a boot step
+//! moves pending ones into the journal.
 
-use std::collections::{BTreeMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashSet;
 
-use futures::future::BoxFuture;
-use omni_config::{ClaudeNotifyTarget, ClaudeNotifyTargets};
 use omni_core::clock::SharedClock;
-use omni_http::{HttpClient, HttpConfig, HttpError, Method, RedirectRule, SideEffectMode};
+use omni_runtime::ports::{NoticeStatus, TargetNotice};
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps, EntityWrite, UpsertOpts};
 use omni_store::{Store, StoreError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::service::McpEventService;
+
 const LOG: &str = "MCP:ClaudeNotify";
-/// The webhook body is a short, fixed-shape record; Rakazo accepts 64 KiB.
-const MAX_RESPONSE_BYTES: usize = 4096;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const SUMMARY_CHARS: usize = 1500;
-const MAX_ATTEMPTS: i64 = 8;
-const FIRST_BACKOFF_MS: i64 = 30_000;
-const MAX_BACKOFF_MS: i64 = 30 * 60_000;
-const MAX_DUE_PER_PASS: usize = 10;
-const RETENTION_MS: i64 = 7 * 24 * 60 * 60_000;
 const STATUS_RECENT: usize = 10;
 
 /// `mcp-claude-session-notify`: the target one session's finished turns go to.
@@ -78,8 +69,8 @@ impl NotificationStatus {
     }
 }
 
-/// `mcp-claude-turn-notification`: one finished turn owed to one target,
-/// keyed by session and revision so a turn is notified at most once.
+/// `mcp-claude-turn-notification`: the old per-turn outbox row (read only to
+/// move pending rows into the journal, and by the compat audit).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeTurnNotification {
@@ -112,6 +103,11 @@ impl Entity for ClaudeTurnNotification {
 
 pub fn notification_id(session_id: &str, revision: f64) -> String {
     format!("{session_id}:{}", omni_core::js::number_to_string(revision))
+}
+
+/// The journal key (and `Idempotency-Key`) of one turn's notice.
+pub fn notice_key(session_id: &str, revision: f64) -> String {
+    format!("omni-claude-turn:{}", notification_id(session_id, revision))
 }
 
 /// What one finished turn reports. Holds no secrets; text is already
@@ -160,185 +156,26 @@ impl FinishedTurn {
     }
 }
 
-/// One answer from a target.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NotifyResponse {
-    pub status: u16,
-    /// Rakazo's `{"ok": true, "ignored": true}`: no webhook routine ran.
-    pub ignored: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum NotifyTransportError {
-    #[error("timeout")]
-    Timeout,
-    #[error("network")]
-    Network,
-}
-
-/// The network leg; tests replace it.
-pub trait NotifyTransport: Send + Sync {
-    fn post<'a>(
-        &'a self,
-        target: &'a ClaudeNotifyTarget,
-        idempotency_key: &'a str,
-        body: &'a str,
-    ) -> BoxFuture<'a, Result<NotifyResponse, NotifyTransportError>>;
-}
-
-/// The production transport: the LAN-capable client (targets come from
-/// configuration, not callers), no redirects, ten-second timeout. In
-/// `SideEffectMode::Record` nothing is sent.
-pub struct LiveNotifyTransport {
-    client: HttpClient,
-    mode: SideEffectMode,
-}
-
-impl LiveNotifyTransport {
-    pub fn new(client: HttpClient, mode: SideEffectMode) -> Self {
-        Self { client, mode }
-    }
-}
-
-impl NotifyTransport for LiveNotifyTransport {
-    fn post<'a>(
-        &'a self,
-        target: &'a ClaudeNotifyTarget,
-        idempotency_key: &'a str,
-        body: &'a str,
-    ) -> BoxFuture<'a, Result<NotifyResponse, NotifyTransportError>> {
-        Box::pin(async move {
-            if self.mode == SideEffectMode::Record {
-                tracing::info!(
-                    target: LOG,
-                    host = target.url.host_str().unwrap_or(""),
-                    "Recorded Claude session notification (not sent)"
-                );
-                return Ok(NotifyResponse {
-                    status: 200,
-                    ignored: false,
-                });
-            }
-            let pinned;
-            let client = match &target.connect {
-                None => &self.client,
-                Some(connect) => {
-                    pinned = pinned_client(target, connect).await?;
-                    &pinned
-                }
-            };
-            let response = client
-                .request(Method::POST, target.url.clone())
-                .redirect(RedirectRule::None)
-                .timeout(REQUEST_TIMEOUT)
-                .bearer_auth(&target.token)
-                .header("content-type", "application/json")
-                .header("idempotency-key", idempotency_key)
-                .body(body.to_owned())
-                .send_bounded(MAX_RESPONSE_BYTES)
-                .await
-                .map_err(|error| match error {
-                    HttpError::Timeout => NotifyTransportError::Timeout,
-                    _ => NotifyTransportError::Network,
-                })?;
-            let ignored = serde_json::from_slice::<Value>(&response.body)
-                .ok()
-                .and_then(|value| value.get("ignored").and_then(Value::as_bool))
-                .unwrap_or(false);
-            Ok(NotifyResponse {
-                status: response.status.as_u16(),
-                ignored,
-            })
-        })
-    }
-}
-
-/// A client that reaches `target`'s URL host at `connect`, resolved now so a
-/// recreated proxy container's new address is picked up.
-async fn pinned_client(
-    target: &ClaudeNotifyTarget,
-    connect: &str,
-) -> Result<HttpClient, NotifyTransportError> {
-    let host = target.url.host_str().unwrap_or_default();
-    let port = target.url.port_or_known_default().unwrap_or(443);
-    let addr = tokio::net::lookup_host((connect, port))
-        .await
-        .ok()
-        .and_then(|mut addrs| addrs.next())
-        .ok_or_else(|| {
-            tracing::info!(target: LOG, connect = %connect, "Notify target connect host did not resolve");
-            NotifyTransportError::Network
-        })?;
-    let config = HttpConfig {
-        connect_timeout: Some(REQUEST_TIMEOUT),
-        offline: false,
-    };
-    HttpClient::pinned(&config, host, addr).map_err(|_| NotifyTransportError::Network)
-}
-
-/// How one attempt ended.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AttemptOutcome {
-    Delivered,
-    Ignored,
-    /// Worth another attempt: a timeout, network failure, 408, 425, 429 or 5xx.
-    Retry(String),
-    /// The target refused it for good (another 4xx, or a 3xx it never follows).
-    Rejected(String),
-}
-
-/// The pure decision over one target answer.
-pub fn classify(result: &Result<NotifyResponse, NotifyTransportError>) -> AttemptOutcome {
-    match result {
-        Err(error) => AttemptOutcome::Retry(error.to_string()),
-        Ok(response) if (200..300).contains(&response.status) => {
-            if response.ignored {
-                AttemptOutcome::Ignored
-            } else {
-                AttemptOutcome::Delivered
-            }
-        }
-        Ok(response) if matches!(response.status, 408 | 425 | 429) || response.status >= 500 => {
-            AttemptOutcome::Retry(format!("http_{}", response.status))
-        }
-        Ok(response) => AttemptOutcome::Rejected(format!("http_{}", response.status)),
-    }
-}
-
-/// Delay before attempt `attempts + 1`: 30 s doubling to 30 minutes.
-pub fn backoff_ms(attempts: i64) -> i64 {
-    let exponent = u32::try_from(attempts.saturating_sub(1).clamp(0, 16)).unwrap_or(16);
-    FIRST_BACKOFF_MS
-        .saturating_mul(1_i64 << exponent)
-        .min(MAX_BACKOFF_MS)
-}
-
-/// Session notify targets and their deliveries; cheap to clone.
+/// Session notify targets and their notices; cheap to clone.
 #[derive(Clone)]
 pub struct ClaudeNotify {
     store: Store,
     clock: SharedClock,
-    targets: Arc<BTreeMap<String, ClaudeNotifyTarget>>,
-    transport: Arc<dyn NotifyTransport>,
+    events: McpEventService,
 }
 
 impl ClaudeNotify {
-    pub fn new(
-        store: Store,
-        clock: SharedClock,
-        targets: Option<ClaudeNotifyTargets>,
-        transport: Arc<dyn NotifyTransport>,
-    ) -> Self {
+    pub fn new(store: Store, clock: SharedClock, events: McpEventService) -> Self {
         Self {
             store,
             clock,
-            targets: Arc::new(targets.map(|t| t.0).unwrap_or_default()),
-            transport,
+            events,
         }
     }
 
-    pub fn is_configured(&self, target: &str) -> bool {
-        self.targets.contains_key(target)
+    /// Whether `target` is a stored event target.
+    pub async fn is_configured(&self, target: &str) -> bool {
+        matches!(self.events.store().target(target).await, Ok(Some(_)))
     }
 
     /// Sets (`Some`) or clears (`None`) the target for one session's later
@@ -358,13 +195,13 @@ impl ClaudeNotify {
                     .await
             }
             Some(target) => {
-                if !self.is_configured(target) {
+                if !self.is_configured(target).await {
                     tracing::warn!(
                         target: LOG,
                         session = %short(session_id),
                         notify = %target,
-                        "Claude session notify target is not configured in CLAUDE_NOTIFY_TARGETS; \
-                         its turns will not be delivered"
+                        "Claude session notify target is not a stored event target; its turns \
+                         wait until it is created"
                     );
                 }
                 let row = ClaudeSessionNotify {
@@ -432,50 +269,22 @@ impl ClaudeNotify {
             .await
     }
 
-    /// Records one finished turn for the session's target, once per session
-    /// and revision, then tries to deliver it. Returns whether a new
-    /// notification was recorded.
+    /// Queues one finished turn for the session's target, once per session
+    /// and revision. Returns whether a new notice was queued.
     pub async fn turn_finished(&self, turn: &FinishedTurn) -> Result<bool, StoreError> {
         let Some(target) = self.target_of(&turn.session_id).await? else {
             return Ok(false);
         };
-        let now = self.clock.now_ms();
-        let configured = self.is_configured(&target);
-        let id = notification_id(&turn.session_id, turn.revision);
-        let row = ClaudeTurnNotification {
-            id: id.clone(),
-            session_id: turn.session_id.clone(),
-            short_id: turn.short_id.clone(),
-            revision: turn.revision,
-            target: target.clone(),
-            status: if configured {
-                NotificationStatus::Pending
-            } else {
-                NotificationStatus::Unconfigured
-            },
-            attempts: 0,
-            next_attempt_at: now,
-            last_status: None,
-            last_error: None,
-            body: configured.then(|| omni_core::js::json_stringify(&turn.body())),
-            created_at: now,
-            updated_at: now,
-            extra: Extra::default(),
-        };
-        let inserted = self
-            .store
-            .write(move |tx| {
-                if tx.has::<ClaudeTurnNotification>(&row.id)? {
-                    return Ok(false);
-                }
-                tx.upsert(&row, UpsertOpts::default())?;
-                Ok(true)
+        let queued = self
+            .events
+            .notify_target(TargetNotice {
+                target: target.clone(),
+                key: notice_key(&turn.session_id, turn.revision),
+                name: super::catalog::CLAUDE_TURN_FINISHED.to_owned(),
+                body: turn.body(),
             })
             .await?;
-        if !inserted {
-            return Ok(false);
-        }
-        if configured {
+        if queued {
             tracing::info!(
                 target: LOG,
                 session = %short(&turn.session_id),
@@ -483,184 +292,115 @@ impl ClaudeNotify {
                 notify = %target,
                 "Claude session turn finished; notifying"
             );
-            self.deliver_due().await?;
-        } else {
-            tracing::warn!(
-                target: LOG,
-                session = %short(&turn.session_id),
-                revision = turn.revision,
-                notify = %target,
-                "Claude session turn finished but its notify target is not configured in \
-                 CLAUDE_NOTIFY_TARGETS; not delivered"
-            );
         }
-        Ok(true)
+        Ok(queued)
     }
 
-    /// Attempts every due pending notification (a few per pass) and prunes
-    /// settled ones past retention.
-    pub async fn deliver_due(&self) -> Result<usize, StoreError> {
-        let now = self.clock.now_ms();
+    /// Moves pending rows of the old outbox into the journal (boot); how
+    /// many. Settled old rows stay until retention removes them.
+    pub async fn migrate_pending(&self) -> Result<usize, StoreError> {
         let rows = self
             .store
             .read(|docs| docs.get_all::<ClaudeTurnNotification>())
             .await?;
-        let stale: Vec<String> = rows
-            .iter()
-            .filter(|row| row.status != NotificationStatus::Pending)
-            .filter(|row| row.updated_at < now - RETENTION_MS)
-            .map(|row| row.id.clone())
-            .collect();
-        if !stale.is_empty() {
-            self.store
-                .write(move |tx| {
-                    for id in &stale {
-                        tx.delete::<ClaudeTurnNotification>(id)?;
-                    }
-                    Ok(())
+        let mut moved = 0;
+        for row in rows {
+            if row.status != NotificationStatus::Pending {
+                continue;
+            }
+            let Some(body) = row
+                .body
+                .as_deref()
+                .and_then(|b| serde_json::from_str(b).ok())
+            else {
+                continue;
+            };
+            self.events
+                .notify_target(TargetNotice {
+                    target: row.target.clone(),
+                    key: notice_key(&row.session_id, row.revision),
+                    name: super::catalog::CLAUDE_TURN_FINISHED.to_owned(),
+                    body,
                 })
                 .await?;
+            let settled = ClaudeTurnNotification {
+                status: NotificationStatus::Delivered,
+                last_error: Some("moved_to_journal".to_owned()),
+                body: None,
+                updated_at: self.clock.now_ms(),
+                ..row
+            };
+            self.store
+                .write(move |tx| tx.upsert(&settled, UpsertOpts::default()))
+                .await?;
+            moved += 1;
         }
-        let mut due: Vec<ClaudeTurnNotification> = rows
-            .into_iter()
-            .filter(|row| row.status == NotificationStatus::Pending && row.next_attempt_at <= now)
-            .collect();
-        due.sort_by_key(|row| row.next_attempt_at);
-        due.truncate(MAX_DUE_PER_PASS);
-        let attempted = due.len();
-        for row in due {
-            self.attempt(row).await?;
-        }
-        Ok(attempted)
+        Ok(moved)
     }
 
-    async fn attempt(&self, mut row: ClaudeTurnNotification) -> Result<(), StoreError> {
-        let now = self.clock.now_ms();
-        let Some(target) = self.targets.get(&row.target).cloned() else {
-            row.status = NotificationStatus::Unconfigured;
-            row.body = None;
-            row.updated_at = now;
-            tracing::warn!(
-                target: LOG,
-                session = %short(&row.session_id),
-                notify = %row.target,
-                "Claude session notify target is no longer configured; not delivered"
-            );
-            return self.save(row).await;
-        };
-        let Some(body) = row.body.clone() else {
-            row.status = NotificationStatus::Failed;
-            row.last_error = Some("missing_body".to_owned());
-            row.updated_at = now;
-            return self.save(row).await;
-        };
-        // Reserve the attempt first: a crash mid-request waits out the backoff
-        // instead of resending at once (the target's idempotency key covers a
-        // resend either way).
-        row.attempts += 1;
-        row.next_attempt_at = now + backoff_ms(row.attempts);
-        row.updated_at = now;
-        self.save(row.clone()).await?;
-        let key = format!("omni-claude-turn:{}", row.id);
-        let result = self.transport.post(&target, &key, &body).await;
-        let now = self.clock.now_ms();
-        row.updated_at = now;
-        row.last_status = result.as_ref().ok().map(|r| i64::from(r.status));
-        let host = target.url.host_str().unwrap_or("").to_owned();
-        match classify(&result) {
-            AttemptOutcome::Delivered => {
-                row.status = NotificationStatus::Delivered;
-                row.last_error = None;
-                row.body = None;
-                tracing::info!(
-                    target: LOG,
-                    session = %short(&row.session_id),
-                    revision = row.revision,
-                    notify = %row.target,
-                    attempts = row.attempts,
-                    "Claude session notification delivered"
-                );
-            }
-            AttemptOutcome::Ignored => {
-                row.status = NotificationStatus::Ignored;
-                row.last_error = None;
-                row.body = None;
-                tracing::warn!(
-                    target: LOG,
-                    session = %short(&row.session_id),
-                    notify = %row.target,
-                    host = %host,
-                    "Claude session notification accepted, but the target bot has no active \
-                     webhook routine"
-                );
-            }
-            AttemptOutcome::Retry(error) if row.attempts < MAX_ATTEMPTS => {
-                tracing::info!(
-                    target: LOG,
-                    session = %short(&row.session_id),
-                    notify = %row.target,
-                    host = %host,
-                    attempts = row.attempts,
-                    error = %error,
-                    "Claude session notification failed; will retry"
-                );
-                row.last_error = Some(error);
-            }
-            AttemptOutcome::Retry(error) | AttemptOutcome::Rejected(error) => {
-                tracing::warn!(
-                    target: LOG,
-                    session = %short(&row.session_id),
-                    notify = %row.target,
-                    host = %host,
-                    attempts = row.attempts,
-                    error = %error,
-                    "Claude session notification failed; giving up"
-                );
-                row.status = NotificationStatus::Failed;
-                row.last_error = Some(error);
-                row.body = None;
-            }
-        }
-        self.save(row).await
-    }
-
-    async fn save(&self, row: ClaudeTurnNotification) -> Result<(), StoreError> {
+    /// Drops old-outbox rows past a week (they are history only).
+    pub async fn prune_legacy(&self) -> Result<(), StoreError> {
+        let cutoff = self.clock.now_ms() - 7 * 24 * 60 * 60_000;
         self.store
-            .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+            .write(move |tx| {
+                for row in tx.get_all::<ClaudeTurnNotification>()? {
+                    if row.updated_at < cutoff && row.status != NotificationStatus::Pending {
+                        tx.delete::<ClaudeTurnNotification>(&row.id)?;
+                    }
+                }
+                Ok(())
+            })
             .await
     }
 
     /// `events_status`'s `claudeNotifications` section: target names (never
-    /// URLs or keys), counts and the latest outcomes.
+    /// URLs or keys), counts and the latest outcomes, from the journal.
     pub async fn status(&self) -> Result<Value, StoreError> {
-        let (sessions, mut rows) = self
+        let sessions = self
             .store
-            .read(|docs| {
-                Ok((
-                    docs.count::<ClaudeSessionNotify>()?,
-                    docs.get_all::<ClaudeTurnNotification>()?,
-                ))
-            })
+            .read(|docs| docs.count::<ClaudeSessionNotify>())
             .await?;
-        let count = |status: NotificationStatus| rows.iter().filter(|r| r.status == status).count();
-        let counts = json!({
-            "pending": count(NotificationStatus::Pending),
-            "delivered": count(NotificationStatus::Delivered),
-            "ignored": count(NotificationStatus::Ignored),
-            "failed": count(NotificationStatus::Failed),
-            "unconfigured": count(NotificationStatus::Unconfigured),
+        let mut rows: Vec<_> = self
+            .events
+            .store()
+            .deliveries()
+            .await?
+            .into_iter()
+            .filter(|row| row.is_notice() && row.name == super::catalog::CLAUDE_TURN_FINISHED)
+            .collect();
+        let states: Vec<NoticeStatus> = rows
+            .iter()
+            .map(|row| super::service::notice_status_of(row.status))
+            .collect();
+        let count = |status: NoticeStatus| states.iter().filter(|s| **s == status).count();
+        let mut result = json!({
+            "pending": count(NoticeStatus::Pending),
+            "delivered": count(NoticeStatus::Delivered),
+            "ignored": count(NoticeStatus::Ignored),
+            "failed": count(NoticeStatus::Failed),
+            "unconfigured": count(NoticeStatus::Unconfigured),
         });
         rows.sort_by_key(|row| std::cmp::Reverse(row.updated_at));
         rows.truncate(STATUS_RECENT);
         let recent: Vec<Value> = rows
             .iter()
             .map(|row| {
+                // `omni-claude-turn:<session>:<revision>`: the body is gone
+                // once a notice settles.
+                let (session, revision) = row
+                    .idempotency_key
+                    .as_deref()
+                    .and_then(|key| key.strip_prefix("omni-claude-turn:"))
+                    .and_then(|rest| rest.rsplit_once(':'))
+                    .map_or((None, None), |(session, revision)| {
+                        (Some(session.to_owned()), revision.parse::<f64>().ok())
+                    });
                 json!({
-                    "sessionId": row.session_id,
-                    "shortId": row.short_id,
-                    "revision": crate::json::js_number(row.revision),
+                    "sessionId": session,
+                    "shortId": session.as_deref().map(short),
+                    "revision": revision.map(crate::json::js_number),
                     "target": row.target,
-                    "status": row.status.as_str(),
+                    "status": serde_json::to_value(super::service::notice_status_of(row.status)).unwrap_or(Value::Null),
                     "attempts": row.attempts,
                     "lastStatus": row.last_status,
                     "lastError": row.last_error,
@@ -669,12 +409,16 @@ impl ClaudeNotify {
                 })
             })
             .collect();
-        let mut result = counts;
+        let targets: Vec<Value> = self
+            .events
+            .store()
+            .targets()
+            .await?
+            .into_iter()
+            .map(|t| Value::String(t.id))
+            .collect();
         if let Some(map) = result.as_object_mut() {
-            map.insert(
-                "targets".to_owned(),
-                Value::Array(self.targets.keys().cloned().map(Value::String).collect()),
-            );
+            map.insert("targets".to_owned(), Value::Array(targets));
             map.insert("sessions".to_owned(), json!(sessions));
             map.insert("recent".to_owned(), Value::Array(recent));
         }
@@ -684,44 +428,4 @@ impl ClaudeNotify {
 
 fn short(session_id: &str) -> &str {
     session_id.get(..8).unwrap_or(session_id)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn answer(status: u16, ignored: bool) -> Result<NotifyResponse, NotifyTransportError> {
-        Ok(NotifyResponse { status, ignored })
-    }
-
-    #[test]
-    fn classifies_target_answers() {
-        assert_eq!(classify(&answer(200, false)), AttemptOutcome::Delivered);
-        assert_eq!(classify(&answer(200, true)), AttemptOutcome::Ignored);
-        for status in [408, 425, 429, 500, 502, 503] {
-            assert!(matches!(
-                classify(&answer(status, false)),
-                AttemptOutcome::Retry(_)
-            ));
-        }
-        for status in [301, 400, 401, 404, 409, 413] {
-            assert!(matches!(
-                classify(&answer(status, false)),
-                AttemptOutcome::Rejected(_)
-            ));
-        }
-        assert!(matches!(
-            classify(&Err(NotifyTransportError::Timeout)),
-            AttemptOutcome::Retry(_)
-        ));
-    }
-
-    #[test]
-    fn backoff_doubles_to_thirty_minutes() {
-        assert_eq!(backoff_ms(1), 30_000);
-        assert_eq!(backoff_ms(2), 60_000);
-        assert_eq!(backoff_ms(4), 240_000);
-        assert_eq!(backoff_ms(7), MAX_BACKOFF_MS);
-        assert_eq!(backoff_ms(40), MAX_BACKOFF_MS);
-    }
 }

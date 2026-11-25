@@ -4,6 +4,7 @@ mod claude_sessions_events;
 mod claude_sessions_tools;
 mod common;
 mod device_link_adapter;
+mod event_journal;
 mod events_protocol;
 mod events_publisher;
 mod events_service;

@@ -121,7 +121,7 @@ pub struct WebhookEvent {
 }
 
 impl WebhookEvent {
-    fn to_json(&self) -> Value {
+    pub fn to_json(&self) -> Value {
         json!({
             "eventId": self.event_id,
             "name": self.name,

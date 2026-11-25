@@ -447,8 +447,10 @@ and answer happens in the agent's own chat with the owner.
   the recipe change is an ordinary `recipes_edit`, `recipes_replace` or `recipes_create`, with
   the household diet and measuring checks unchanged. `recipes_guide` carries the flow
   ("Requests from the app").
-- **The notice.** When `RECIPES_REQUEST_WEBHOOK_URL` is set, the `recipes-requests` service
-  posts one JSON event per request to it (`requests.rs`):
+- **The notice.** The `recipes-requests` service hands one JSON notice per request to the event
+  journal for the stored target `kitchen` ("Event journal" in `docs/mcp-events.md`; imported
+  at boot from the old `RECIPES_REQUEST_WEBHOOK_*` settings), keyed by the request id
+  (`requests.rs`):
 
   ```json
   {
@@ -463,25 +465,19 @@ and answer happens in the agent's own chat with the owner.
   ```
 
   `recipeTitle` and the context fields are `null` when the request has none; a library request
-  links to `/requests`. Headers: `Content-Type: application/json`, `X-Fond-Event:
-  recipe.request`, `Idempotency-Key: <requestId>` (the same on every attempt, so the receiver
-  collapses a resend), and `Authorization: Bearer <RECIPES_REQUEST_WEBHOOK_TOKEN>` when that is
-  set. There is no body signature: the bearer key is the authentication, as on the Claude
-  session notify targets. `RECIPES_REQUEST_WEBHOOK_CONNECT` connects to another host than the
-  URL's (a reverse proxy on a Docker network) while keeping the URL's host for TLS and `Host`.
-  The client is the LAN-capable one (the address is configuration, never app input), follows
-  no redirect, waits ten seconds, and in `SideEffectMode::Record` sends nothing.
-- **Retries.** An attempt is reserved (`attempts`, `next_attempt_at`) before it is sent. No
-  answer, a timeout, 408, 425, 429 and 5xx are retried after 30 seconds, doubling to 30
-  minutes, for 24 hours from the request; then, or at once on any other 4xx, a redirect or an
-  answer longer than 64 KiB (some other page, not a webhook's answer), the notice is `failed`
-  and logged at WARN. A 2xx whose body says `"ignored": true` (the bot has no
-  webhook routine) settles as `ignored`. A request an agent already took is `skipped`. Whatever
-  the notice's fate (`delivery` in the tool output: `pending`, `delivered`, `ignored`,
-  `failed`, `unconfigured`, `skipped`), the request stays `queued` until an agent takes it,
-  and `recipes_requests_list` returns it. Without the URL the service logs at boot that the
-  webhook is disabled and each request is stored as `unconfigured`; when the service later
-  starts with a URL, the `unconfigured` requests still `queued` are announced then.
+  links to `/requests`. The journal posts it with `Idempotency-Key: <requestId>` (the same on
+  every attempt, so the receiver collapses a resend), `X-Fond-Event: recipe.request` and the
+  target's bearer key, and owns the retries (a day of them), dead letters and
+  `SideEffectMode`. The address is the owner's configuration, never app input.
+- **Hand-over.** A request is stored with `delivery: pending` and handed over at once (and
+  every 15 seconds for any still owed); when the journal cannot take it, it is asked again
+  30 seconds later. Handed over, the row says `journal`, and `recipes_requests_list` reports
+  the journal's state of the notice: `pending`, `delivered`, `ignored` (no webhook routine
+  ran), `failed`, `unconfigured` (no `kitchen` target yet) or `skipped`. A request an agent
+  already took is never handed over, and an agent taking one cancels a notice not sent yet.
+  Whatever the notice's fate, the request stays `queued` until an agent takes it, and
+  `recipes_requests_list` returns it. Requests stored as `unconfigured` before the journal
+  are handed over when the service starts.
 - **In the app.** `GET /api/requests` lists the newest 200; an `/api/events` frame named
   `requests` says the list changed. Request writes bump `cook_seq`, not the library sequence:
   no device syncs its library over them, and the hourly archive still sees them.

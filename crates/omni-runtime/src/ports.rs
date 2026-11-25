@@ -386,6 +386,55 @@ pub trait EventPublisher: Send + Sync {
         &'a self,
         name: &'a str,
     ) -> BoxFuture<'a, Result<Vec<BTreeMap<String, String>>, PortError>>;
+    /// Queues one notice for a stored event target (a bot webhook) in the
+    /// event journal, which delivers it with the journal's retries and
+    /// records every attempt. At most once per `key`: a second call with the
+    /// same key changes nothing. A target that does not exist yet holds the
+    /// notice as `unconfigured` until it is created.
+    fn notify_target<'a>(&'a self, notice: TargetNotice) -> BoxFuture<'a, Result<(), PortError>>;
+    /// Where notices stand, by key; unknown keys are absent.
+    fn notice_states<'a>(
+        &'a self,
+        keys: Vec<String>,
+    ) -> BoxFuture<'a, Result<BTreeMap<String, NoticeState>, PortError>>;
+    /// Drops a notice that has not gone out yet (its reason passed); `false`
+    /// when it was already sent or settled.
+    fn cancel_notice<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<bool, PortError>>;
+}
+
+/// One notice for [`EventPublisher::notify_target`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetNotice {
+    /// The stored target's id (`kitchen`, `chief`, ...).
+    pub target: String,
+    /// The dedup key, also sent as `Idempotency-Key` on every attempt.
+    pub key: String,
+    /// The event name shown in diagnostics (`recipe.request`).
+    pub name: String,
+    /// The JSON body posted to the target.
+    pub body: Value,
+}
+
+/// Where one notice stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NoticeStatus {
+    Pending,
+    Delivered,
+    /// Accepted, but the receiving bot ran no webhook routine.
+    Ignored,
+    /// Refused for good, or still failing a day later.
+    Failed,
+    /// The target did not exist when the notice was queued.
+    Unconfigured,
+    /// Cancelled before it went out.
+    Skipped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoticeState {
+    pub status: NoticeStatus,
+    pub attempts: u32,
 }
 
 /// Returned when a port is set twice.

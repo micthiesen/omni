@@ -77,7 +77,7 @@ impl GatewayEventCatalog {
 }
 
 /// `(integration id, event)` for a served integration event name.
-fn find_event(gateway: &Gateway, name: &str) -> Option<(String, CatalogEvent)> {
+pub fn find_event(gateway: &Gateway, name: &str) -> Option<(String, CatalogEvent)> {
     let integration = super::names::integration_of(name)?;
     let runtime = gateway.runtime(integration)?;
     if !runtime.config().enabled {

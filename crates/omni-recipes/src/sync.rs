@@ -143,7 +143,6 @@ fn apply_op(
     conn: &Connection,
     now: i64,
     op: &ClientOp,
-    webhook: bool,
     added: &mut bool,
 ) -> R<(bool, Option<String>, Option<String>)> {
     let refuse = |message: &str| Ok((false, Some(message.to_owned()), None));
@@ -185,7 +184,6 @@ fn apply_op(
                     scale: *scale,
                     step: step.as_deref(),
                 },
-                webhook,
             )?;
             return match stored {
                 Ok(new) => {
@@ -315,12 +313,7 @@ fn apply_op(
     Ok((true, None, Some(row.id)))
 }
 
-fn apply_ops(
-    conn: &Connection,
-    now: i64,
-    ops: &[ClientOp],
-    webhook: bool,
-) -> R<(OpsResponse, bool)> {
+fn apply_ops(conn: &Connection, now: i64, ops: &[ClientOp]) -> R<(OpsResponse, bool)> {
     let mut added = false;
     let mut results = Vec::with_capacity(ops.len());
     for op in ops {
@@ -343,7 +336,7 @@ fn apply_ops(
                 )
             }
             None => {
-                let outcome = apply_op(conn, now, op, webhook, &mut added)?;
+                let outcome = apply_op(conn, now, op, &mut added)?;
                 conn.execute(
                     "INSERT INTO recipes_client_op (id, applied_at, result) VALUES (?1, ?2, ?3)",
                     params![
@@ -389,9 +382,8 @@ impl Recipes {
     /// Applies the app's record edits, each id once.
     pub async fn apply_ops(&self, ops: Vec<ClientOp>) -> R<OpsResponse> {
         let before = self.query(db::current_seq).await?;
-        let webhook = self.requests.target.is_some();
         let (response, added) = self
-            .transact(false, move |conn, now| apply_ops(conn, now, &ops, webhook))
+            .transact(false, move |conn, now| apply_ops(conn, now, &ops))
             .await?;
         if response.seq != before {
             self.hub.library(response.seq);

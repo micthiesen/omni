@@ -978,10 +978,25 @@ Inspector with args and result JSON. "Load older" stays as ShowMore.
   Approve (enabled once eight characters are typed, Enter submits), Deny), Client tokens (mono prefix, created, last used; Revoke as a
   destructive ConfirmButton; "New token" asks for a label and shows the token
   once in a Signal-washed block with Copy token and Copy Claude Code command,
-  discarded on Done) and OAuth grants (client host, scope, Revoke).
+  discarded on Done) and OAuth grants (client host, scope, Revoke). The
+  column opens with **This browser** while the browser is not trusted (a warn
+  note, "Trust this browser", then the pairing code in large mono and Cancel
+  while the phone approves) or **Trusted browsers** once it is (label, "this
+  browser", trusted and seen ago, Remove as a destructive ConfirmButton).
 - **Event feeds** Table: state Status, the exposed event in mono over the
   integration and upstream event (an error in fault), arguments as Tags,
   subscribers, last and next poll, published, gaps in warn with the last gap.
+- **Outbound** (the event journal, under Event feeds): a counts line
+  (pending, failed 7 d, delivered 24 h) that becomes a warn attention row with
+  "Show failed" when anything failed; Targets (label, id, URL host, key set or
+  not, connect host; an add and edit form whose key field is never filled in;
+  Remove as a destructive ConfirmButton); Routes (`event (k=v) → target`,
+  Enable/Disable, Remove, and an add form with an event select, one input per
+  argument and a target select); Deliveries newest first (a state Status:
+  failed fault, pending running, delivered and ignored ok, unconfigured and
+  skipped dim; kind Tag, destination, attempts, queued and next try; a
+  Disclosure with each attempt's time, HTTP status or error and duration;
+  Retry on failed rows; "Only failed" filters).
 - **Inspector** (wide drawer, `?integration=<id>`): head Status, Connect
   (primary, OAuth not connected), Refresh and Enable/Disable; the problem
   line, facts and the last refresh (warnings as warn notes, added, changed and

@@ -307,9 +307,63 @@ changing event IDs. Outbox state changes hold one short lock; webhook calls and
 owner checks run outside it, so a slow callback never delays
 email dispatch.
 
-Finished deliveries are kept for seven days, receipts for 30 days (beyond the
-IMAP seven-day INTERNALDATE guard, so replays stay deduplicated) and
-subscriptions for seven days after they expire.
+Every destination gets the same retry policy: no answer, a timeout, 408,
+425, 429 or 5xx is retried after 30 seconds, doubling to 30 minutes, for one
+day from when the event was queued; any other 3xx or 4xx, or an answer longer
+than a webhook's (a proxy page), fails at once. Every attempt is kept on the
+row (newest 20: time, HTTP status or error, duration). A delivery that fails
+for good logs at ERROR ("Event delivery failed for good", naming the target
+and event, never a key), which alerts, and stays visible as a dead letter.
+
+Delivered, ignored and skipped deliveries are kept for seven days, failed
+ones for 30, receipts for 30 days (beyond the IMAP seven-day INTERNALDATE
+guard, so replays stay deduplicated) and subscriptions for seven days after
+they expire.
+
+## Event journal: targets, routes and notices
+
+The outbox is Omni's one delivery path to everything outside it (since
+2026-11-24; before, Claude turn notices and Fond's request notices had their
+own senders, and a relay outside Omni subscribed on the bots' behalf). Three
+kinds of row share it (`mcp-event-delivery`), the worker, the retry policy and
+the dead-letter handling above:
+
+- **Subscriptions**: `events/subscribe` webhooks of MCP clients (Standard
+  Webhooks signing, public HTTPS only).
+- **Routes** (`mcp-event-route`): every event of one name whose arguments
+  match goes to a stored target, with the same body subscribers get
+  (`{eventId, name, timestamp, data, cursor}`) and `Idempotency-Key: <eventId>`.
+  A route counts as subscribed: integration event feeds poll for it, and an
+  integration event's route keeps its feed alive. This replaced the
+  `omni-relay` container on Boris, which subscribed through the public
+  gateway and forwarded to bot webhooks.
+- **Notices**: one body addressed to a stored target by id, once per key
+  (`EventPublisher::notify_target`): Claude session turns
+  (`omni-claude-turn:<session>:<revision>`) and Fond requests (the request
+  id). A notice to a target that does not exist yet waits as `unconfigured`
+  for up to seven days and is sent when the target is created.
+
+A **target** (`mcp-event-target`) is a receiver such as a Rakazo bot webhook:
+an `http(s)` URL, a bearer key sealed with the outbox key (write-only), and an
+optional `connect` host (resolved per request; TLS and `Host` keep the URL's
+host), which reaches NPM over `compose_default` from inside Docker. Targets are
+the owner's configuration, so they may be on the LAN; requests carry
+`Authorization: Bearer <key>`, `Idempotency-Key`, `X-Omni-Event: <name>` (and
+`X-Fond-Event` for `recipe.*`), follow no redirect, wait ten seconds, and send
+nothing in `SideEffectMode::Record`. A 2xx whose body says `"ignored": true`
+(no webhook routine ran) settles as `ignored`.
+
+Targets and routes are managed on the `/gateway` page ("Outbound", a trusted
+browser) through `/api/gateway/outbound*` (`omni_api::outbound`), which also
+lists the newest 100 deliveries with their attempts and retries a failed one
+(a fresh one-day window). At boot each `CLAUDE_NOTIFY_TARGETS` entry and the
+`RECIPES_REQUEST_WEBHOOK_*` settings (as `kitchen`) are copied into stored
+targets unless one with that id exists; the stored target always wins, so the
+environment is only a fallback for a target not stored yet and can be removed
+once it is.
+
+Not built: `events/poll` and `events/stream` for clients without a public
+webhook (Rakazo is LAN-only and reaches Omni's events through routes).
 
 ## Subscription and callback security
 
@@ -368,7 +422,8 @@ event: the
 requests with outcomes, up to 20 subscriptions with event, arguments, state, callback hostname and
 advertised `refreshBefore`,
 delivery counts including `withheld`, and the ten most recent deliveries with
-HTTP status, transport error, failure or `withheld` reason. Owners appear as a 12-character hash prefix. It
+HTTP status, transport error, failure or `withheld` reason. The `/gateway`
+page's Outbound section shows every recent delivery with its attempts. Owners appear as a 12-character hash prefix. It
 never returns secrets, bearer tokens, callback paths or message content.
 `server/discover` and `tools/list` do not appear here; an `events/list` row is
 the first evidence of discovery. Requests

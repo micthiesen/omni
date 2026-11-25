@@ -11,6 +11,7 @@ use omni_store::{DocOps, Store, StoreError};
 use serde::{Deserialize, Serialize};
 
 use super::catalog::EventArguments;
+use super::targets::{EventRoute, EventTarget};
 
 /// Terminal delivery failures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +21,20 @@ pub enum DeliveryFailure {
     CredentialsUnavailable,
     Rejected,
     AttemptsExhausted,
+    /// The route's target was removed.
+    TargetMissing,
+}
+
+impl DeliveryFailure {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DeliveryFailure::SubscriptionInactive => "subscription_inactive",
+            DeliveryFailure::CredentialsUnavailable => "credentials_unavailable",
+            DeliveryFailure::Rejected => "rejected",
+            DeliveryFailure::AttemptsExhausted => "attempts_exhausted",
+            DeliveryFailure::TargetMissing => "target_missing",
+        }
+    }
 }
 
 /// Why a pending delivery is held without an attempt.
@@ -38,6 +53,24 @@ pub enum DeliveryStatus {
     Pending,
     Delivered,
     Failed,
+    /// Accepted by a target that ran no webhook routine.
+    Ignored,
+    /// A notice whose target does not exist (yet).
+    Unconfigured,
+    /// A notice cancelled before it went out.
+    Skipped,
+}
+
+/// One attempt of a delivery, kept on its row (newest last, bounded).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryAttempt {
+    pub at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub ms: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,11 +190,54 @@ pub struct EventDelivery {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<DeliveryFailure>,
+    /// A stored target this row goes to (routes and notices); `None` for an
+    /// `events/subscribe` webhook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// A notice's own JSON body; `None` sends the event envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// `Idempotency-Key` for target deliveries; `None` uses `event_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+    /// Set when the owner retried a failed delivery; the one-day limit
+    /// counts from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requeued_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<DeliveryAttempt>,
     #[serde(flatten)]
     pub extra: Extra,
 }
 
+/// Delivery ids of routes and notices start with these.
+pub const ROUTE_PREFIX: &str = "route:";
+pub const NOTICE_PREFIX: &str = "notice:";
+
 impl EventDelivery {
+    /// When the one-day attempt window started.
+    pub fn window_start(&self) -> i64 {
+        self.requeued_at.unwrap_or(self.created_at)
+    }
+
+    /// The route id of a route delivery.
+    pub fn route_id(&self) -> Option<&str> {
+        self.subscription_id.strip_prefix(ROUTE_PREFIX)
+    }
+
+    pub fn is_notice(&self) -> bool {
+        self.subscription_id.starts_with(NOTICE_PREFIX)
+    }
+
+    /// Appends an attempt, keeping the newest [`super::targets::HISTORY_LIMIT`].
+    pub fn record_attempt(&mut self, attempt: DeliveryAttempt) {
+        self.history.push(attempt);
+        let excess = self
+            .history
+            .len()
+            .saturating_sub(super::targets::HISTORY_LIMIT);
+        self.history.drain(..excess);
+    }
     /// The payload as JSON (what the webhook body and matchers read).
     pub fn data_json(&self) -> serde_json::Map<String, serde_json::Value> {
         self.data
@@ -173,6 +249,25 @@ impl EventDelivery {
 
 impl Entity for EventDelivery {
     const NAME: &'static str = "mcp-event-delivery";
+    type Key = String;
+    fn key(&self) -> String {
+        self.id.clone()
+    }
+}
+
+/// `mcp-event-target-import`: an environment target (`CLAUDE_NOTIFY_TARGETS`,
+/// `RECIPES_REQUEST_WEBHOOK_*`) already copied into the stored targets.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetImport {
+    pub id: String,
+    pub imported_at: i64,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Entity for TargetImport {
+    const NAME: &'static str = "mcp-event-target-import";
     type Key = String;
     fn key(&self) -> String {
         self.id.clone()
@@ -369,6 +464,86 @@ impl EventStore {
         let id = id.to_owned();
         self.store
             .write(move |tx| tx.delete::<EventDelivery>(&id).map(|_| ()))
+            .await
+    }
+
+    pub async fn targets(&self) -> Result<Vec<EventTarget>, StoreError> {
+        self.store.read(|docs| docs.get_all::<EventTarget>()).await
+    }
+
+    pub async fn target(&self, id: &str) -> Result<Option<EventTarget>, StoreError> {
+        let id = id.to_owned();
+        self.store
+            .read(move |docs| docs.get::<EventTarget>(&id))
+            .await
+    }
+
+    pub async fn upsert_target(&self, row: EventTarget) -> Result<(), StoreError> {
+        self.store
+            .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+            .await
+    }
+
+    pub async fn delete_target(&self, id: &str) -> Result<bool, StoreError> {
+        let id = id.to_owned();
+        self.store
+            .write(move |tx| tx.delete::<EventTarget>(&id))
+            .await
+    }
+
+    pub async fn routes(&self) -> Result<Vec<EventRoute>, StoreError> {
+        self.store.read(|docs| docs.get_all::<EventRoute>()).await
+    }
+
+    pub async fn route(&self, id: &str) -> Result<Option<EventRoute>, StoreError> {
+        let id = id.to_owned();
+        self.store
+            .read(move |docs| docs.get::<EventRoute>(&id))
+            .await
+    }
+
+    pub async fn upsert_route(&self, row: EventRoute) -> Result<(), StoreError> {
+        self.store
+            .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+            .await
+    }
+
+    pub async fn delete_route(&self, id: &str) -> Result<bool, StoreError> {
+        let id = id.to_owned();
+        self.store
+            .write(move |tx| tx.delete::<EventRoute>(&id))
+            .await
+    }
+
+    /// Whether the environment's target `id` was imported before.
+    pub async fn target_imported(&self, id: &str) -> Result<bool, StoreError> {
+        let id = id.to_owned();
+        self.store
+            .read(move |docs| docs.has::<TargetImport>(&id))
+            .await
+    }
+
+    pub async fn mark_target_imported(&self, id: &str, at: i64) -> Result<(), StoreError> {
+        let row = TargetImport {
+            id: id.to_owned(),
+            imported_at: at,
+            extra: Extra::default(),
+        };
+        self.store
+            .write(move |tx| tx.upsert(&row, UpsertOpts::default()))
+            .await
+    }
+
+    /// Inserts `row` unless a delivery with its id exists; whether it did.
+    pub async fn insert_delivery(&self, row: EventDelivery) -> Result<bool, StoreError> {
+        self.store
+            .write(move |tx| {
+                if tx.get::<EventDelivery>(&row.id)?.is_some() {
+                    return Ok::<_, StoreError>(false);
+                }
+                tx.upsert(&row, UpsertOpts::default())?;
+                Ok(true)
+            })
             .await
     }
 

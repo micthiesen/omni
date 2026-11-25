@@ -97,7 +97,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
             "McpGatewayEventFeeds"
         ]
     );
-    assert_eq!(subsystem.entities.len(), 18);
+    assert_eq!(subsystem.entities.len(), 21);
     assert_eq!(subsystem.services.len(), 2);
     assert!(subsystem.mcp_tools.is_empty());
     let steps: Vec<_> = subsystem
@@ -109,13 +109,14 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
         steps,
         [
             ("markInterruptedCalls", BootPhase::Reconcile),
+            ("importEventTargets", BootPhase::Migrate),
             ("dropLegacyEventSubscriptions", BootPhase::Migrate),
             ("requireArchiveEcho", BootPhase::Migrate),
             ("loadGateway", BootPhase::Services),
         ]
     );
     // Events are always enabled, so boot fails until wiring sets the ArchiveEcho port.
-    let require_echo = subsystem.boot_steps.remove(2);
+    let require_echo = subsystem.boot_steps.remove(3);
     let error = (require_echo.run)(ctx.clone()).await.unwrap_err();
     assert_eq!(error.step, "requireArchiveEcho");
     app.ctx.ports.set_archive_echo(Arc::new(NoMoves)).unwrap();
@@ -124,7 +125,7 @@ async fn serves_every_tool_at_the_gateway_and_registers_tasks_entities_and_the_e
     let mut all = other_tools(&own);
     all.extend(own);
     let mut rebuilt = rebuilt.subsystem(all).unwrap();
-    (rebuilt.boot_steps.remove(2).run)(ctx.clone())
+    (rebuilt.boot_steps.remove(3).run)(ctx.clone())
         .await
         .unwrap();
 
@@ -207,8 +208,12 @@ async fn boot_drops_subscriptions_not_owned_by_a_gateway_principal() {
     all.extend(own);
     let mut subsystem = package.subsystem(all).unwrap();
     assert_eq!(stored(ctx.clone()).await.len(), 3);
-    let step = subsystem.boot_steps.remove(1);
-    assert_eq!(step.name, "dropLegacyEventSubscriptions");
+    let index = subsystem
+        .boot_steps
+        .iter()
+        .position(|step| step.name == "dropLegacyEventSubscriptions")
+        .unwrap();
+    let step = subsystem.boot_steps.remove(index);
     (step.run)(ctx.clone()).await.unwrap();
     let left: Vec<String> = ctx
         .store

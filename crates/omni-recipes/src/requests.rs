@@ -2,8 +2,9 @@
 //!
 //! A request is a row of `recipes_request`: the text the cook wrote and what
 //! they were looking at. It is stored before anything else happens, so the
-//! library is the source of truth: the webhook that announces it
-//! (`recipe.request`) is a notice that may fail, and an agent finds every
+//! library is the source of truth: the notice that announces it
+//! (`recipe.request`, handed to the event journal for the stored `kitchen`
+//! target, which sends and retries it) may fail, and an agent finds every
 //! request with `recipes_requests_list` whether or not the notice arrived.
 //! The agent answers with ordinary recipe revisions and records the outcome
 //! with `recipes_request_update`.
@@ -11,11 +12,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::BoxFuture;
 use omni_api::fond::{self, KitchenRequest, RequestList, RequestOrigin};
-use omni_config::ClaudeNotifyTarget;
-use omni_http::{HttpClient, HttpConfig, HttpError, Method, RedirectRule, SideEffectMode};
 use omni_recipe_format::Index;
+use omni_runtime::ports::{EventPublisher, NoticeStatus, PortError, TargetNotice};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde_json::{Value, json};
 
@@ -41,21 +40,14 @@ pub const MAX_NOTE: usize = 300;
 pub const MAX_OPEN: u32 = 100;
 /// Requests the app's list returns.
 const APP_LIST: u32 = 200;
-/// How often the delivery service looks for due notices when nothing wakes it.
+/// How often the hand-over service looks for owed notices when nothing wakes it.
 pub const DELIVER_EVERY: Duration = Duration::from_secs(15);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-/// A webhook answers with a few bytes; anything longer is some other page.
-const MAX_RESPONSE_BYTES: usize = 64 * 1024;
-const FIRST_BACKOFF_MS: i64 = 30_000;
-const MAX_BACKOFF_MS: i64 = 30 * 60_000;
-/// A notice that still fails this long after the request was written is
-/// given up; the request stays queued for a sweep.
-pub const GIVE_UP_AFTER_MS: i64 = 24 * 60 * 60_000;
 const MAX_DUE_PER_PASS: u32 = 10;
 
-/// Where a request's notice stands.
+/// Where a request's notice stands (the journal's notice state, once the
+/// notice is handed over).
 pub mod delivery {
-    /// Owed to the webhook.
+    /// Owed to the webhook (not handed over, or waiting in the journal).
     pub const PENDING: &str = "pending";
     pub const DELIVERED: &str = "delivered";
     /// Accepted, but the receiving bot ran no webhook routine.
@@ -188,12 +180,7 @@ pub(crate) struct Submit<'a> {
 /// Stores a request once by its id. `Ok(Ok(true))` when it is new,
 /// `Ok(Ok(false))` when that id is already stored, and `Ok(Err(line))` with
 /// one line for the cook when it can never be stored.
-pub(crate) fn submit(
-    conn: &Connection,
-    now: i64,
-    submit: &Submit<'_>,
-    webhook: bool,
-) -> R<Result<bool, String>> {
+pub(crate) fn submit(conn: &Connection, now: i64, submit: &Submit<'_>) -> R<Result<bool, String>> {
     let refuse = |message: &str| Ok(Err(message.to_owned()));
     if !ids::is_id(submit.id, ids::REQUEST) {
         return refuse("the request has no valid id");
@@ -262,11 +249,7 @@ pub(crate) fn submit(
             scale,
             step,
             now,
-            if webhook {
-                delivery::PENDING
-            } else {
-                delivery::UNCONFIGURED
-            },
+            delivery::PENDING,
         ],
     )
     .map_err(sql)?;
@@ -420,210 +403,49 @@ fn body(conn: &Connection, row: &RequestRow, app_url: Option<&str>) -> R<Value> 
 }
 
 // ---------------------------------------------------------------------------
-// Delivery
+// Delivery: the event journal
 
-/// One answer from the webhook.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WebhookResponse {
-    pub status: u16,
-    /// `{"ok": true, "ignored": true}`: accepted, but no routine ran.
-    pub ignored: bool,
-}
+/// The stored event target notices go to (imported by `omni-mcp` from the
+/// old `RECIPES_REQUEST_WEBHOOK_*` settings under this id).
+pub const KITCHEN_TARGET: &str = "kitchen";
+/// The `delivery` column of a request handed to the event journal; its
+/// notice's state is read from there.
+const JOURNAL: &str = "journal";
+/// How long a request waits before the journal is asked again after it
+/// could not take the notice.
+const HANDOVER_RETRY_MS: i64 = 30_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum WebhookError {
-    #[error("timeout")]
-    Timeout,
-    #[error("network")]
-    Network,
-    /// An answer arrived that is not a webhook's (too long to be one), or
-    /// the request could not be made at all. Sending again would not help.
-    #[error("unusable_answer")]
-    Unusable,
-}
-
-/// The network leg; tests replace it.
-pub trait RequestTransport: Send + Sync {
-    fn post<'a>(
-        &'a self,
-        target: &'a ClaudeNotifyTarget,
-        idempotency_key: &'a str,
-        body: &'a str,
-    ) -> BoxFuture<'a, Result<WebhookResponse, WebhookError>>;
-}
-
-/// The production transport: the LAN-capable client (the address comes from
-/// configuration, never from the app), no redirects, a ten-second timeout. In
-/// `SideEffectMode::Record` nothing is sent.
-pub struct LiveTransport {
-    client: HttpClient,
-    mode: SideEffectMode,
-}
-
-impl LiveTransport {
-    pub fn new(client: HttpClient, mode: SideEffectMode) -> Self {
-        Self { client, mode }
-    }
-}
-
-impl RequestTransport for LiveTransport {
-    fn post<'a>(
-        &'a self,
-        target: &'a ClaudeNotifyTarget,
-        idempotency_key: &'a str,
-        body: &'a str,
-    ) -> BoxFuture<'a, Result<WebhookResponse, WebhookError>> {
-        Box::pin(async move {
-            if self.mode == SideEffectMode::Record {
-                tracing::info!(
-                    target: LOG,
-                    host = target.url.host_str().unwrap_or(""),
-                    "Recorded recipe request notice (not sent)"
-                );
-                return Ok(WebhookResponse {
-                    status: 200,
-                    ignored: false,
-                });
-            }
-            let pinned;
-            let client = match &target.connect {
-                None => &self.client,
-                Some(connect) => {
-                    let host = target.url.host_str().unwrap_or_default();
-                    let port = target.url.port_or_known_default().unwrap_or(443);
-                    // Resolved per request, so a recreated proxy container's
-                    // new address is picked up.
-                    let addr = tokio::net::lookup_host((connect.as_str(), port))
-                        .await
-                        .ok()
-                        .and_then(|mut addrs| addrs.next())
-                        .ok_or(WebhookError::Network)?;
-                    let config = HttpConfig {
-                        connect_timeout: Some(REQUEST_TIMEOUT),
-                        offline: false,
-                    };
-                    pinned = HttpClient::pinned(&config, host, addr)
-                        .map_err(|_| WebhookError::Network)?;
-                    &pinned
-                }
-            };
-            let mut request = client
-                .request(Method::POST, target.url.clone())
-                .redirect(RedirectRule::None)
-                .timeout(REQUEST_TIMEOUT)
-                .header("content-type", "application/json")
-                .header("idempotency-key", idempotency_key)
-                .header("x-fond-event", EVENT);
-            if !target.token.is_empty() {
-                request = request.bearer_auth(&target.token);
-            }
-            let response = request
-                .body(body.to_owned())
-                .send_bounded(MAX_RESPONSE_BYTES)
-                .await
-                .map_err(|error| match error {
-                    HttpError::Timeout => WebhookError::Timeout,
-                    HttpError::Network(_) => WebhookError::Network,
-                    _ => WebhookError::Unusable,
-                })?;
-            let ignored = serde_json::from_slice::<Value>(&response.body)
-                .ok()
-                .and_then(|value| value.get("ignored").and_then(Value::as_bool))
-                .unwrap_or(false);
-            Ok(WebhookResponse {
-                status: response.status.as_u16(),
-                ignored,
-            })
-        })
-    }
-}
-
-/// The transport of a service without a webhook; it is never called.
-struct NoTransport;
-
-impl RequestTransport for NoTransport {
-    fn post<'a>(
-        &'a self,
-        _target: &'a ClaudeNotifyTarget,
-        _idempotency_key: &'a str,
-        _body: &'a str,
-    ) -> BoxFuture<'a, Result<WebhookResponse, WebhookError>> {
-        Box::pin(async { Err(WebhookError::Network) })
-    }
-}
-
-/// Where request notices go, and the wake-up of the service that sends them.
-#[derive(Clone)]
+/// The wake-up of the service that hands notices to the journal.
+#[derive(Clone, Default)]
 pub struct RequestDelivery {
-    pub(crate) target: Option<Arc<ClaudeNotifyTarget>>,
-    pub(crate) transport: Arc<dyn RequestTransport>,
     pub(crate) wake: Arc<tokio::sync::Notify>,
 }
 
 impl RequestDelivery {
     pub fn none() -> Self {
-        Self {
-            target: None,
-            transport: Arc::new(NoTransport),
-            wake: Arc::new(tokio::sync::Notify::new()),
-        }
-    }
-
-    pub fn new(target: Option<ClaudeNotifyTarget>, transport: Arc<dyn RequestTransport>) -> Self {
-        Self {
-            target: target.map(Arc::new),
-            transport,
-            wake: Arc::new(tokio::sync::Notify::new()),
-        }
+        Self::default()
     }
 }
 
-/// How one attempt ended.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Attempt {
-    Delivered,
-    Ignored,
-    /// Worth another attempt: a timeout, a network failure, 408, 425, 429 or 5xx.
-    Retry(String),
-    /// Refused for good: another 4xx, or a redirect that is never followed.
-    Rejected(String),
-}
-
-/// The pure decision over one webhook answer.
-pub fn classify(result: &Result<WebhookResponse, WebhookError>) -> Attempt {
-    match result {
-        Err(WebhookError::Unusable) => Attempt::Rejected(WebhookError::Unusable.to_string()),
-        Err(error) => Attempt::Retry(error.to_string()),
-        Ok(response) if (200..300).contains(&response.status) => {
-            if response.ignored {
-                Attempt::Ignored
-            } else {
-                Attempt::Delivered
-            }
-        }
-        Ok(response) if matches!(response.status, 408 | 425 | 429) || response.status >= 500 => {
-            Attempt::Retry(format!("http_{}", response.status))
-        }
-        Ok(response) => Attempt::Rejected(format!("http_{}", response.status)),
-    }
-}
-
-/// The wait before attempt `attempts + 1`: 30 seconds doubling to 30 minutes.
-pub fn backoff_ms(attempts: u32) -> i64 {
-    FIRST_BACKOFF_MS
-        .saturating_mul(1_i64 << attempts.saturating_sub(1).min(16))
-        .min(MAX_BACKOFF_MS)
-}
-
-fn settle(conn: &Connection, id: &str, state: &str, error: Option<&str>, now: i64) -> R<()> {
+fn settle(conn: &Connection, id: &str, state: &str, error: Option<&str>) -> R<()> {
     conn.execute(
-        "UPDATE recipes_request SET delivery = ?2, last_error = ?3,
-           delivered_at = CASE WHEN ?2 = 'delivered' THEN ?4 ELSE delivered_at END
-         WHERE id = ?1",
-        params![id, state, error, now],
+        "UPDATE recipes_request SET delivery = ?2, last_error = ?3 WHERE id = ?1",
+        params![id, state, error],
     )
     .map_err(sql)?;
     Ok(())
+}
+
+/// The tool's `delivery` word for a journal notice state.
+fn notice_word(status: NoticeStatus) -> &'static str {
+    match status {
+        NoticeStatus::Pending => delivery::PENDING,
+        NoticeStatus::Delivered => delivery::DELIVERED,
+        NoticeStatus::Ignored => delivery::IGNORED,
+        NoticeStatus::Failed => delivery::FAILED,
+        NoticeStatus::Unconfigured => delivery::UNCONFIGURED,
+        NoticeStatus::Skipped => delivery::SKIPPED,
+    }
 }
 
 impl Recipes {
@@ -661,44 +483,47 @@ impl Recipes {
             RequestStatusFilter::All => "'queued', 'working', 'done', 'declined'",
         };
         let recipe_id = input.recipe_id;
-        self.query(move |conn| {
-            // A recipe that was merged away is asked for by where it lives now.
-            let recipe = match &recipe_id {
-                Some(id) => Some(db::recipe_for_read(conn, id)?.0.id),
-                None => None,
-            };
-            let filter = format!("status IN ({statuses}) AND (?1 IS NULL OR recipe_id = ?1)");
-            let total: u32 = conn
-                .query_row(
-                    &format!("SELECT count(*) FROM recipes_request WHERE {filter}"),
-                    params![recipe],
-                    |row| row.get(0),
-                )
-                .map_err(sql)?;
-            // Oldest first: the order to work through them in.
-            let mut statement = conn
-                .prepare(&format!(
-                    "SELECT {COLUMNS} FROM recipes_request WHERE {filter}
+        let mut output = self
+            .query(move |conn| {
+                // A recipe that was merged away is asked for by where it lives now.
+                let recipe = match &recipe_id {
+                    Some(id) => Some(db::recipe_for_read(conn, id)?.0.id),
+                    None => None,
+                };
+                let filter = format!("status IN ({statuses}) AND (?1 IS NULL OR recipe_id = ?1)");
+                let total: u32 = conn
+                    .query_row(
+                        &format!("SELECT count(*) FROM recipes_request WHERE {filter}"),
+                        params![recipe],
+                        |row| row.get(0),
+                    )
+                    .map_err(sql)?;
+                // Oldest first: the order to work through them in.
+                let mut statement = conn
+                    .prepare(&format!(
+                        "SELECT {COLUMNS} FROM recipes_request WHERE {filter}
                      ORDER BY created_at, id LIMIT ?2 OFFSET ?3"
-                ))
-                .map_err(sql)?;
-            let rows = statement
-                .query_map(params![recipe, limit, cursor], from_row)
-                .map_err(sql)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(sql)?;
-            let mut requests = Vec::with_capacity(rows.len());
-            for row in rows {
-                requests.push(info(conn, row)?);
-            }
-            Ok(RequestsListOutput {
-                total,
-                next_cursor: (cursor.saturating_add(limit) < total)
-                    .then_some(cursor.saturating_add(limit)),
-                requests,
+                    ))
+                    .map_err(sql)?;
+                let rows = statement
+                    .query_map(params![recipe, limit, cursor], from_row)
+                    .map_err(sql)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(sql)?;
+                let mut requests = Vec::with_capacity(rows.len());
+                for row in rows {
+                    requests.push(info(conn, row)?);
+                }
+                Ok(RequestsListOutput {
+                    total,
+                    next_cursor: (cursor.saturating_add(limit) < total)
+                        .then_some(cursor.saturating_add(limit)),
+                    requests,
+                })
             })
-        })
-        .await
+            .await?;
+        output.requests = self.with_notice_states(output.requests).await;
+        Ok(output)
     }
 
     pub async fn request_update(&self, input: RequestUpdateInput) -> R<RequestUpdateOutput> {
@@ -707,7 +532,19 @@ impl Recipes {
             .await?;
         if changed {
             self.hub.requests();
+            // An agent took the request: a notice not sent yet is not needed.
+            if request.status != RequestStatus::Queued
+                && let Some(journal) = self.ports.event_publisher()
+                && let Err(error) = journal.cancel_notice(&request.request_id).await
+            {
+                tracing::info!(target: LOG, request = %request.request_id, %error, "Recipe request notice not cancelled");
+            }
         }
+        let request = self
+            .with_notice_states(vec![request])
+            .await
+            .pop()
+            .ok_or_else(|| invalid("the request disappeared"))?;
         Ok(RequestUpdateOutput { changed, request })
     }
 
@@ -717,12 +554,45 @@ impl Recipes {
         self.requests.wake.notify_one();
     }
 
-    /// Sends the notice of every request that is due (a few per pass) and
-    /// returns how many were attempted. Each attempt is reserved before the
-    /// request goes out, so a crash mid-request waits out the backoff; the
-    /// receiver collapses a resend by the `Idempotency-Key`, which is the
-    /// request's id on every attempt.
+    /// Replaces `delivery: "journal"` with the notice's state in the event
+    /// journal (pending when the journal cannot say).
+    async fn with_notice_states(&self, mut infos: Vec<RequestInfo>) -> Vec<RequestInfo> {
+        let keys: Vec<String> = infos
+            .iter()
+            .filter(|info| info.delivery == JOURNAL)
+            .map(|info| info.request_id.clone())
+            .collect();
+        if keys.is_empty() {
+            return infos;
+        }
+        let states = match self.ports.event_publisher() {
+            Some(journal) => journal.notice_states(keys).await.unwrap_or_default(),
+            None => Default::default(),
+        };
+        for info in &mut infos {
+            if info.delivery != JOURNAL {
+                continue;
+            }
+            match states.get(&info.request_id) {
+                Some(state) => {
+                    info.delivery = notice_word(state.status).to_owned();
+                    info.delivery_attempts = state.attempts;
+                }
+                None => info.delivery = delivery::PENDING.to_owned(),
+            }
+        }
+        infos
+    }
+
+    /// Hands the notice of every request still owed one to the event
+    /// journal (a few per pass) and returns how many were handed over. The
+    /// journal keys the notice by the request id, which is also its
+    /// `Idempotency-Key`, so handing it over twice sends it once. A request
+    /// an agent already took needs no notice.
     pub async fn deliver_requests(&self) -> R<usize> {
+        let Some(journal) = self.ports.event_publisher() else {
+            return Ok(0);
+        };
         let now = self.now();
         let due = self
             .query(move |conn| {
@@ -741,139 +611,168 @@ impl Recipes {
                 Ok(rows)
             })
             .await?;
-        let mut attempted = 0;
+        let mut handed = 0;
         for row in due {
-            let Some(target) = self.requests.target.clone() else {
-                let id = row.id.clone();
-                self.transact(false, move |conn, now| {
-                    settle(conn, &id, delivery::UNCONFIGURED, None, now)
-                })
-                .await?;
-                tracing::info!(
-                    target: LOG,
-                    request = %row.id,
-                    "Recipe request notice not sent: RECIPES_REQUEST_WEBHOOK_URL is not set"
-                );
-                continue;
-            };
-            // An agent that already took the request needs no notice.
             if row.status != "queued" {
                 let id = row.id.clone();
-                self.transact(false, move |conn, now| {
-                    settle(conn, &id, delivery::SKIPPED, None, now)
+                self.transact(false, move |conn, _now| {
+                    settle(conn, &id, delivery::SKIPPED, None)
                 })
                 .await?;
                 continue;
             }
             let app_url = self.app_url.clone();
             let reserve = row.clone();
-            let attempts = row.attempts + 1;
             let payload = self
-                .transact(false, move |conn, now| {
-                    conn.execute(
-                        "UPDATE recipes_request SET attempts = ?2, next_attempt_at = ?3 WHERE id = ?1",
-                        params![reserve.id, attempts, now + backoff_ms(attempts)],
-                    )
-                    .map_err(sql)?;
-                    body(conn, &reserve, app_url.as_deref())
-                })
+                .query(move |conn| body(conn, &reserve, app_url.as_deref()))
                 .await?;
-            attempted += 1;
-            let result = self
-                .requests
-                .transport
-                .post(&target, &row.id, &omni_core::js::json_stringify(&payload))
-                .await;
-            let host = target.url.host_str().unwrap_or("").to_owned();
-            let outcome = classify(&result);
-            let now = self.now();
-            let (state, error) = match &outcome {
-                Attempt::Delivered => {
-                    tracing::info!(
-                        target: LOG,
-                        request = %row.id,
-                        host = %host,
-                        attempts,
-                        "Recipe request notice delivered"
-                    );
-                    (delivery::DELIVERED, None)
-                }
-                Attempt::Ignored => {
-                    tracing::warn!(
-                        target: LOG,
-                        request = %row.id,
-                        host = %host,
-                        "Recipe request notice accepted, but the receiving bot has no active webhook routine; the request stays queued"
-                    );
-                    (delivery::IGNORED, None)
-                }
-                Attempt::Retry(error) if now - row.created_at < GIVE_UP_AFTER_MS => {
-                    tracing::info!(
-                        target: LOG,
-                        request = %row.id,
-                        host = %host,
-                        attempts,
-                        error = %error,
-                        "Recipe request notice failed; will retry"
-                    );
-                    (delivery::PENDING, Some(error.clone()))
-                }
-                Attempt::Retry(error) | Attempt::Rejected(error) => {
-                    tracing::warn!(
-                        target: LOG,
-                        request = %row.id,
-                        host = %host,
-                        attempts,
-                        error = %error,
-                        "Recipe request notice failed; giving up. The request stays queued for recipes_requests_list"
-                    );
-                    (delivery::FAILED, Some(error.clone()))
-                }
+            let notice = TargetNotice {
+                target: KITCHEN_TARGET.to_owned(),
+                key: row.id.clone(),
+                name: EVENT.to_owned(),
+                body: payload,
             };
-            let id = row.id.clone();
-            self.transact(false, move |conn, now| {
-                settle(conn, &id, state, error.as_deref(), now)
-            })
-            .await?;
+            match journal.notify_target(notice).await {
+                Ok(()) => {
+                    let id = row.id.clone();
+                    self.transact(false, move |conn, _now| settle(conn, &id, JOURNAL, None))
+                        .await?;
+                    handed += 1;
+                    tracing::info!(target: LOG, request = %row.id, "Recipe request notice handed to the event journal");
+                    // An agent may have taken it while it was handed over.
+                    let id = row.id.clone();
+                    let taken = self
+                        .query(
+                            move |conn| Ok(get(conn, &id)?.is_some_and(|r| r.status != "queued")),
+                        )
+                        .await?;
+                    if taken {
+                        let _ = journal.cancel_notice(&row.id).await;
+                    }
+                }
+                Err(PortError::Failed {
+                    message,
+                    transient: false,
+                }) => {
+                    // The journal refused this notice for good (too large).
+                    let id = row.id.clone();
+                    tracing::warn!(target: LOG, request = %row.id, error = %message, "Recipe request notice refused by the event journal; the request stays queued");
+                    self.transact(false, move |conn, _now| {
+                        settle(conn, &id, delivery::FAILED, Some(&message))
+                    })
+                    .await?;
+                }
+                Err(error) => {
+                    let id = row.id.clone();
+                    let message = error.to_string();
+                    tracing::warn!(target: LOG, request = %row.id, error = %message, "Recipe request notice not handed over; will try again");
+                    self.transact(false, move |conn, now| {
+                        conn.execute(
+                            "UPDATE recipes_request SET next_attempt_at = ?2, last_error = ?3 WHERE id = ?1",
+                            params![id, now + HANDOVER_RETRY_MS, message],
+                        )
+                        .map_err(sql)?;
+                        Ok(())
+                    })
+                    .await?;
+                }
+            }
         }
-        Ok(attempted)
+        self.write_back_settled(journal.as_ref()).await?;
+        Ok(handed)
     }
 
-    /// Requests written while no webhook was configured, and still waiting
-    /// for an agent, are owed a notice once one is: the service queues them
-    /// when it starts. Returns how many.
-    pub async fn announce_unannounced(&self) -> R<usize> {
-        if self.requests.target.is_none() {
-            return Ok(0);
+    /// Copies settled notice states from the journal onto the requests, so
+    /// a request keeps its notice's outcome after the journal forgets it
+    /// (a week after it settled).
+    async fn write_back_settled(&self, journal: &dyn EventPublisher) -> R<()> {
+        let ids = self
+            .query(|conn| {
+                let mut statement = conn
+                    .prepare(
+                        "SELECT id FROM recipes_request WHERE delivery = 'journal'
+                         ORDER BY updated_at LIMIT 50",
+                    )
+                    .map_err(sql)?;
+                let ids = statement
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(sql)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(sql)?;
+                Ok(ids)
+            })
+            .await?;
+        if ids.is_empty() {
+            return Ok(());
         }
-        self.transact(false, |conn, now| {
-            conn.execute(
-                "UPDATE recipes_request SET delivery = 'pending', next_attempt_at = ?1
-                 WHERE delivery = 'unconfigured' AND status = 'queued'",
-                params![now],
-            )
-            .map_err(sql)
+        let Ok(states) = journal.notice_states(ids).await else {
+            return Ok(());
+        };
+        let settled: Vec<(String, &'static str, u32)> = states
+            .into_iter()
+            .filter(|(_, state)| {
+                matches!(
+                    state.status,
+                    NoticeStatus::Delivered
+                        | NoticeStatus::Ignored
+                        | NoticeStatus::Failed
+                        | NoticeStatus::Skipped
+                )
+            })
+            .map(|(id, state)| (id, notice_word(state.status), state.attempts))
+            .collect();
+        if settled.is_empty() {
+            return Ok(());
+        }
+        self.transact(false, move |conn, _now| {
+            for (id, word, attempts) in &settled {
+                conn.execute(
+                    "UPDATE recipes_request SET delivery = ?2, attempts = ?3
+                     WHERE id = ?1 AND delivery = 'journal'",
+                    params![id, word, attempts],
+                )
+                .map_err(sql)?;
+            }
+            Ok(())
         })
         .await
     }
 
-    /// The delivery service: sends due notices when a request is stored and
-    /// every few seconds, until shutdown. A failed pass is logged and the
-    /// next one runs as usual.
+    /// Requests from before the journal that were never announced, and are
+    /// still waiting for an agent, are owed a notice: the service queues them
+    /// when it starts. Returns how many.
+    pub async fn announce_unannounced(&self) -> R<usize> {
+        if self.ports.event_publisher().is_none() {
+            return Ok(0);
+        }
+        let queued = self
+            .transact(false, |conn, now| {
+                conn.execute(
+                    "UPDATE recipes_request SET delivery = 'pending', next_attempt_at = ?1
+                     WHERE delivery = 'unconfigured' AND status = 'queued'",
+                    params![now],
+                )
+                .map_err(sql)
+            })
+            .await?;
+        if queued > 0 {
+            tracing::info!(target: LOG, "Queued {queued} recipe request(s) from before the event journal for a notice");
+        }
+        Ok(queued)
+    }
+
+    /// The hand-over service: runs when a request is stored and every few
+    /// seconds, until shutdown. A failed pass is logged and the next one
+    /// runs as usual.
     pub async fn run_requests(&self, shutdown: tokio_util::sync::CancellationToken) {
-        match &self.requests.target {
-            Some(target) => tracing::info!(
+        if self.ports.event_publisher().is_none() {
+            tracing::info!(
                 target: LOG,
-                host = target.url.host_str().unwrap_or(""),
-                "Recipe requests are announced to the configured webhook"
-            ),
-            None => tracing::info!(
-                target: LOG,
-                "Recipe request webhook is disabled (RECIPES_REQUEST_WEBHOOK_URL is not set); requests stay in the library for recipes_requests_list"
-            ),
+                "The event journal is unavailable; requests stay in the library for recipes_requests_list"
+            );
         }
         if let Err(error) = self.announce_unannounced().await {
-            tracing::warn!(target: LOG, "Recipe requests could not be queued for the webhook: {}", error.tool_text());
+            tracing::warn!(target: LOG, "Recipe requests could not be queued for a notice: {}", error.tool_text());
         }
         let mut ticker = tokio::time::interval(DELIVER_EVERY);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -884,53 +783,8 @@ impl Recipes {
                 _ = ticker.tick() => {}
             }
             if let Err(error) = self.deliver_requests().await {
-                tracing::warn!(target: LOG, "Recipe request delivery pass failed: {}", error.tool_text());
+                tracing::warn!(target: LOG, "Recipe request notice pass failed: {}", error.tool_text());
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn answer(status: u16, ignored: bool) -> Result<WebhookResponse, WebhookError> {
-        Ok(WebhookResponse { status, ignored })
-    }
-
-    #[test]
-    fn an_answer_is_delivered_retried_or_refused() {
-        assert_eq!(classify(&answer(200, false)), Attempt::Delivered);
-        assert_eq!(classify(&answer(204, false)), Attempt::Delivered);
-        assert_eq!(classify(&answer(200, true)), Attempt::Ignored);
-        for status in [408, 425, 429, 500, 502, 503] {
-            assert!(matches!(
-                classify(&answer(status, false)),
-                Attempt::Retry(_)
-            ));
-        }
-        for status in [301, 400, 401, 404, 409, 413] {
-            assert!(matches!(
-                classify(&answer(status, false)),
-                Attempt::Rejected(_)
-            ));
-        }
-        assert!(matches!(
-            classify(&Err(WebhookError::Timeout)),
-            Attempt::Retry(_)
-        ));
-        assert!(matches!(
-            classify(&Err(WebhookError::Unusable)),
-            Attempt::Rejected(_)
-        ));
-    }
-
-    #[test]
-    fn the_wait_doubles_to_thirty_minutes() {
-        assert_eq!(backoff_ms(1), 30_000);
-        assert_eq!(backoff_ms(2), 60_000);
-        assert_eq!(backoff_ms(4), 240_000);
-        assert_eq!(backoff_ms(7), MAX_BACKOFF_MS);
-        assert_eq!(backoff_ms(400), MAX_BACKOFF_MS);
     }
 }

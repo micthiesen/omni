@@ -56,13 +56,13 @@ if [[ "$(systemctl is-active docker-compose-startup.service 2>/dev/null)" == "ac
   exit 0
 fi
 
-# Pushover creds come from the systemd unit's EnvironmentFile; fall back to
-# sourcing .env for manual runs.
+# Pushover creds and the smoke-test token come from the systemd unit's
+# EnvironmentFile; fall back to sourcing .env for manual runs.
 if [[ -z "${PUSHOVER_USER:-}" || -z "${PUSHOVER_BORIS_TOKEN:-}" ]]; then
   # Source only these keys: other .env values are not valid shell.
   set -a
   # shellcheck source=/dev/null
-  source <(grep -E "^(PUSHOVER_USER|PUSHOVER_BORIS_TOKEN)=" "$COMPOSE_DIR/.env")
+  source <(grep -E "^(PUSHOVER_USER|PUSHOVER_BORIS_TOKEN|OMNI_SMOKE_TOKEN)=" "$COMPOSE_DIR/.env")
   set +a
 fi
 if [[ -z "${PUSHOVER_USER:-}" || -z "${PUSHOVER_BORIS_TOKEN:-}" ]]; then

@@ -491,6 +491,34 @@ a.agenda-tile-head:hover { color: var(--signal); }
 .gw-cred-value .input { flex: 1; min-width: 0; }
 .gw-timeout { width: 120px; }
 .gw-form .seg { align-self: flex-start; }
+.gw-out-summary { margin: 0; }
+.gw-out .panel-meta { overflow: visible; }
+.gw-out-row { align-items: flex-start; }
+.gw-out-row.off .row-title { color: var(--text-3); }
+.gw-out .row-sub.parts { flex-wrap: wrap; row-gap: 0; white-space: normal; }
+.gw-out-state { flex: none; min-width: 104px; padding-top: 2px; }
+.gw-out-route { white-space: normal; overflow-wrap: anywhere; }
+.gw-out-note { white-space: normal; overflow-wrap: anywhere; }
+.gw-out-form { display: flex; flex-direction: column; gap: var(--sp-4); border-bottom: 1px solid var(--line); }
+/* An edit form opens under its row, inside the rows list. */
+.rows > .gw-out-form { border-top: 1px solid var(--line); border-bottom: 0; }
+.gw-out-args { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.gw-out-args legend { padding: 0; margin-bottom: var(--sp-2); }
+.gw-out-arg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-3); }
+.gw-out-attempts { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; font: var(--t-small); }
+.gw-out-attempts li { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-3); }
+.gw-out-attempts li > :last-child { text-align: right; }
+.gw-out-more { display: flex; justify-content: center; padding: var(--sp-2); }
+@media (min-width: 900px) {
+  .gw-out-history > summary { min-height: 28px; padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
+}
+@media (max-width: 899px) {
+  .gw-out-state { min-width: 0; }
+  .gw-out-state .status > span:not(.sr-only) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  /* A route line needs the width; its buttons move under it. */
+  .gw-out-routes .gw-out-row { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .gw-out-routes .gw-out-row .row-main { flex: 1 1 100%; }
+}
 @media (max-width: 899px) {
   .gw-url { flex-wrap: wrap; row-gap: var(--sp-1); }
   .gw-url-k { width: 100%; }

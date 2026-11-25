@@ -38,7 +38,11 @@ use super::oauth::client::OAuthClient;
 use super::oauth::server::{Approval, AuthorizationServer};
 use super::runtime::Runtime;
 use super::service::{AdminError, Gateway};
-use crate::events::service::McpEventService;
+use crate::events::service::{JournalError, McpEventService};
+use omni_api::outbound::{
+    DeliveryView, EventRouteCreate, EventRoutePatch, EventRouteView, EventTargetUpsert,
+    EventTargetView, OutboundOverview, RoutableEventView,
+};
 
 const LOG: &str = "MCP:Gateway";
 const DESCRIPTION_LIMIT: usize = 400;
@@ -91,6 +95,20 @@ pub fn router(state: AdminState) -> Router {
         .route("/api/gateway/grants/{id}", delete(revoke_grant))
         .route("/api/gateway/authorizations/{id}/approve", post(approve))
         .route("/api/gateway/authorizations/{id}/deny", post(deny))
+        .route("/api/gateway/outbound", get(outbound))
+        .route(
+            "/api/gateway/outbound/targets/{id}",
+            put(put_target).delete(delete_target),
+        )
+        .route("/api/gateway/outbound/routes", post(create_route))
+        .route(
+            "/api/gateway/outbound/routes/{id}",
+            axum::routing::patch(patch_route).delete(delete_route),
+        )
+        .route(
+            "/api/gateway/outbound/deliveries/{id}/retry",
+            post(retry_delivery),
+        )
         .route_layer(axum::middleware::from_fn_with_state(guard_state, lan_only))
         .with_state(state.clone());
     api.merge(
@@ -158,6 +176,178 @@ async fn lan_only(
         }
     }
     next.run(request).await
+}
+
+// ----- outbound: the event journal's targets, routes and deliveries -----
+
+fn journal(state: &AdminState) -> Result<&McpEventService, ApiError> {
+    state
+        .events
+        .as_ref()
+        .ok_or_else(|| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "MCP events are disabled"))
+}
+
+fn journal_error(error: JournalError) -> ApiError {
+    match error {
+        JournalError::Invalid(message) => ApiError::bad_request(message),
+        JournalError::NotFound(message) => ApiError::not_found(message),
+        JournalError::Conflict(message) => ApiError::conflict(message),
+        JournalError::Store(error) => ApiError::internal(error),
+    }
+}
+
+/// Event names a route can name: the catalog's and the integrations'.
+fn routable_events(gateway: &Gateway) -> Vec<RoutableEventView> {
+    super::events::served_events(gateway)
+        .into_iter()
+        .filter_map(|entry| {
+            let name = entry.get("name")?.as_str()?.to_owned();
+            let description = entry
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let arguments = entry
+                .get("inputSchema")
+                .and_then(|schema| schema.get("properties"))
+                .and_then(Value::as_object)
+                .map(|props| props.keys().cloned().collect())
+                .unwrap_or_default();
+            Some(RoutableEventView {
+                name,
+                description: truncate(description, DESCRIPTION_LIMIT),
+                arguments,
+            })
+        })
+        .collect()
+}
+
+#[derive(serde::Deserialize)]
+struct OutboundQuery {
+    status: Option<String>,
+}
+
+async fn outbound(
+    State(state): State<AdminState>,
+    Query(query): Query<OutboundQuery>,
+    headers: HeaderMap,
+) -> ApiResult<OutboundOverview> {
+    let events = journal(&state)?;
+    let only_failed = query.status.as_deref() == Some("failed");
+    let mut overview = events
+        .outbound(only_failed)
+        .await
+        .map_err(ApiError::internal)?;
+    overview.events = routable_events(&state.gateway);
+    // A webhook path can name a bot; a browser that cannot change targets
+    // does not need it.
+    if !state.owner.is_trusted(&headers).await {
+        for target in &mut overview.targets {
+            target.url = url::Url::parse(&target.url)
+                .ok()
+                .and_then(|url| Some(format!("{}://{}/…", url.scheme(), url.host_str()?)))
+                .unwrap_or_default();
+        }
+    }
+    Ok(Json(overview))
+}
+
+async fn put_target(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+    JsonBody(body): JsonBody<EventTargetUpsert>,
+) -> ApiResult<EventTargetView> {
+    let view = journal(&state)?
+        .upsert_target(&id, &body)
+        .await
+        .map_err(journal_error)?;
+    tracing::info!(target: LOG, destination = %id, "Event target saved");
+    Ok(Json(view))
+}
+
+async fn delete_target(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    journal(&state)?
+        .delete_target(&id)
+        .await
+        .map_err(journal_error)?;
+    tracing::info!(target: LOG, destination = %id, "Event target removed");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn create_route(
+    State(state): State<AdminState>,
+    JsonBody(body): JsonBody<EventRouteCreate>,
+) -> Result<(StatusCode, Json<EventRouteView>), ApiError> {
+    let events = journal(&state)?;
+    let raw = Value::Object(
+        body.arguments
+            .iter()
+            .filter(|(_, v)| !v.trim().is_empty())
+            .map(|(k, v)| (k.clone(), Value::String(v.trim().to_owned())))
+            .collect(),
+    );
+    if !events.knows_event(&body.event) {
+        return Err(ApiError::bad_request(format!(
+            "{} is not an event Omni offers now",
+            body.event
+        )));
+    }
+    let args = events
+        .parse_route_arguments(&body.event, &raw)
+        .ok_or_else(|| ApiError::bad_request(format!("Invalid arguments for {}", body.event)))?;
+    // An integration event is read from the integration's event feed, which
+    // a route keeps alive like a subscription does.
+    if let Some((integration, event)) = super::events::find_event(&state.gateway, &body.event) {
+        super::events::ensure_feed(&state.gateway, &integration, &event, &args)
+            .await
+            .map_err(|error| ApiError::new(StatusCode::BAD_GATEWAY, error.describe()))?;
+    }
+    let view = events
+        .create_route(&body.event, args, &body.target)
+        .await
+        .map_err(journal_error)?;
+    tracing::info!(target: LOG, event = %view.event, destination = %view.target, "Event route created");
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn patch_route(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+    JsonBody(body): JsonBody<EventRoutePatch>,
+) -> ApiResult<EventRouteView> {
+    let events = journal(&state)?;
+    let Some(enabled) = body.enabled else {
+        return Err(ApiError::bad_request("Nothing to change"));
+    };
+    events
+        .set_route_enabled(&id, enabled)
+        .await
+        .map(Json)
+        .map_err(journal_error)
+}
+
+async fn delete_route(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    journal(&state)?
+        .delete_route(&id)
+        .await
+        .map_err(journal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn retry_delivery(
+    State(state): State<AdminState>,
+    Path(id): Path<String>,
+) -> ApiResult<DeliveryView> {
+    journal(&state)?
+        .retry_delivery(&id)
+        .await
+        .map(Json)
+        .map_err(journal_error)
 }
 
 fn truncate(text: &str, limit: usize) -> String {

@@ -596,9 +596,8 @@ library is the source of truth and no failure of the `recipe.request` webhook ma
 it. The app never shows a reply or a thread: it shows status, an optional note and the resulting
 revision, set only by an agent through `recipes_request_update`, which changes the request and
 never a recipe. The recipe change is an ordinary revision with the household checks unchanged.
-The notice is reserved before each attempt, always carries the request id as `Idempotency-Key`,
-goes only to the configured `RECIPES_REQUEST_WEBHOOK_URL` (never an address from the app), and
-honors `SideEffectMode`. Request text is untrusted and its tools say so. With a sheet or an
+The notice is handed to the event journal for the stored `kitchen` target (never an address
+from the app), keyed by the request id, which is its `Idempotency-Key` on every attempt. Request text is untrusted and its tools say so. With a sheet or an
 editor open, and always in cook mode, the app never swaps a recipe underneath: it offers
 "Recipe updated" with Reload (`ui::settled`).
 
@@ -826,10 +825,10 @@ approval is the connected client's, guided by tool policy, so do not add a
 permission mode. A turn has finished when the host's runtime `status` is not
 busy and the transcript does not end in a prompt still waiting to start; never
 use the session's `state`, which Claude Code writes from a model summary after
-the turn and which can stay `working`. Session `notify` targets come only from
-`CLAUDE_NOTIFY_TARGETS` (callers pass a name, never a URL), are posted once per
-session and revision with an `Idempotency-Key`, and an unknown target never
-fails the session. See `docs/claude-sessions.md`.
+the turn and which can stay `working`. Session `notify` targets are stored
+event targets (callers pass an id, never a URL), are queued once per session
+and revision as journal notices with an `Idempotency-Key`, and an unknown
+target never fails the session. See `docs/claude-sessions.md`.
 
 Hister tools read a captured-page archive, not a complete browser visit log.
 Keep text and listings bounded, treat page content as untrusted evidence, and
@@ -851,6 +850,16 @@ All new outgoing email and drafts use `michael@thiesen.dev`, fixed server-side.
 SMTP/IMAP authentication identities remain separate. Tools never accept a sender
 or From option; invalid legacy `EMAIL_FROM` configuration fails boot. Preserve
 historical Sent MIME during copy repair and never retransmit it to change identity.
+
+Everything Omni posts to a receiver outside it goes through the MCP Events
+outbox, the event journal ("Event journal" in `docs/mcp-events.md`): MCP
+subscriptions, stored routes to stored targets (bot webhooks, which replaced
+the Boris relay) and notices (Claude turns, Fond requests). Never add another
+sender: queue a notice through `EventPublisher::notify_target` or a route. All
+share one retry policy (a day of retries, 30 s doubling to 30 min), keep every
+attempt on the row, and a delivery that fails for good logs at ERROR and can
+be retried from `/gateway`. Target keys are sealed, write-only and never
+logged.
 
 MCP Events (`email.received`, `claude.session.turn_finished`,
 `livestream.status_changed`, `presspods.job_finished`, `task.run_finished`,

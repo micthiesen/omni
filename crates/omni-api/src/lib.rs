@@ -55,6 +55,8 @@ pub mod events;
 pub mod gateway;
 /// MCP activity.
 pub mod mcp_activity;
+/// Outbound event delivery: targets, routes, deliveries.
+pub mod outbound;
 /// Trusted browsers for admin changes.
 pub mod owner;
 

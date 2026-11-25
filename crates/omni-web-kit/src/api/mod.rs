@@ -26,6 +26,10 @@ use omni_api::media::{
     RecommendationFeedback, RecommendationResponse, RecommendationsResponse, RunResponse,
     TasteProfileResponse,
 };
+use omni_api::outbound::{
+    DeliveryView, EventRouteCreate, EventRoutePatch, EventRouteView, EventTargetUpsert,
+    EventTargetView, OutboundOverview,
+};
 use omni_api::pets::PetHealthResponse;
 use omni_api::podcasts::{
     PodcastFeedback, PodcastRecommendationResponse, PodcastRecommendationsResponse,
@@ -763,6 +767,73 @@ pub async fn deny_gateway_authorization(id: &str) -> Result<(), ApiClientError> 
     send_no_content(
         client::Method::Post,
         &format!("/api/gateway/authorizations/{}/deny", enc(id)),
+    )
+    .await
+}
+
+// ----- outbound -----
+
+/// Targets, routes, the newest deliveries (only failed ones with
+/// `failed_only`) and their counts. Target keys are reported as set or not.
+pub async fn fetch_outbound(failed_only: bool) -> Result<OutboundOverview, ApiClientError> {
+    let status = failed_only.then(|| "failed".to_owned());
+    get(&format!(
+        "/api/gateway/outbound{}",
+        query(&[("status", status)])
+    ))
+    .await
+}
+
+/// Creates or replaces a target; a `None` key keeps the stored one.
+pub async fn put_outbound_target(
+    id: &str,
+    body: &EventTargetUpsert,
+) -> Result<EventTargetView, ApiClientError> {
+    put(
+        &format!("/api/gateway/outbound/targets/{}", enc(id)),
+        Some(body),
+    )
+    .await
+}
+
+pub async fn delete_outbound_target(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Delete,
+        &format!("/api/gateway/outbound/targets/{}", enc(id)),
+    )
+    .await
+}
+
+pub async fn create_outbound_route(
+    body: &EventRouteCreate,
+) -> Result<EventRouteView, ApiClientError> {
+    post("/api/gateway/outbound/routes", Some(body)).await
+}
+
+pub async fn update_outbound_route(
+    id: &str,
+    body: &EventRoutePatch,
+) -> Result<EventRouteView, ApiClientError> {
+    patch(
+        &format!("/api/gateway/outbound/routes/{}", enc(id)),
+        Some(body),
+    )
+    .await
+}
+
+pub async fn delete_outbound_route(id: &str) -> Result<(), ApiClientError> {
+    send_no_content(
+        client::Method::Delete,
+        &format!("/api/gateway/outbound/routes/{}", enc(id)),
+    )
+    .await
+}
+
+/// Sends a failed delivery again.
+pub async fn retry_outbound_delivery(id: &str) -> Result<DeliveryView, ApiClientError> {
+    post(
+        &format!("/api/gateway/outbound/deliveries/{}/retry", enc(id)),
+        NO_BODY,
     )
     .await
 }

@@ -813,8 +813,10 @@ async fn retries_429_and_5xx_but_terminates_4xx_and_exhausted_claims() {
     harness
         .service
         .store()
+        // Tried before and queued over a day ago: the window is over.
         .upsert_delivery(EventDelivery {
-            attempts: 8,
+            attempts: 1,
+            created_at: queued.created_at - 25 * 60 * 60_000,
             ..queued.clone()
         })
         .await
