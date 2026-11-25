@@ -39,13 +39,13 @@
       "title": "Search Archive",
       "description": "Search the configured archive for audiobooks by title and optional author. Pass the query and itemId to library_add after the user agrees.",
       "annotations": {
-        "readOnlyHint": false,
+        "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": true
       },
       "sideEffects": [
-        "Searches the archive"
+        "Searches the archive; nothing is added"
       ],
       "cost": "Uses service capacity, storage or bandwidth as applicable",
       "recommendedPolicy": "allow"
@@ -1374,7 +1374,7 @@
       "title": "List Radarr Movie Releases",
       "description": "Run Radarr's interactive search for one tracked movie and list the releases its indexers return, approved ones first in Radarr's preference order: quality, resolution, size, custom formats and score, languages, release group, age, and Radarr's rejection reasons. Nothing is grabbed. Prefer media_movies_search; use this only when a title needs scrutiny (a bad automatic pick, a quality problem, HDR or audio requirements), then grab one approved release with media_movie_release_grab and explain the choice. Each call queries every indexer, so do not repeat it needlessly.",
       "annotations": {
-        "readOnlyHint": false,
+        "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": true

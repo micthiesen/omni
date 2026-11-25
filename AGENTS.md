@@ -879,7 +879,10 @@ sets the serving order. `crates/omni-mcp-kit/golden/tools-list.json`, both
 `crates/omni-mcp/tests/golden/protocol.json` are generated snapshots: after
 changing a definition run `cargo xtask mcp-golden` and review the JSON diff;
 tests fail on drift. Served schemas must stay byte-identical unless the contract
-change is intended.
+change is intended. `readOnlyHint: true` is only for a tool whose every call
+changes nothing (unattended clients such as Rakazo change triggers run only
+those); `crates/omni-mcp/tests/read_only_tools.rs` lists them, and a read-named
+tool that writes must be listed there as an exception.
 
 ### MCP gateway
 

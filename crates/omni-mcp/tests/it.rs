@@ -19,6 +19,7 @@ mod mcp_golden;
 mod policy;
 mod prod_copy;
 mod protocol_golden;
+mod read_only_tools;
 mod server;
 mod subsystem;
 mod system_tools;

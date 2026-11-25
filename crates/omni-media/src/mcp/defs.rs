@@ -353,13 +353,13 @@ pub static MEDIA_AUDIOBOOKS_SEARCH: ToolDef<
     title: "Search Archive",
     description: "Search the configured archive for audiobooks by title and optional author. Pass the query and itemId to library_add after the user agrees.",
     annotations: Annotations {
-        read_only_hint: false,
+        read_only_hint: true,
         destructive_hint: false,
         idempotent_hint: true,
         open_world_hint: true,
     },
     policy: Policy {
-        side_effects: &["Searches the archive"],
+        side_effects: &["Searches the archive; nothing is added"],
         cost: "Uses service capacity, storage or bandwidth as applicable",
         recommended: ApprovalPolicy::Allow,
     },
@@ -528,7 +528,7 @@ pub static MEDIA_MOVIE_RELEASES: ToolDef<MediaMovieReleasesInput, MediaMovieRele
         title: "List Radarr Movie Releases",
         description: "Run Radarr's interactive search for one tracked movie and list the releases its indexers return, approved ones first in Radarr's preference order: quality, resolution, size, custom formats and score, languages, release group, age, and Radarr's rejection reasons. Nothing is grabbed. Prefer media_movies_search; use this only when a title needs scrutiny (a bad automatic pick, a quality problem, HDR or audio requirements), then grab one approved release with media_movie_release_grab and explain the choice. Each call queries every indexer, so do not repeat it needlessly.",
         annotations: Annotations {
-            read_only_hint: false,
+            read_only_hint: true,
             destructive_hint: false,
             idempotent_hint: true,
             open_world_hint: true,
