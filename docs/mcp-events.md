@@ -336,7 +336,8 @@ the dead-letter handling above:
   A route counts as subscribed: integration event feeds poll for it, and an
   integration event's route keeps its feed alive. This replaced the
   `omni-relay` container on Boris, which subscribed through the public
-  gateway and forwarded to bot webhooks.
+  gateway and forwarded to bot webhooks; it, its gateway client and its
+  public host `rakazo-hooks.syas.ca` were retired on 2026-11-24.
 - **Notices**: one body addressed to a stored target by id, once per key
   (`EventPublisher::notify_target`): Claude session turns
   (`omni-claude-turn:<session>:<revision>`) and Fond requests (the request

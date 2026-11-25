@@ -89,6 +89,11 @@ any of them. Every request must also name a host Omni answers to
 names, `omni.syas.ca` and the configured public, recipes and home URLs); any
 other `Host` gets 421, which stops DNS rebinding for the whole app.
 
+The UI's reads stay open on the LAN, and Omni deliberately gives the frontend no
+automatic API token: a token any LAN page or client could fetch on its own would
+block nothing the Host check and the trusted-browser gate do not already block,
+and a login is out of scope by the owner's choice.
+
 A 401 carries `WWW-Authenticate: Bearer resource_metadata="…"` when OAuth is
 offered.
 

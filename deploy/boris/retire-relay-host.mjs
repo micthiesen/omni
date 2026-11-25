@@ -43,3 +43,5 @@ const signed = await Token().create({
 });
 await proxyHosts.delete(new Access(signed.token), { id: host.id });
 console.log(JSON.stringify({ mode, deleted: summary(host), record: recordPath }));
+// NPM's database pool keeps Node alive otherwise (the 2026-11-24 run hung here).
+process.exit(0);
