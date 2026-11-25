@@ -41,6 +41,37 @@ pub async fn main(command: Command) -> u8 {
             0
         }
         Command::Healthcheck => healthcheck().await,
+        Command::DbSnapshot { db, out, full } => {
+            match crate::snapshots::snapshot_file(&db, &out, full) {
+                Ok(report) => match serde_json::to_string(&report) {
+                    Ok(json) => {
+                        stdout_text(&format!("{json}\n"));
+                        0
+                    }
+                    Err(error) => {
+                        stderr_line(&format!("db-snapshot failed: {error}"));
+                        EXIT_FAILURE
+                    }
+                },
+                Err(error) => {
+                    stderr_line(&format!("db-snapshot failed: {error}"));
+                    EXIT_FAILURE
+                }
+            }
+        }
+        Command::GatewayToken { label } => match gateway_token(&label).await {
+            Ok((id, token)) => {
+                stderr_line(&format!(
+                    "Created gateway client {id} ({label}); token on stdout"
+                ));
+                stdout_text(&format!("{token}\n"));
+                0
+            }
+            Err(error) => {
+                stderr_line(&format!("gateway-token failed: {error}"));
+                EXIT_FAILURE
+            }
+        },
         Command::OwnerLink => match owner_link().await {
             Ok(url) => {
                 stdout_text(&format!(
@@ -129,6 +160,44 @@ pub async fn main(command: Command) -> u8 {
         }
         Command::Preview { port, web_dist } => crate::preview::main(port, web_dist).await,
     }
+}
+
+/// `omni gateway-token <label>`: a gateway client token for a script on the
+/// host (the deploy smoke test). Only someone who can run commands in the
+/// container can call it, and that person already owns the data directory.
+async fn gateway_token(label: &str) -> Result<(String, String), String> {
+    let config = Config::from_process_env().map_err(|e| e.to_string())?;
+    let clock: SharedClock = Arc::new(SystemClock);
+    let db = config.db_path();
+    let data_dir = db
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
+    let key = omni_mcp::gateway::secrets::key_path(&data_dir);
+    if !key.is_file() {
+        return Err(format!(
+            "no gateway key at {}; is this the server's data directory?",
+            key.display()
+        ));
+    }
+    let secrets = omni_mcp::gateway::secrets::GatewaySecrets::load_or_create(&key)
+        .map_err(|e| e.to_string())?;
+    let store = omni_store::Store::open(&db, omni_store::StoreOptions::new(clock.clone()))
+        .await
+        .map_err(|e| e.to_string())?;
+    let tracker = tokio_util::task::TaskTracker::new();
+    let access =
+        omni_mcp::gateway::access::DownstreamAccess::new(store, clock, secrets, tracker.clone());
+    let (row, token) = access
+        .create_client(label)
+        .await
+        .map_err(|e| e.to_string())?;
+    tracker.close();
+    tracker.wait().await;
+    Ok((row.id, token))
 }
 
 /// `omni owner-link`: a trusted-browser link, written straight to the

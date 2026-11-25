@@ -3,6 +3,7 @@ mod boot_order;
 mod common;
 mod dashboard_sse;
 mod data_manager;
+mod health_deep;
 mod owner_trust;
 mod preview;
 mod route_precedence;

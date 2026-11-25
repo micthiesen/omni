@@ -101,6 +101,69 @@ pub struct Subsystem {
     /// Apps served on a host of their own. Requests for such a host reach
     /// only that app's router, which is never merged into `router`.
     pub host_apps: Vec<HostApp>,
+    /// Checks `/api/health/deep` runs (and the deploy smoke test reads).
+    pub health_checks: Vec<HealthCheck>,
+}
+
+/// `ops-health-probe`: the row `/api/health/deep` writes to prove the store
+/// takes writes (one row, expiring after an hour).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthProbe {
+    pub id: String,
+    pub at: i64,
+    #[serde(flatten)]
+    pub extra: omni_store::cbor::Extra,
+}
+
+impl HealthProbe {
+    pub fn at(at: i64) -> Self {
+        Self {
+            id: "deep-health".to_owned(),
+            at,
+            extra: omni_store::cbor::Extra::default(),
+        }
+    }
+}
+
+impl omni_store::entity::Entity for HealthProbe {
+    const NAME: &'static str = "ops-health-probe";
+    type Key = String;
+    fn key(&self) -> String {
+        self.id.clone()
+    }
+}
+
+/// Entities this crate persists (trusted browsers, the health probe).
+pub fn entities() -> Vec<EntityDescriptor> {
+    let mut all = owner::entities();
+    all.push(EntityDescriptor::of::<HealthProbe>());
+    all
+}
+
+/// One deep-health check. `Ok` and `Err` carry a short detail without
+/// secrets.
+#[derive(Clone)]
+pub struct HealthCheck {
+    pub name: &'static str,
+    /// A failing critical check fails the deploy, which rolls back. Only
+    /// Omni's own machinery is critical: never a remote service being down.
+    pub critical: bool,
+    pub run: Arc<dyn Fn() -> BoxFuture<'static, Result<String, String>> + Send + Sync>,
+}
+
+impl HealthCheck {
+    pub fn new<F, Fut>(name: &'static str, critical: bool, run: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
+    {
+        Self {
+            name,
+            critical,
+            run: Arc::new(move || Box::pin(run())),
+        }
+    }
 }
 
 impl Default for Subsystem {
@@ -117,6 +180,7 @@ impl Default for Subsystem {
             email_handlers: Vec::new(),
             alert_gates: Vec::new(),
             host_apps: Vec::new(),
+            health_checks: Vec::new(),
         }
     }
 }

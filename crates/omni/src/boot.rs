@@ -75,7 +75,7 @@ pub fn all_entities(subsystems: &[Subsystem]) -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_ai::costs::CostEventData>(),
         EntityDescriptor::of::<omni_ai::costs::CostMigrationData>(),
     ];
-    entities.extend(omni_runtime::owner::entities());
+    entities.extend(omni_runtime::entities());
     let mut seen: std::collections::HashSet<&'static str> =
         entities.iter().map(|e| e.name).collect();
     for descriptor in subsystems.iter().flat_map(|s| &s.entities) {
@@ -196,7 +196,11 @@ pub fn app_router(
         managed.extend(subsystem.managed_entities.iter().cloned());
     }
     let data = DataManager::new(ctx.store.clone(), order_managed(managed));
-    let ops = OpsState::new(ctx.clone(), data);
+    let mut health_checks = Vec::new();
+    for subsystem in subsystems.iter_mut() {
+        health_checks.append(&mut subsystem.health_checks);
+    }
+    let ops = OpsState::new(ctx.clone(), data).with_health_checks(health_checks);
     let mut parts = vec![
         ops_router(ops.clone()),
         omni_runtime::owner::router(ctx.owner.clone()),

@@ -6,6 +6,8 @@
 //! omni --preview [--port N]
 //! omni healthcheck
 //! omni owner-link
+//! omni gateway-token <label>
+//! omni db-snapshot --db DB --out FILE [--full] (run by the DbSnapshot task)
 //! omni doctor [--image]
 //! omni compat-audit --db COPY
 //! omni stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
@@ -39,6 +41,16 @@ pub enum Command {
     Healthcheck,
     /// Prints a one-time link that trusts the browser opening it.
     OwnerLink,
+    /// Creates a gateway client token and prints only the token.
+    GatewayToken {
+        label: String,
+    },
+    /// One checked snapshot of `db` (the `DbSnapshot` task's child process).
+    DbSnapshot {
+        db: PathBuf,
+        out: PathBuf,
+        full: bool,
+    },
     Doctor {
         image: bool,
     },
@@ -73,6 +85,7 @@ pub const USAGE: &str = "usage:
   omni --preview [--port N] [--web-dist DIR]
   omni healthcheck
   omni owner-link
+  omni gateway-token <label>
   omni doctor [--image]
   omni compat-audit --db COPY
   omni stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
@@ -117,6 +130,35 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
     match args.first().map(String::as_str) {
         Some("healthcheck") => return Ok(Command::Healthcheck),
         Some("owner-link") if args.len() == 1 => return Ok(Command::OwnerLink),
+        Some("db-snapshot") => {
+            let (mut db, mut out, mut full) = (None, None, false);
+            let mut rest = args[1..].iter();
+            while let Some(arg) = rest.next() {
+                let (flag, inline) = match arg.split_once('=') {
+                    Some((f, v)) => (f, Some(v)),
+                    None => (arg.as_str(), None),
+                };
+                match flag {
+                    "--db" => db = Some(PathBuf::from(value("--db", inline, &mut rest)?)),
+                    "--out" => out = Some(PathBuf::from(value("--out", inline, &mut rest)?)),
+                    "--full" => full = true,
+                    other => return Err(CliError::Unknown(other.to_owned())),
+                }
+            }
+            return Ok(Command::DbSnapshot {
+                db: db.ok_or(CliError::MissingValue("--db"))?,
+                out: out.ok_or(CliError::MissingValue("--out"))?,
+                full,
+            });
+        }
+        Some("gateway-token") => {
+            return match args.get(1).map(|l| l.trim()) {
+                Some(label) if !label.is_empty() && args.len() == 2 => Ok(Command::GatewayToken {
+                    label: label.to_owned(),
+                }),
+                _ => Err(CliError::MissingValue("gateway-token <label>")),
+            };
+        }
         Some("doctor") => {
             return match args.get(1).map(String::as_str) {
                 None => Ok(Command::Doctor { image: false }),

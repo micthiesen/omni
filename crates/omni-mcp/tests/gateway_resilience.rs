@@ -398,3 +398,38 @@ async fn record_mode_never_calls_integration_tools() {
     recording.stop().await;
     fixture.stop().await;
 }
+
+#[tokio::test]
+async fn a_token_minted_by_another_process_authenticates() {
+    let fixture = Fixture::new().await;
+    // `omni gateway-token` writes through its own `DownstreamAccess`.
+    let cli = omni_mcp::gateway::access::DownstreamAccess::new(
+        fixture.store.clone(),
+        fixture.clock.clone(),
+        gateway_support::secrets(),
+        fixture.tracker.clone(),
+    );
+    assert!(
+        fixture
+            .access
+            .authenticate(Some("Bearer omg_unknown"))
+            .await
+            .is_none()
+    );
+    let (_, token) = cli.create_client("Deploy smoke").await.unwrap();
+    // A miss reloads at most every 30 s.
+    {
+        use omni_core::clock::Clock as _;
+        let now = fixture.clock.now_ms();
+        fixture.clock.set(now + 31_000);
+    }
+    let principal = fixture
+        .access
+        .authenticate(Some(&format!("Bearer {token}")))
+        .await;
+    assert!(matches!(
+        principal,
+        Some(omni_mcp::gateway::access::Principal::Client { ref label, .. }) if label == "Deploy smoke"
+    ));
+    fixture.stop().await;
+}

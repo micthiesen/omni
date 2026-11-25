@@ -34,6 +34,8 @@ pub const CLIENT_TOKEN_PREFIX: &str = "omg_";
 pub const ACCESS_TOKEN_PREFIX: &str = "oat_";
 pub const ACCESS_TOKEN_TTL_MS: i64 = 60 * 60 * 1000;
 const ACCESS_PURPOSE: &str = "omni-gateway-access-v1";
+/// An unknown client token reloads the client list at most this often.
+const MISS_RELOAD_INTERVAL_MS: i64 = 30_000;
 /// `lastUsedAt` is written at most this often per principal.
 const TOUCH_INTERVAL_MS: i64 = 5 * 60 * 1000;
 pub const OWNER_PREFIX: &str = "gateway:";
@@ -118,6 +120,8 @@ struct Inner {
     touched: Mutex<HashMap<String, i64>>,
     /// Bumped by every client change, so a load that raced one is not cached.
     generation: std::sync::atomic::AtomicU64,
+    /// When an unknown client token last forced a reload from the store.
+    last_miss_reload: std::sync::atomic::AtomicI64,
 }
 
 /// Downstream authentication; cheap to clone.
@@ -142,6 +146,7 @@ impl DownstreamAccess {
                 clients: RwLock::new(None),
                 touched: Mutex::new(HashMap::new()),
                 generation: std::sync::atomic::AtomicU64::new(0),
+                last_miss_reload: std::sync::atomic::AtomicI64::new(i64::MIN / 2),
             }),
         }
     }
@@ -206,7 +211,31 @@ impl DownstreamAccess {
         let now = self.inner.clock.now_ms();
         if token.starts_with(CLIENT_TOKEN_PREFIX) {
             let hash = omni_core::digest::sha256_hex(token);
-            let clients = self.clients_by_hash().await.ok()?;
+            let mut clients = self.clients_by_hash().await.ok()?;
+            // A token minted by `omni gateway-token` (another process) is not
+            // in this process's cache yet: reload, at most every 30 seconds,
+            // so unknown tokens cannot make every request read the store.
+            if !clients.contains_key(&hash) {
+                let last = self
+                    .inner
+                    .last_miss_reload
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if now - last >= MISS_RELOAD_INTERVAL_MS
+                    && self
+                        .inner
+                        .last_miss_reload
+                        .compare_exchange(
+                            last,
+                            now,
+                            std::sync::atomic::Ordering::Relaxed,
+                            std::sync::atomic::Ordering::Relaxed,
+                        )
+                        .is_ok()
+                {
+                    self.invalidate();
+                    clients = self.clients_by_hash().await.ok()?;
+                }
+            }
             let row = clients.get(&hash)?;
             self.touch(&row.id, now, false);
             return Some(Principal::Client {

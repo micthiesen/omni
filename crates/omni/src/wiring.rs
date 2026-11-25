@@ -218,6 +218,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     }
     tools.extend(wire!("mcp", mcp.tools()));
     subsystems.push(wire!("mcp", mcp.subsystem(tools)));
+    subsystems.push(wire!("snapshots", crate::snapshots::subsystem(ctx)));
 
     Ok(Wired {
         subsystems,
@@ -250,6 +251,7 @@ pub const TASK_ORDER: &[&str] = &[
     "StylistBackup",
     "RecipesBackup",
     "RecipesPurge",
+    "DbSnapshot",
     "EmailArchive",
     "EmailWatchdog",
     "EmailRetry",

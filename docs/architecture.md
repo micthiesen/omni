@@ -157,6 +157,31 @@ with `sqlite3 docstore.db ".backup /tmp/copy.db"` on boris, keep it mode 600
 outside the repository, and point `OMNI_PROD_COPY` at it to run the ignored
 `prod_copy` tests.
 
+## Database snapshots
+
+`DbSnapshot` (`crates/omni/src/snapshots.rs`, hourly at minute 47) writes a
+consistent copy of the docstore to `/data/snapshots/docstore-<UTC
+stamp>.db`. It runs `VACUUM INTO` from a read-only connection in a child
+process (`omni db-snapshot`) under `nice -n 19 ionice -c 3`: one read
+transaction, so the copy is consistent, and in WAL mode the server's writes
+never wait for it. The copy is written as `*.db.tmp` (which Kopia's policy
+skips), checked, fsynced and renamed.
+
+- Restore check: every snapshot passes `PRAGMA quick_check` and has rows;
+  the first one after 03:00 local each day passes `PRAGMA integrity_check`
+  and the compat audit (every row decodes with this build's entity types).
+  A file that fails is deleted and the run fails (ERROR log, alert).
+- Retention: the newest 24 snapshots plus the newest of each of the last 7
+  days. Kopia keeps older history.
+- Backup: Kopia backs up `snapshots/` and skips the live `docstore.db` and
+  its `-wal`/`-shm` (`~/compose/.kopiaignore`), so every backed-up database
+  is a checked, consistent file.
+- `/api/health/deep` reports `db_snapshot` (not critical) when the newest
+  snapshot is older than 2 h 15 min.
+- Restore: stop the container, copy a snapshot over
+  `volumes/omni/docstore.db`, delete `docstore.db-wal` and `docstore.db-shm`,
+  start it.
+
 ## Golden fixtures
 
 External contracts are frozen by committed fixtures: HTTP JSON responses
@@ -240,6 +265,16 @@ check`. `test` runs `cargo nextest run --workspace --locked --profile ci`.
 pushes `ghcr.io/micthiesen/omni:latest` and `:<sha>` after all three
 pass, from the fully cached build.
 
-On boris, `omni-deploy.timer` pulls `:latest` every minute, recreates the
-container on change, waits for its health check (`omni healthcheck`) and
-sends a Pushover notice.
+On boris, `omni-deploy.timer` runs `deploy_omni.sh` every minute
+(`deploy/boris/`, installed with `sh deploy/boris/install.sh`; the copy in
+`~/compose/bin` is not edited by hand). It pulls `:latest`, tags the running
+image `:previous`, recreates only the `omni` container (`up -d --no-deps`;
+the service has no `depends_on`, so Plex and the Arr apps are never
+recreated with it), waits for the health check (`omni healthcheck`) and runs
+`omni_smoke.py`: `/api/health` names the new revision, `/api/health/deep`
+passes its critical checks, and with `OMNI_SMOKE_TOKEN` (a gateway client
+token in `~/compose/.env`, minted with `omni gateway-token`) an MCP
+`tools/list` and the read-only `system_status` and `tasks_list` calls
+succeed. A failure starts `:previous` again, records the failed image id in
+`~/compose/.omni-deploy-bad` so later ticks skip it until a newer image is
+published, and sends a priority-1 push; a success sends a silent notice.

@@ -34,6 +34,8 @@ pub struct OpsState {
     pub dashboard: Dashboard,
     pub data: DataManager,
     pub tz: TimeZone,
+    /// Every subsystem's deep-health checks.
+    pub health_checks: std::sync::Arc<Vec<omni_runtime::HealthCheck>>,
 }
 
 impl OpsState {
@@ -44,7 +46,13 @@ impl OpsState {
             ctx,
             data,
             tz,
+            health_checks: std::sync::Arc::new(Vec::new()),
         }
+    }
+
+    pub fn with_health_checks(mut self, checks: Vec<omni_runtime::HealthCheck>) -> Self {
+        self.health_checks = std::sync::Arc::new(checks);
+        self
     }
 }
 
@@ -52,6 +60,7 @@ impl OpsState {
 pub fn router(state: OpsState) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/health/deep", get(health_deep))
         .route("/api/tasks", get(tasks))
         .route("/api/tasks/{name}/run", post(run_task))
         .route("/api/task-runs", get(task_runs))
@@ -83,6 +92,111 @@ async fn health(State(state): State<OpsState>) -> Response {
         build: state.dashboard.build().clone(),
     };
     js_json_of(StatusCode::OK, &body)
+}
+
+/// A check slower than this counts as failed.
+const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Omni's own checks: the store reads and writes, and the scheduler is up.
+fn foundation_checks(ctx: &AppContext) -> Vec<omni_runtime::HealthCheck> {
+    use omni_runtime::HealthCheck;
+    let read = ctx.store.clone();
+    let write = ctx.store.clone();
+    let clock = ctx.clock.clone();
+    let tasks = ctx.tasks.clone();
+    vec![
+        HealthCheck::new("store_read", true, move || {
+            let store = read.clone();
+            async move {
+                store
+                    .read(|docs| docs.count::<omni_tasks::persistence::TaskScheduleState>())
+                    .await
+                    .map(|n| format!("{n} task schedules"))
+                    .map_err(|e| e.to_string())
+            }
+        }),
+        HealthCheck::new("store_write", true, move || {
+            let store = write.clone();
+            let now = clock.now_ms();
+            async move {
+                store
+                    .write(move |tx| {
+                        use omni_store::entity::EntityWrite as _;
+                        tx.upsert(
+                            &omni_runtime::HealthProbe::at(now),
+                            omni_store::entity::UpsertOpts {
+                                expires_at: Some(now + 60 * 60 * 1000),
+                                ttl_ms: None,
+                            },
+                        )
+                    })
+                    .await
+                    .map(|()| "write committed".to_owned())
+                    .map_err(|e| e.to_string())
+            }
+        }),
+        HealthCheck::new("scheduler", true, move || {
+            let tasks = tasks.clone();
+            async move {
+                let list = tasks.list().await.map_err(|e| e.to_string())?;
+                if list.is_empty() {
+                    return Err("no tasks are registered".to_owned());
+                }
+                let failing = list
+                    .iter()
+                    .filter(|t| {
+                        t.last_run
+                            .as_ref()
+                            .is_some_and(|r| r.status == omni_api::runs::RunStatus::Error)
+                    })
+                    .count();
+                Ok(format!("{} tasks, {failing} last failed", list.len()))
+            }
+        }),
+    ]
+}
+
+async fn health_deep(State(state): State<OpsState>) -> Response {
+    let mut checks = foundation_checks(&state.ctx);
+    checks.extend(state.health_checks.iter().cloned());
+    let runs = checks.iter().map(|check| {
+        let run = check.run.clone();
+        async move {
+            match tokio::time::timeout(CHECK_TIMEOUT, run()).await {
+                Ok(result) => result,
+                Err(_) => Err(format!("no answer within {}s", CHECK_TIMEOUT.as_secs())),
+            }
+        }
+    });
+    let results = futures::future::join_all(runs).await;
+    let views: Vec<omni_api::build::HealthCheckView> = checks
+        .iter()
+        .zip(results)
+        .map(|(check, result)| {
+            let (ok, detail) = match result {
+                Ok(detail) => (true, detail),
+                Err(detail) => (false, detail),
+            };
+            omni_api::build::HealthCheckView {
+                name: check.name.to_owned(),
+                ok,
+                critical: check.critical,
+                detail,
+            }
+        })
+        .collect();
+    let ok = views.iter().all(|v| v.ok || !v.critical);
+    let body = omni_api::build::DeepHealthResponse {
+        ok,
+        build: state.dashboard.build().clone(),
+        checks: views,
+    };
+    let status = if ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    js_json_of(status, &body)
 }
 
 async fn tasks(State(state): State<OpsState>) -> Response {

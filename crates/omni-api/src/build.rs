@@ -56,6 +56,26 @@ pub struct HealthResponse {
     pub build: BuildIdentity,
 }
 
+/// `GET /api/health/deep`: 200 when every critical check passes, else 503.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeepHealthResponse {
+    pub ok: bool,
+    pub build: BuildIdentity,
+    pub checks: Vec<HealthCheckView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthCheckView {
+    pub name: String,
+    pub ok: bool,
+    /// A failing critical check means this build does not work (a deploy
+    /// rolls back); the others report things outside Omni's control.
+    pub critical: bool,
+    pub detail: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

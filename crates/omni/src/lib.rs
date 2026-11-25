@@ -19,6 +19,7 @@ pub mod preview_recipes;
 pub mod preview_stylist;
 pub mod recipes_cli;
 pub mod services;
+pub mod snapshots;
 pub mod stylist_cli;
 pub mod task_health;
 pub mod wiring;
