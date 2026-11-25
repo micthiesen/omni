@@ -203,7 +203,9 @@ async fn gateway_token(label: &str) -> Result<(String, String), String> {
 /// `omni owner-link`: a trusted-browser link, written straight to the
 /// store (run inside the container, beside the server).
 async fn owner_link() -> Result<String, String> {
-    let config = Config::from_process_env().map_err(|e| e.to_string())?;
+    let config = crate::settings::effective_config()
+        .await
+        .map_err(|e| e.to_string())?;
     let clock: SharedClock = Arc::new(SystemClock);
     let store = omni_store::Store::open(
         &config.db_path(),

@@ -257,6 +257,13 @@ pub async fn effective_environment() -> (BTreeMap<String, String>, Result<(), St
     }
 }
 
+/// The configuration a start would use now (stored values over the
+/// environment), for CLI commands that run beside the server.
+pub async fn effective_config() -> Result<Config, omni_config::ConfigError> {
+    let (env, _) = effective_environment().await;
+    Config::from_env(&env)
+}
+
 /// The settings service: what booted, the store and the key.
 #[derive(Clone)]
 pub struct Settings {

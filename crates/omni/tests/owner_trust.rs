@@ -1,6 +1,12 @@
 //! Trusted browsers: a browser becomes trusted only when the owner approves
 //! it from the phone push by typing the code the browser shows, or opens a
 //! one-time link; headers alone never make a browser trusted.
+//!
+//! The approval form is posted by a real browser, so the regression test
+//! below derives its `Origin` the way the Fetch standard says a browser does
+//! (from the page's referrer policy) instead of setting it by hand: on
+//! 2026-11-24 a `no-referrer` page made every phone send `Origin: null` and
+//! every approval failed, while hand-set test headers passed.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -260,4 +266,205 @@ async fn a_one_time_link_trusts_the_browser_that_opens_it() {
     let again = send(&router, form(&path, "action=approve")).await;
     assert_eq!(again.status, StatusCode::NOT_FOUND);
     assert!(again.cookie.is_none());
+}
+
+/// The `Origin` a browser sends with a same-page form POST (navigation mode,
+/// not CORS) under the page's referrer `policy` (Fetch standard, "append a
+/// request `Origin` header").
+fn form_post_origin(policy: &str, page_origin: &str, target_origin: &str) -> String {
+    let downgrade = page_origin.starts_with("https:") && !target_origin.starts_with("https:");
+    let null = match policy {
+        "no-referrer" => true,
+        "same-origin" => page_origin != target_origin,
+        "no-referrer-when-downgrade" | "strict-origin" | "strict-origin-when-cross-origin" | "" => {
+            downgrade
+        }
+        _ => false,
+    };
+    if null {
+        "null".to_owned()
+    } else {
+        page_origin.to_owned()
+    }
+}
+
+/// The page's effective referrer policy: a `<meta name="referrer">` tag
+/// overrides the `Referrer-Policy` header.
+fn referrer_policy(headers: &axum::http::HeaderMap, html: &str) -> String {
+    let marker = "<meta name=\"referrer\" content=\"";
+    if let Some(start) = html.find(marker) {
+        let rest = &html[start + marker.len()..];
+        return rest[..rest.find('"').unwrap()].to_owned();
+    }
+    headers
+        .get(header::REFERRER_POLICY)
+        .map_or(String::new(), |v| v.to_str().unwrap().to_owned())
+}
+
+/// How a request reaches Omni: on the LAN name directly, or through NPM's
+/// HTTPS host, which forwards `Host` and sets `X-Forwarded-Proto`.
+struct Site {
+    origin: &'static str,
+    host: &'static str,
+    https: bool,
+}
+
+const SITES: [Site; 2] = [
+    Site {
+        origin: "http://omni.boris",
+        host: "omni.boris",
+        https: false,
+    },
+    Site {
+        origin: "https://omni.syas.ca",
+        host: "omni.syas.ca",
+        https: true,
+    },
+];
+
+fn at(site: &Site, builder: axum::http::request::Builder) -> axum::http::request::Builder {
+    let builder = builder
+        .header(header::HOST, site.host)
+        .header(header::USER_AGENT, SAFARI);
+    if site.https {
+        builder.header("x-forwarded-proto", "https")
+    } else {
+        builder
+    }
+}
+
+/// GETs the approval page, then posts `body` the way a browser submits its
+/// form; `origin` overrides the derived `Origin` (`Some(None)`: no header).
+async fn submit(
+    router: &axum::Router,
+    site: &Site,
+    path: &str,
+    body: &str,
+    origin: Option<Option<&str>>,
+) -> Reply {
+    let page = router
+        .clone()
+        .oneshot(at(site, Request::get(path)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let headers = page.headers().clone();
+    let html = String::from_utf8_lossy(
+        &axum::body::to_bytes(page.into_body(), usize::MAX)
+            .await
+            .unwrap(),
+    )
+    .into_owned();
+    let derived = form_post_origin(&referrer_policy(&headers, &html), site.origin, site.origin);
+    let mut builder = at(site, Request::post(path))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header("sec-fetch-mode", "navigate");
+    match origin {
+        None => builder = builder.header(header::ORIGIN, derived),
+        Some(Some(origin)) => builder = builder.header(header::ORIGIN, origin),
+        Some(None) => {}
+    }
+    send(router, builder.body(Body::from(body.to_owned())).unwrap()).await
+}
+
+#[tokio::test]
+async fn the_approval_form_works_as_a_browser_submits_it_and_forgeries_still_fail() {
+    let app = TestApp::new().await;
+    let dist = tempfile::tempdir().unwrap();
+    let mut wired = omni::wiring::wire(&app.ctx, 0).await.unwrap();
+    let (router, _) = omni::boot::app_router(&app.ctx, &mut wired.subsystems, dist.path());
+
+    for site in &SITES {
+        let url = app.ctx.owner.create_link("CLI").await.unwrap();
+        let path = url[url.find("/trust/").unwrap()..].to_owned();
+
+        // Forged or cross-site posts fail, and leave the link usable.
+        for forged in [Some("null"), Some("https://evil.example"), None] {
+            let refused = submit(&router, site, &path, "action=approve", Some(forged)).await;
+            assert_eq!(
+                refused.status,
+                StatusCode::FORBIDDEN,
+                "{forged:?} at {}",
+                site.host
+            );
+            assert!(refused.cookie.is_none());
+        }
+
+        let trusted = submit(&router, site, &path, "action=approve", None).await;
+        assert_eq!(
+            trusted.status,
+            StatusCode::OK,
+            "{} at {}",
+            trusted.text,
+            site.host
+        );
+        let set_cookie = trusted.cookie.expect("the opener gets the cookie");
+        assert_eq!(set_cookie.contains("; Secure"), site.https, "{set_cookie}");
+    }
+
+    // The push pairing, through NPM's HTTPS host: the asking browser starts
+    // it with fetch (CORS mode always sends the real origin), the phone
+    // posts the code from the pushed page.
+    let site = &SITES[1];
+    let start = at(site, Request::post("/api/owner/pairings"))
+        .header(header::ORIGIN, site.origin)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::empty())
+        .unwrap();
+    let started = send(&router, start).await;
+    assert_eq!(started.status, StatusCode::CREATED, "{}", started.text);
+    let started = started.json();
+    let code = started["code"].as_str().unwrap().to_owned();
+    let approval = pushed_path(&app).await;
+    let approved = submit(
+        &router,
+        site,
+        &approval,
+        &format!("action=approve&code={code}"),
+        None,
+    )
+    .await;
+    assert_eq!(approved.status, StatusCode::OK, "{}", approved.text);
+    assert!(
+        approved.text.contains("is trusted now"),
+        "{}",
+        approved.text
+    );
+    let claim = at(
+        site,
+        Request::post(format!(
+            "/api/owner/pairings/{}/claim",
+            started["id"].as_str().unwrap()
+        )),
+    )
+    .header(header::ORIGIN, site.origin)
+    .header(header::CONTENT_TYPE, "application/json")
+    .body(Body::from(
+        serde_json::json!({"claim": started["claim"]}).to_string(),
+    ))
+    .unwrap();
+    let claimed = send(&router, claim).await;
+    assert_eq!(claimed.json()["state"], "trusted", "{}", claimed.text);
+    assert!(claimed.cookie.is_some_and(|c| c.contains("; Secure")));
+}
+
+#[test]
+fn the_origin_model_matches_the_fetch_standard() {
+    // The policy that broke approvals, and the one that fixed them.
+    assert_eq!(
+        form_post_origin("no-referrer", "http://omni.boris", "http://omni.boris"),
+        "null"
+    );
+    assert_eq!(
+        form_post_origin(
+            "same-origin",
+            "https://omni.syas.ca",
+            "https://omni.syas.ca"
+        ),
+        "https://omni.syas.ca"
+    );
+    assert_eq!(
+        form_post_origin("", "https://a.example", "http://a.example"),
+        "null"
+    );
 }

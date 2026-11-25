@@ -62,6 +62,7 @@ const TOUCH_INTERVAL_MS: i64 = 60 * 60 * 1000;
 /// bounds how long a copied cookie stays useful if its browser is gone.
 const IDLE_EXPIRY_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 const LABEL_LIMIT: usize = 80;
+const PAGE_REFERRER_POLICY: &str = "same-origin";
 const PAGE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 /// `owner-trusted-browser`: a browser trusted for admin changes, by the
@@ -891,7 +892,7 @@ fn escape(text: &str) -> String {
 
 fn page(status: StatusCode, title: &str, body: &str) -> Response {
     let html = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>{title}</title><style>body{{font:16px/1.5 -apple-system,system-ui,sans-serif;background:#0e1013;color:#e6e8eb;margin:0;padding:24px}}main{{max-width:420px;margin:8vh auto}}h1{{font-size:22px;margin:0 0 12px}}p{{color:#aab1ba}}input{{font:24px ui-monospace,monospace;letter-spacing:.12em;width:100%;box-sizing:border-box;padding:10px;margin:8px 0 16px;background:#16191d;color:#e6e8eb;border:1px solid #2c3138;border-radius:8px;text-transform:uppercase}}button{{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid #2c3138;background:#16191d;color:#e6e8eb;margin-right:8px}}button.primary{{background:#3d7bfd;border-color:#3d7bfd;color:#fff}}</style></head><body><main><h1>{title}</h1>{body}</main></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"{PAGE_REFERRER_POLICY}\"><title>{title}</title><style>body{{font:16px/1.5 -apple-system,system-ui,sans-serif;background:#0e1013;color:#e6e8eb;margin:0;padding:24px}}main{{max-width:420px;margin:8vh auto}}h1{{font-size:22px;margin:0 0 12px}}p{{color:#aab1ba}}input{{font:24px ui-monospace,monospace;letter-spacing:.12em;width:100%;box-sizing:border-box;padding:10px;margin:8px 0 16px;background:#16191d;color:#e6e8eb;border:1px solid #2c3138;border-radius:8px;text-transform:uppercase}}button{{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid #2c3138;background:#16191d;color:#e6e8eb;margin-right:8px}}button.primary{{background:#3d7bfd;border-color:#3d7bfd;color:#fff}}</style></head><body><main><h1>{title}</h1>{body}</main></body></html>",
         title = escape(title),
     );
     let mut response = (status, html).into_response();
@@ -902,7 +903,14 @@ fn page(status: StatusCode, title: &str, body: &str) -> Response {
     );
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(CONTENT_SECURITY_POLICY, HeaderValue::from_static(PAGE_CSP));
-    headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    // Not `no-referrer`: with it, browsers send `Origin: null` on the form
+    // post (a navigation), which `same_origin_form` must refuse.
+    // `same-origin` still keeps this secret URL out of every cross-origin
+    // `Referer`.
+    headers.insert(
+        "referrer-policy",
+        HeaderValue::from_static(PAGE_REFERRER_POLICY),
+    );
     response
 }
 

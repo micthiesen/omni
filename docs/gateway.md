@@ -83,6 +83,13 @@ can lock the owner out), and pushes go out at most once a minute. The browser
   when push delivery is down, and for scripts such as
   `deploy/gateway/oauth-check.py --owner-link`.
 
+Both end in the `/trust/<secret>` form, whose post must carry this host's
+`Origin`. The page is served with `Referrer-Policy: same-origin`, never
+`no-referrer`: under `no-referrer` browsers send `Origin: null` with a form
+post, so every approval was refused until 2026-11-24.
+`crates/omni/tests/owner_trust.rs` derives the `Origin` from the page's policy
+the way a browser does.
+
 Trusted browsers are listed on `/gateway`, where a trusted browser can remove
 any of them. Every request must also name a host Omni answers to
 (`public_host::KnownHosts`: IP literals, single-label and `.boris`/`.local`

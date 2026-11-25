@@ -77,7 +77,11 @@ pub fn parse(command: &str, args: &[String]) -> Result<RecipesArgs, CliError> {
 pub async fn run(args: &RecipesArgs) -> anyhow::Result<String> {
     let needs_config = args.dir.is_none() || (args.action == Action::Restore && args.db.is_none());
     let config = if needs_config {
-        Some(omni_config::Config::from_process_env().map_err(|e| anyhow::anyhow!("{e}"))?)
+        Some(
+            crate::settings::effective_config()
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+        )
     } else {
         None
     };

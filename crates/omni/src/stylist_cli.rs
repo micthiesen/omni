@@ -105,11 +105,15 @@ fn namespace(value: &str) -> anyhow::Result<Namespace> {
 }
 
 /// The default database and private directory from the configuration.
-fn defaults(args: &StylistArgs) -> anyhow::Result<(PathBuf, PathBuf, jiff::tz::TimeZone)> {
+async fn defaults(args: &StylistArgs) -> anyhow::Result<(PathBuf, PathBuf, jiff::tz::TimeZone)> {
     let needs_db = !matches!(args.action, Action::Verify { .. });
     let needs_config = (needs_db && args.db.is_none()) || args.private.is_none();
     let config = if needs_config {
-        Some(omni_config::Config::from_process_env().map_err(|e| anyhow::anyhow!("{e}"))?)
+        Some(
+            crate::settings::effective_config()
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+        )
     } else {
         None
     };
@@ -142,7 +146,7 @@ async fn open(db: &Path, private: PathBuf, tz: jiff::tz::TimeZone) -> anyhow::Re
 
 /// Runs the command and returns the JSON report for stdout.
 pub async fn run(args: &StylistArgs) -> anyhow::Result<String> {
-    let (db, private, tz) = defaults(args)?;
+    let (db, private, tz) = defaults(args).await?;
     let report = match &args.action {
         Action::Export {
             namespace: ns,
